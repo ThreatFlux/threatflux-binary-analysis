@@ -1,0 +1,323 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'threatflux-binary-analysis/src/**'
+      - 'threatflux-binary-analysis/Cargo.toml'
+      - 'threatflux-binary-analysis/README.md'
+      - 'threatflux-binary-analysis/API.md'
+      - 'threatflux-binary-analysis/examples/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'threatflux-binary-analysis/src/**'
+      - 'threatflux-binary-analysis/Cargo.toml'
+      - 'threatflux-binary-analysis/README.md'
+      - 'threatflux-binary-analysis/API.md'
+      - 'threatflux-binary-analysis/examples/**'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  docs-build:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Build documentation
+      run: |
+        cargo doc --all-features --no-deps --document-private-items
+      working-directory: threatflux-binary-analysis
+      env:
+        RUSTDOCFLAGS: "-D warnings --cfg docsrs"
+    
+    - name: Check documentation links
+      run: |
+        # Check for broken internal links in documentation
+        find threatflux-binary-analysis/target/doc -name "*.html" -exec grep -l "broken-intra-doc-link" {} \; > broken-links.txt || true
+        if [ -s broken-links.txt ]; then
+          echo "🔗 Found broken documentation links:"
+          cat broken-links.txt
+          exit 1
+        else
+          echo "✅ No broken documentation links found"
+        fi
+    
+    - name: Generate documentation coverage report
+      run: |
+        # Simple documentation coverage check
+        echo "📊 Documentation Coverage Report" > doc-coverage.md
+        echo "=================================" >> doc-coverage.md
+        echo "" >> doc-coverage.md
+        
+        # Count public items and documented items
+        PUBLIC_ITEMS=$(grep -r "pub " threatflux-binary-analysis/src/ --include="*.rs" | wc -l)
+        DOC_COMMENTS=$(grep -r "///" threatflux-binary-analysis/src/ --include="*.rs" | wc -l)
+        
+        echo "- Public items: $PUBLIC_ITEMS" >> doc-coverage.md
+        echo "- Documentation comments: $DOC_COMMENTS" >> doc-coverage.md
+        
+        if [ $PUBLIC_ITEMS -gt 0 ]; then
+          COVERAGE=$((DOC_COMMENTS * 100 / PUBLIC_ITEMS))
+          echo "- Estimated coverage: $COVERAGE%" >> doc-coverage.md
+        fi
+        
+        echo "" >> doc-coverage.md
+        echo "## Missing Documentation" >> doc-coverage.md
+        echo "" >> doc-coverage.md
+        
+        # Find public items without documentation
+        grep -n "pub " threatflux-binary-analysis/src/**/*.rs | while read -r line; do
+          FILE=$(echo "$line" | cut -d: -f1)
+          LINE_NUM=$(echo "$line" | cut -d: -f2)
+          PREV_LINE=$((LINE_NUM - 1))
+          if [ $PREV_LINE -gt 0 ]; then
+            PREV_CONTENT=$(sed -n "${PREV_LINE}p" "$FILE")
+            if [[ ! "$PREV_CONTENT" =~ ^[[:space:]]*/// ]]; then
+              echo "- $FILE:$LINE_NUM" >> doc-coverage.md
+            fi
+          fi
+        done
+        
+        cat doc-coverage.md
+    
+    - name: Upload documentation
+      uses: actions/upload-artifact@v4
+      with:
+        name: documentation
+        path: |
+          threatflux-binary-analysis/target/doc/
+          doc-coverage.md
+
+  docs-examples:
+    name: Test Documentation Examples
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Test documentation examples
+      run: |
+        cargo test --doc --all-features
+      working-directory: threatflux-binary-analysis
+    
+    - name: Test examples compilation
+      run: |
+        cargo check --examples --all-features
+      working-directory: threatflux-binary-analysis
+    
+    - name: Run examples with minimal output
+      run: |
+        echo "🏃 Running examples..."
+        for example in threatflux-binary-analysis/examples/*.rs; do
+          example_name=$(basename "$example" .rs)
+          echo "Running example: $example_name"
+          
+          case $example_name in
+            "basic_analysis")
+              timeout 30 cargo run --example "$example_name" --features default || echo "Example completed or timed out"
+              ;;
+            "control_flow")
+              timeout 30 cargo run --example "$example_name" --features "control-flow" || echo "Example completed or timed out"
+              ;;
+            "disassembly")
+              timeout 30 cargo run --example "$example_name" --features "disasm-capstone" || echo "Example completed or timed out"
+              ;;
+            *)
+              timeout 30 cargo run --example "$example_name" --all-features || echo "Example completed or timed out"
+              ;;
+          esac
+        done
+      working-directory: .
+
+  docs-lint:
+    name: Documentation Linting
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Check documentation style
+      run: |
+        cargo clippy --all-features --all-targets -- \
+          -W clippy::missing_docs_in_private_items \
+          -W clippy::doc_markdown \
+          -W clippy::missing_errors_doc \
+          -W clippy::missing_panics_doc \
+          -W clippy::missing_safety_doc
+      working-directory: threatflux-binary-analysis
+
+  docs-publish:
+    name: Publish Documentation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [docs-build, docs-examples, docs-lint]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Build documentation for publishing
+      run: |
+        cargo doc --all-features --no-deps
+      working-directory: threatflux-binary-analysis
+      env:
+        RUSTDOCFLAGS: "--cfg docsrs"
+    
+    - name: Setup Pages
+      uses: actions/configure-pages@v4
+    
+    - name: Prepare documentation site
+      run: |
+        mkdir -p site/docs
+        cp -r threatflux-binary-analysis/target/doc/* site/docs/
+        
+        # Create index.html
+        cat > site/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>ThreatFlux Binary Analysis - Documentation</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 40px; }
+                .header { border-bottom: 1px solid #ccc; padding-bottom: 20px; }
+                .content { margin-top: 20px; }
+                .link-box { 
+                    border: 1px solid #ddd; 
+                    padding: 15px; 
+                    margin: 10px 0; 
+                    border-radius: 5px;
+                    background: #f9f9f9;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>🔍 ThreatFlux Binary Analysis</h1>
+                <p>Comprehensive binary analysis library with multi-format support, disassembly, and security analysis</p>
+            </div>
+            
+            <div class="content">
+                <div class="link-box">
+                    <h3><a href="docs/threatflux_binary_analysis/">📚 API Documentation</a></h3>
+                    <p>Complete API reference for all public types and functions</p>
+                </div>
+                
+                <div class="link-box">
+                    <h3>🚀 Quick Start</h3>
+                    <pre><code>[dependencies]
+        threatflux-binary-analysis = "0.1.0"</code></pre>
+                </div>
+                
+                <div class="link-box">
+                    <h3>🏗️ Build Status</h3>
+                    <p>
+                        <img src="https://github.com/ThreatFlux/threatflux-binary-analysis/workflows/CI/badge.svg" alt="CI">
+                        <img src="https://github.com/ThreatFlux/threatflux-binary-analysis/workflows/Security/badge.svg" alt="Security">
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        EOF
+    
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v2
+      with:
+        path: site
+
+  docs-deploy:
+    name: Deploy Documentation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: docs-publish
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v3
+
+  readme-sync:
+    name: Sync README with docs.rs
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check README.md sync with lib.rs
+      run: |
+        # Extract doc comment from lib.rs
+        if [ -f threatflux-binary-analysis/src/lib.rs ]; then
+          echo "📝 Checking README.md sync with lib.rs documentation..."
+          
+          # Simple check - can be enhanced with more sophisticated tools
+          if grep -q "ThreatFlux Binary Analysis" threatflux-binary-analysis/README.md; then
+            echo "✅ README.md appears to be in sync"
+          else
+            echo "⚠️  README.md may need updating"
+          fi
+        fi

@@ -1,0 +1,233 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust: [stable, beta, nightly]
+        exclude:
+          # Reduce matrix size while maintaining coverage
+          - os: windows-latest
+            rust: beta
+          - os: macos-latest
+            rust: beta
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+        components: rustfmt, clippy
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Install system dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install capstone
+    
+    - name: Install system dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # Capstone will be built from source on Windows
+        echo "Capstone will be built from source"
+    
+    - name: Check formatting
+      if: matrix.rust == 'stable'
+      run: cargo fmt --all -- --check
+      working-directory: threatflux-binary-analysis
+    
+    - name: Run clippy (default features)
+      run: cargo clippy --all-targets -- -D warnings
+      working-directory: threatflux-binary-analysis
+    
+    - name: Run clippy (all features)
+      run: cargo clippy --all-targets --all-features -- -D warnings
+      working-directory: threatflux-binary-analysis
+    
+    - name: Run clippy (no default features)
+      run: cargo clippy --all-targets --no-default-features -- -D warnings
+      working-directory: threatflux-binary-analysis
+    
+    - name: Build (default features)
+      run: cargo build --verbose
+      working-directory: threatflux-binary-analysis
+    
+    - name: Build (all features)
+      run: cargo build --verbose --all-features
+      working-directory: threatflux-binary-analysis
+    
+    - name: Build (no default features)
+      run: cargo build --verbose --no-default-features
+      working-directory: threatflux-binary-analysis
+    
+    - name: Run tests (default features)
+      run: cargo test --verbose
+      working-directory: threatflux-binary-analysis
+    
+    - name: Run tests (all features)
+      run: cargo test --verbose --all-features
+      working-directory: threatflux-binary-analysis
+    
+    - name: Run tests (no default features)
+      run: cargo test --verbose --no-default-features
+      working-directory: threatflux-binary-analysis
+    
+    - name: Run examples (default features)
+      if: matrix.rust == 'stable'
+      run: |
+        cargo run --example basic_analysis
+      working-directory: threatflux-binary-analysis
+    
+    - name: Run examples (with features)
+      if: matrix.rust == 'stable'
+      run: |
+        cargo run --example control_flow --features control-flow
+        cargo run --example disassembly --features disasm-capstone
+      working-directory: threatflux-binary-analysis
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: llvm-tools-preview
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    
+    - name: Generate code coverage
+      run: |
+        cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      working-directory: threatflux-binary-analysis
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: threatflux-binary-analysis/lcov.info
+        fail_ci_if_error: true
+
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    # Note: Benchmarks are currently disabled in Cargo.toml
+    # This will be ready when benchmark files are implemented
+    - name: Run benchmarks
+      run: |
+        echo "Benchmarks will be run once benchmark files are implemented"
+        # cargo bench --all-features
+      working-directory: threatflux-binary-analysis
+
+  docs:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Check documentation
+      run: cargo doc --all-features --no-deps --document-private-items
+      working-directory: threatflux-binary-analysis
+      env:
+        RUSTDOCFLAGS: "-D warnings"
+
+  feature-combinations:
+    name: Feature Combination Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@cargo-hack
+    
+    - name: Test feature combinations
+      run: |
+        cargo hack check --feature-powerset --depth 2 --no-dev-deps
+      working-directory: threatflux-binary-analysis

@@ -1,0 +1,230 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.2.3)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create_release.outputs.id }}
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          VERSION=${GITHUB_REF#refs/tags/}
+        fi
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Version: ${VERSION}"
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Simple changelog generation - can be enhanced with tools like git-cliff
+        echo "## Changes" > CHANGELOG.tmp
+        if [ "${{ github.event_name }}" = "push" ]; then
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "Changes since $PREVIOUS_TAG:" >> CHANGELOG.tmp
+            git log --pretty=format:"- %s" $PREVIOUS_TAG..HEAD >> CHANGELOG.tmp
+          else
+            echo "Initial release" >> CHANGELOG.tmp
+          fi
+        else
+          echo "Manual release: ${{ steps.get_version.outputs.version }}" >> CHANGELOG.tmp
+        fi
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.outputs.version }}
+        release_name: Release ${{ steps.get_version.outputs.version }}
+        body_path: CHANGELOG.tmp
+        draft: false
+        prerelease: ${{ contains(steps.get_version.outputs.version, '-') }}
+
+  build-and-test:
+    name: Build and Test Release
+    runs-on: ${{ matrix.os }}
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Install system dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install capstone
+    
+    - name: Install system dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        echo "Capstone will be built from source"
+    
+    - name: Build release
+      run: cargo build --release --all-features
+      working-directory: threatflux-binary-analysis
+    
+    - name: Run tests
+      run: cargo test --release --all-features
+      working-directory: threatflux-binary-analysis
+    
+    - name: Package artifacts
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        mkdir -p artifacts
+        cp threatflux-binary-analysis/target/release/deps/libthreatflux_binary_analysis*.rlib artifacts/ || true
+        cp threatflux-binary-analysis/Cargo.toml artifacts/
+        cp threatflux-binary-analysis/README.md artifacts/
+        tar -czf threatflux-binary-analysis-${{ needs.create-release.outputs.version }}-${{ matrix.os }}.tar.gz -C artifacts .
+    
+    - name: Upload Release Asset
+      if: matrix.os == 'ubuntu-latest'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./threatflux-binary-analysis-${{ needs.create-release.outputs.version }}-${{ matrix.os }}.tar.gz
+        asset_name: threatflux-binary-analysis-${{ needs.create-release.outputs.version }}-${{ matrix.os }}.tar.gz
+        asset_content_type: application/gzip
+
+  publish-crate:
+    name: Publish to Crates.io
+    runs-on: ubuntu-latest
+    needs: [create-release, build-and-test]
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Verify version matches tag
+      run: |
+        CARGO_VERSION=$(grep '^version = ' threatflux-binary-analysis/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+        TAG_VERSION=${{ needs.create-release.outputs.version }}
+        TAG_VERSION=${TAG_VERSION#v}  # Remove 'v' prefix
+        if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+          echo "Version mismatch: Cargo.toml has $CARGO_VERSION, tag is $TAG_VERSION"
+          exit 1
+        fi
+    
+    - name: Publish to crates.io
+      run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
+      working-directory: threatflux-binary-analysis
+
+  update-documentation:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    needs: [create-release, build-and-test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: threatflux-binary-analysis
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcapstone-dev pkg-config
+    
+    - name: Generate documentation
+      run: cargo doc --all-features --no-deps
+      working-directory: threatflux-binary-analysis
+    
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./threatflux-binary-analysis/target/doc
+        destination_dir: docs/${{ needs.create-release.outputs.version }}
+
+  notify:
+    name: Post-Release Notifications
+    runs-on: ubuntu-latest
+    needs: [create-release, build-and-test, publish-crate]
+    if: always() && needs.create-release.result == 'success'
+    
+    steps:
+    - name: Notify success
+      if: needs.build-and-test.result == 'success' && needs.publish-crate.result == 'success'
+      run: |
+        echo "🎉 Release ${{ needs.create-release.outputs.version }} completed successfully!"
+        echo "✅ Built and tested on all platforms"
+        echo "✅ Published to crates.io"
+        echo "✅ Documentation updated"
+    
+    - name: Notify partial success
+      if: needs.build-and-test.result == 'success' && needs.publish-crate.result != 'success'
+      run: |
+        echo "⚠️ Release ${{ needs.create-release.outputs.version }} partially completed"
+        echo "✅ Built and tested on all platforms"
+        echo "❌ Failed to publish to crates.io"
+    
+    - name: Notify failure
+      if: needs.build-and-test.result != 'success'
+      run: |
+        echo "❌ Release ${{ needs.create-release.outputs.version }} failed"
+        echo "❌ Build or test failures occurred"

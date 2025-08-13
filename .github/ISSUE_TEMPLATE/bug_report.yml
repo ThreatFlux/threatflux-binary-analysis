@@ -1,0 +1,138 @@
+name: 🐛 Bug Report
+description: File a bug report to help us improve
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+assignees:
+  - threatflux-team
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please provide as much detail as possible.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of threatflux-binary-analysis are you using?
+      placeholder: e.g., 0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: binary-format
+    attributes:
+      label: Binary Format
+      description: Which binary format were you analyzing when the bug occurred?
+      options:
+        - ELF (Linux/Unix)
+        - PE (Windows)
+        - Mach-O (macOS)
+        - Raw/Unknown
+        - WebAssembly
+        - Java/Archive
+        - Not applicable
+    validations:
+      required: false
+
+  - type: dropdown
+    id: feature
+    attributes:
+      label: Feature Category
+      description: Which feature area does this bug affect?
+      options:
+        - Binary Parsing
+        - Disassembly (Capstone)
+        - Disassembly (iced-x86)
+        - Control Flow Analysis
+        - Security Analysis
+        - Symbol Resolution
+        - Entropy Analysis
+        - General API
+        - Documentation
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: Tell us what happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Create a binary with...
+        2. Call analyzer.analyze()...
+        3. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Your development environment
+      render: yaml
+      placeholder: |
+        OS: [e.g. Ubuntu 22.04, Windows 11, macOS 13]
+        Rust version: [e.g. 1.75.0]
+        Features enabled: [e.g. disasm-capstone, control-flow]
+        Target architecture: [e.g. x86_64, aarch64]
+    validations:
+      required: true
+
+  - type: textarea
+    id: binary-info
+    attributes:
+      label: Binary Information (if applicable)
+      description: Information about the binary file that caused the issue
+      render: yaml
+      placeholder: |
+        File size: [e.g. 1.2MB]
+        Architecture: [e.g. x86_64, ARM64]
+        Compiler/toolchain: [e.g. GCC 11.2, Clang 14, MSVC 19]
+        Stripped: [yes/no]
+        Packed: [yes/no if known]
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Output/Logs
+      description: If applicable, add any error messages or logs
+      render: text
+      placeholder: Paste error messages, stack traces, or relevant log output here
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true
