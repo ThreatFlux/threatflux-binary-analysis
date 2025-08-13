@@ -2,7 +2,8 @@
 name = "threatflux-binary-analysis"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75.0"authors = ["ThreatFlux Team"]
+rust-version = "1.75.0"
+authors = ["ThreatFlux Team"]
 description = "Comprehensive binary analysis library with multi-format support, disassembly, and security analysis"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ThreatFlux/threatflux-binary-analysis"
