@@ -1,0 +1,106 @@
+[package]
+name = "threatflux-binary-analysis"
+version = "0.1.0"
+edition = "2021"
+authors = ["ThreatFlux Team"]
+description = "Comprehensive binary analysis library with multi-format support, disassembly, and security analysis"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ThreatFlux/threatflux-binary-analysis"
+keywords = ["binary", "analysis", "disassembly", "security", "reverse-engineering"]
+categories = ["parsing", "development-tools", "cryptography"]
+readme = "README.md"
+
+[features]
+default = ["elf", "pe", "macho"]
+# Binary format support
+elf = ["goblin/elf32", "goblin/elf64"]
+pe = ["goblin/pe32", "goblin/pe64"]
+macho = ["goblin/mach32", "goblin/mach64"]
+java = ["goblin/archive"]
+wasm = ["wasmparser"]
+# Disassembly engines
+disasm-capstone = ["capstone"]
+disasm-iced = ["iced-x86"]
+# Analysis features
+control-flow = ["petgraph"]
+entropy-analysis = ["statrs"]
+symbol-resolution = ["gimli", "addr2line"]
+# Optional features
+compression = ["flate2"]
+visualization = ["dot-generator"]
+serde-support = ["serde", "serde_json"]
+
+[dependencies]
+# Core dependencies
+anyhow = "1.0"
+thiserror = "1.0"
+log = "0.4"
+
+# Binary parsing
+goblin = { version = "0.8", default-features = false }
+memmap2 = "0.9"
+
+# Disassembly engines (optional)
+capstone = { version = "0.13", optional = true }
+iced-x86 = { version = "1.21", optional = true }
+
+# WASM support (optional)
+wasmparser = { version = "0.217", optional = true }
+
+# Control flow analysis (optional)
+petgraph = { version = "0.6", optional = true }
+
+# Statistical analysis (optional)  
+statrs = { version = "0.17", optional = true }
+
+# Symbol resolution (optional)
+gimli = { version = "0.31", optional = true }
+addr2line = { version = "0.24", optional = true }
+
+# Utilities (optional)
+flate2 = { version = "1.0", optional = true }
+dot-generator = { version = "0.2", optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+
+[dev-dependencies]
+tempfile = "3.0"
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.0"
+# Testing utilities
+rstest = "0.26"
+pretty_assertions = "1.4"
+test-case = "3.3"
+serial_test = "3.0"
+once_cell = "1.19"
+env_logger = "0.11"
+# For async testing
+tokio-test = "0.4"
+# Performance and stress testing
+rand = "0.8"
+
+[[example]]
+name = "basic_analysis"
+path = "examples/basic_analysis.rs"
+
+[[example]]
+name = "control_flow"
+path = "examples/control_flow.rs"
+required-features = ["control-flow"]
+
+[[example]]
+name = "disassembly"
+path = "examples/disassembly.rs"
+required-features = ["disasm-capstone"]
+
+# Benchmarks currently disabled - files not implemented yet
+# [[bench]]
+# name = "parsing_benchmark"
+# path = "benches/parsing_benchmark.rs"
+# harness = false
+#
+# [[bench]]
+# name = "disasm_benchmark"
+# path = "benches/disasm_benchmark.rs"
+# harness = false
+# required-features = ["disasm-capstone"]
