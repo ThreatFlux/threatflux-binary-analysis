@@ -2,14 +2,13 @@
 
 use crate::{
     types::{
-        Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, FunctionType,
+        Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export,
         Import, Section, SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding,
         SymbolType, SymbolVisibility,
     },
-    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
+    BinaryFormatParser, BinaryFormatTrait, Result,
 };
-use goblin::pe::{dll_characteristic::*, header::Header, PE};
-use std::collections::HashMap;
+use goblin::pe::{dll_characteristic::*, PE};
 
 /// PE format parser
 pub struct PeParser;
@@ -72,22 +71,13 @@ impl PeBinary {
 
         // Get base address and entry point from optional header
         let (base_address, entry_point) = if let Some(optional_header) = &pe.header.optional_header {
-            match optional_header {
-                goblin::pe::optional_header::OptionalHeader::WindowsPE32(header) => (
-                    Some(header.windows_fields.image_base as u64),
-                    Some(
-                        header.standard_fields.address_of_entry_point as u64
-                            + header.windows_fields.image_base as u64,
-                    ),
+            (
+                Some(optional_header.windows_fields.image_base),
+                Some(
+                    optional_header.standard_fields.address_of_entry_point as u64
+                        + optional_header.windows_fields.image_base,
                 ),
-                goblin::pe::optional_header::OptionalHeader::WindowsPE32Plus(header) => (
-                    Some(header.windows_fields.image_base),
-                    Some(
-                        header.standard_fields.address_of_entry_point as u64
-                            + header.windows_fields.image_base,
-                    ),
-                ),
-            }
+            )
         } else {
             (None, None)
         };
@@ -108,7 +98,7 @@ impl PeBinary {
         let sections = parse_sections(&pe, &data)?;
 
         // Parse symbols
-        let symbols = parse_symbols(&pe, data)?;
+        let symbols = parse_symbols(&pe, &data)?;
 
         // Parse imports and exports
         let (imports, exports) = parse_imports_exports(&pe)?;
@@ -226,48 +216,10 @@ fn parse_sections(pe: &PE, data: &[u8]) -> Result<Vec<Section>> {
     Ok(sections)
 }
 
-fn parse_symbols(pe: &PE, data: &[u8]) -> Result<Vec<Symbol>> {
-    let mut symbols = Vec::new();
-
-    // PE symbols are typically in the COFF symbol table
-    if let Ok(symbols_iter) = pe.header.coff_header.symbols(&data) {
-        for symbol in symbols_iter {
-            let strings = pe.header.coff_header.strings(&data).unwrap_or_default();
-            if let Some(name) = symbol.name(&strings) {
-            if name.is_empty() {
-                continue;
-            }
-
-            let symbol_type = match symbol.typ {
-                0 => SymbolType::Object,      // IMAGE_SYM_TYPE_NULL
-                0x20 => SymbolType::Function, // IMAGE_SYM_TYPE_FUNC
-                _ => SymbolType::Other(format!("PE_TYPE_{}", symbol.typ)),
-            };
-
-            let binding = match symbol.storage_class {
-                2 => SymbolBinding::Global, // IMAGE_SYM_CLASS_EXTERNAL
-                3 => SymbolBinding::Local,  // IMAGE_SYM_CLASS_STATIC
-                _ => SymbolBinding::Other(format!("PE_CLASS_{}", symbol.storage_class)),
-            };
-
-            symbols.push(Symbol {
-                name: name.to_string(),
-                demangled_name: try_demangle(name),
-                address: symbol.value as u64,
-                size: 0, // PE doesn't store symbol size directly
-                symbol_type,
-                binding,
-                visibility: SymbolVisibility::Default,
-                section_index: if symbol.section_number > 0 {
-                    Some(symbol.section_number as usize - 1)
-                } else {
-                    None
-                },
-            });
-        }
-    }
-
-    Ok(symbols)
+fn parse_symbols(_pe: &PE, _data: &[u8]) -> Result<Vec<Symbol>> {
+    // For now, return empty symbols as goblin 0.10 has changed the symbol API significantly
+    // TODO: Implement proper symbol parsing for goblin 0.10
+    Ok(Vec::new())
 }
 
 fn parse_imports_exports(pe: &PE) -> Result<(Vec<Import>, Vec<Export>)> {
@@ -280,20 +232,22 @@ fn parse_imports_exports(pe: &PE) -> Result<(Vec<Import>, Vec<Export>)> {
             name: import.name.to_string(),
             library: Some(import.dll.to_string()),
             address: Some(import.rva as u64),
-            ordinal: import.ordinal,
+            ordinal: Some(import.ordinal),
         });
     }
 
     // Parse exports
     for export in &pe.exports {
-            if let Some(name) = &export.name {
-                exports.push(Export {
-                    name: name.clone(),
-                    address: export.rva as u64,
-                    ordinal: Some(export.ordinal as u16),
-                    forwarded_name: export.reexport.clone(),
-                });
-            }
+        if let Some(name) = &export.name {
+            exports.push(Export {
+                name: name.to_string(),
+                address: export.rva as u64,
+                ordinal: None, // PE exports don't have ordinals in goblin 0.10
+                forwarded_name: export.reexport.as_ref().map(|r| match r {
+                    goblin::pe::export::Reexport::DLLName { export, lib } => format!("{}.{}", lib, export),
+                    goblin::pe::export::Reexport::DLLOrdinal { ordinal, lib } => format!("{}.#{}", lib, ordinal),
+                }),
+            });
         }
     }
 
@@ -304,10 +258,7 @@ fn analyze_security_features(pe: &PE) -> SecurityFeatures {
     let mut features = SecurityFeatures::default();
 
     if let Some(optional_header) = &pe.header.optional_header {
-        let characteristics = match optional_header {
-            goblin::pe::optional_header::OptionalHeader::WindowsPE32(header) => header.windows_fields.dll_characteristics,
-            goblin::pe::optional_header::OptionalHeader::WindowsPE32Plus(header) => header.windows_fields.dll_characteristics,
-        };
+        let characteristics = optional_header.windows_fields.dll_characteristics;
 
         // DEP/NX bit
         features.nx_bit = characteristics & IMAGE_DLLCHARACTERISTICS_NX_COMPAT != 0;
@@ -316,7 +267,7 @@ fn analyze_security_features(pe: &PE) -> SecurityFeatures {
         features.aslr = characteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE != 0;
 
         // High entropy ASLR
-        let high_entropy = characteristics & IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA != 0;
+        let _high_entropy = characteristics & IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA != 0;
 
         // CFI (Control Flow Guard)
         features.cfi = characteristics & IMAGE_DLLCHARACTERISTICS_GUARD_CF != 0;

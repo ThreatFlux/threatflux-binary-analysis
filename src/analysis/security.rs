@@ -195,7 +195,7 @@ impl SecurityAnalyzer {
         for import in imports {
             let api_name = &import.name;
 
-            if suspicious_apis.contains(api_name) {
+            if suspicious_apis.contains(api_name.as_str()) {
                 indicators.suspicious_apis.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::SuspiciousApi,
@@ -206,7 +206,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if anti_debug_apis.contains(api_name) {
+            if anti_debug_apis.contains(api_name.as_str()) {
                 indicators.anti_debug.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::AntiDebug,
@@ -217,7 +217,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if anti_vm_apis.contains(api_name) {
+            if anti_vm_apis.contains(api_name.as_str()) {
                 indicators.anti_vm.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::AntiVm,
@@ -228,7 +228,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if crypto_apis.contains(api_name) {
+            if crypto_apis.contains(api_name.as_str()) {
                 indicators.crypto_indicators.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::Cryptographic,
@@ -239,7 +239,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if network_apis.contains(api_name) {
+            if network_apis.contains(api_name.as_str()) {
                 indicators.network_indicators.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::Network,
@@ -250,7 +250,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if filesystem_apis.contains(api_name) {
+            if filesystem_apis.contains(api_name.as_str()) {
                 indicators.filesystem_indicators.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::Filesystem,
@@ -261,7 +261,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if registry_apis.contains(api_name) {
+            if registry_apis.contains(api_name.as_str()) {
                 indicators.registry_indicators.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::Registry,
