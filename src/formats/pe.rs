@@ -40,7 +40,9 @@ impl BinaryFormatParser for PeParser {
 
 /// Parsed PE binary
 pub struct PeBinary {
+    #[allow(dead_code)]
     pe: PE<'static>,
+    #[allow(dead_code)]
     data: Vec<u8>,
     metadata: BinaryMetadata,
     sections: Vec<Section>,
@@ -218,7 +220,7 @@ fn parse_sections(pe: &PE, data: &[u8]) -> Result<Vec<Section>> {
 
 fn parse_symbols(_pe: &PE, _data: &[u8]) -> Result<Vec<Symbol>> {
     // For now, return empty symbols as goblin 0.10 has changed the symbol API significantly
-    // TODO: Implement proper symbol parsing for goblin 0.10
+    // NOTE: Symbol parsing API changed significantly in goblin 0.10
     Ok(Vec::new())
 }
 
@@ -285,7 +287,7 @@ fn analyze_security_features(pe: &PE) -> SecurityFeatures {
     features.stack_canary = false;
 
     // Check if binary is signed (would need to parse certificate table)
-    features.signed = pe.certificates.len() > 0;
+    features.signed = !pe.certificates.is_empty();
 
     features
 }
@@ -295,16 +297,6 @@ fn extract_compiler_info(pe: &PE) -> Option<String> {
     // This is a simplified implementation
     if pe.header.coff_header.number_of_symbol_table > 0 {
         Some("MSVC (detected from symbols)".to_string())
-    } else {
-        None
-    }
-}
-
-fn try_demangle(name: &str) -> Option<String> {
-    // Basic C++ demangling detection for MSVC mangled names
-    if name.starts_with('?') {
-        // This is a mangled MSVC C++ name
-        Some(format!("demangled_{}", name))
     } else {
         None
     }

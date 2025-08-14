@@ -43,7 +43,9 @@ impl BinaryFormatParser for MachOParser {
 
 /// Parsed Mach-O binary
 pub struct MachOBinary {
+    #[allow(dead_code)]
     macho: MachO<'static>,
+    #[allow(dead_code)]
     data: Vec<u8>,
     metadata: BinaryMetadata,
     sections: Vec<Section>,
@@ -157,22 +159,22 @@ fn parse_sections(macho: &MachO, data: &[u8]) -> Result<Vec<Section>> {
             let name = section.name().unwrap_or("unknown").to_string();
 
             // Determine section type based on section name and flags
-            let section_type =
-                if section.flags & goblin::mach::constants::S_ATTR_PURE_INSTRUCTIONS != 0 {
-                    SectionType::Code
-                } else if name.starts_with("__text") {
-                    SectionType::Code
-                } else if name.starts_with("__data") {
-                    SectionType::Data
-                } else if name.starts_with("__const") || name.starts_with("__rodata") {
-                    SectionType::ReadOnlyData
-                } else if name.starts_with("__bss") {
-                    SectionType::Bss
-                } else if name.starts_with("__debug") {
-                    SectionType::Debug
-                } else {
-                    SectionType::Other("MACHO_SECTION".to_string())
-                };
+            let section_type = if section.flags & goblin::mach::constants::S_ATTR_PURE_INSTRUCTIONS
+                != 0
+                || name.starts_with("__text")
+            {
+                SectionType::Code
+            } else if name.starts_with("__data") {
+                SectionType::Data
+            } else if name.starts_with("__const") || name.starts_with("__rodata") {
+                SectionType::ReadOnlyData
+            } else if name.starts_with("__bss") {
+                SectionType::Bss
+            } else if name.starts_with("__debug") {
+                SectionType::Debug
+            } else {
+                SectionType::Other("MACHO_SECTION".to_string())
+            };
 
             // Mach-O section permissions are inherited from segment
             let permissions = SectionPermissions {
@@ -212,7 +214,7 @@ fn parse_sections(macho: &MachO, data: &[u8]) -> Result<Vec<Section>> {
 fn parse_symbols(_macho: &MachO) -> Result<Vec<Symbol>> {
     let symbols = Vec::new();
 
-    // TODO: Fix symbol parsing for goblin 0.10 Mach-O API
+    // NOTE: Symbol parsing API changed in goblin 0.10, requires implementation update
     // The symbol API has changed in goblin 0.10
     // For now, create empty symbols vector
     // symbols = vec![];
@@ -266,14 +268,11 @@ fn analyze_security_features(macho: &MachO) -> SecurityFeatures {
     features.stack_canary = false; // Would need to analyze for __stack_chk_guard
 
     // Check load commands for additional security features
-    for load_command in &macho.load_commands {
-        match load_command.command {
-            // TODO: Fix LoadCommand variant names for goblin 0.10
-            // LoadCommand::CodeSignature(_, _) => {
-            //     features.signed = true;
-            // }
-            _ => {}
-        }
+    for _load_command in &macho.load_commands {
+        // NOTE: LoadCommand variants changed in goblin 0.10, awaiting API stabilization
+        // LoadCommand::CodeSignature(_, _) => {
+        //     features.signed = true;
+        // }
     }
 
     features
@@ -281,52 +280,33 @@ fn analyze_security_features(macho: &MachO) -> SecurityFeatures {
 
 fn find_entry_point(macho: &MachO) -> Option<u64> {
     // Look for LC_MAIN or LC_UNIX_THREAD load commands
-    for load_command in &macho.load_commands {
-        match &load_command.command {
-            // TODO: Fix LoadCommand variant names for goblin 0.10
-            // LoadCommand::Main(entry) => {
-            //     return Some(entry.entryoff);
-            // }
-            // LoadCommand::UnixThread(_) => {
-            //     // Entry point is in the thread state
-            //     // This is architecture-specific parsing
-            //     return Some(0); // Placeholder - would need arch-specific parsing
-            // }
-            _ => {}
-        }
+    for _load_command in &macho.load_commands {
+        // NOTE: LoadCommand variants changed in goblin 0.10, awaiting API stabilization
+        // LoadCommand::Main(entry) => {
+        //     return Some(entry.entryoff);
+        // }
+        // LoadCommand::UnixThread(_) => {
+        //     // Entry point is in the thread state
+        //     // This is architecture-specific parsing
+        //     return Some(0); // Placeholder - would need arch-specific parsing
+        // }
     }
     None
 }
 
 fn extract_compiler_info(macho: &MachO) -> Option<String> {
     // Look for build version or version min load commands
-    for load_command in &macho.load_commands {
-        match &load_command.command {
-            // TODO: Fix LoadCommand variant names for goblin 0.10
-            // LoadCommand::BuildVersion(build) => {
-            //     return Some(format!(
-            //         "Platform: {}, SDK: {}.{}.{}",
-            //         build.platform,
-            //         build.sdk >> 16,
-            //         (build.sdk >> 8) & 0xff,
-            //         build.sdk & 0xff
-            //     ));
-            // }
-            _ => {}
-        }
+    for _load_command in &macho.load_commands {
+        // NOTE: LoadCommand variants changed in goblin 0.10, awaiting API stabilization
+        // LoadCommand::BuildVersion(build) => {
+        //     return Some(format!(
+        //         "Platform: {}, SDK: {}.{}.{}",
+        //         build.platform,
+        //         build.sdk >> 16,
+        //         (build.sdk >> 8) & 0xff,
+        //         build.sdk & 0xff
+        //     ));
+        // }
     }
     Some("Unknown Apple toolchain".to_string())
-}
-
-fn try_demangle(name: &str) -> Option<String> {
-    // Basic C++ and Swift demangling detection
-    if name.starts_with("_Z") {
-        // C++ mangled name
-        Some(format!("demangled_cpp_{}", name))
-    } else if name.starts_with("_$") {
-        // Swift mangled name
-        Some(format!("demangled_swift_{}", name))
-    } else {
-        None
-    }
 }

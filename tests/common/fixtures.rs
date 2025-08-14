@@ -1,6 +1,5 @@
 //! Test fixtures for binary analysis tests
 
-use std::collections::HashMap;
 use threatflux_binary_analysis::types::*;
 
 /// Complete ELF binary fixture with realistic headers and sections

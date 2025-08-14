@@ -1,6 +1,5 @@
 //! Tests for the main BinaryAnalyzer functionality
 
-use std::path::Path;
 use threatflux_binary_analysis::types::*;
 use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer, BinaryFile};
 

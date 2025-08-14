@@ -2,7 +2,7 @@
 
 use super::{analyze_control_flow, categorize_instruction, DisassemblyConfig};
 use crate::{
-    types::{Architecture, ControlFlow as FlowType, Instruction, InstructionCategory},
+    types::{Architecture, ControlFlow as FlowType, Instruction},
     BinaryError, Result,
 };
 use capstone::prelude::*;
@@ -51,7 +51,7 @@ pub fn disassemble(
             operands,
             category,
             flow,
-            size: instr.len() as usize,
+            size: instr.len(),
         };
 
         result.push(instruction);
@@ -84,6 +84,7 @@ fn create_capstone_engine(architecture: Architecture) -> Result<Capstone> {
 }
 
 /// Enhanced instruction analysis using Capstone details
+#[allow(dead_code)]
 pub fn analyze_instruction_details(
     cs: &Capstone,
     instr: &capstone::Insn,
@@ -93,12 +94,12 @@ pub fn analyze_instruction_details(
     })?;
 
     let mut operands = Vec::new();
-    let mut memory_accesses = Vec::new();
+    let memory_accesses = Vec::new();
     let mut registers_read = Vec::new();
     let mut registers_written = Vec::new();
 
     // Extract operand information
-    // TODO: Implement proper operand extraction for capstone 0.13
+    // NOTE: Operand extraction needs implementation for capstone 0.13 API changes
     operands.push("operands_analysis_needed".to_string());
 
     // Extract register information
@@ -115,12 +116,13 @@ pub fn analyze_instruction_details(
         memory_accesses,
         registers_read,
         registers_written,
-        groups: detail.groups().iter().map(|g| g.0 as u8).collect(),
+        groups: detail.groups().iter().map(|g| g.0).collect(),
     })
 }
 
 /// Detailed instruction information
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct InstructionDetails {
     /// Operand descriptions
     pub operands: Vec<String>,

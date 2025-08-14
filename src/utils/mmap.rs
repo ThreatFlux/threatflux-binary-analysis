@@ -287,7 +287,7 @@ fn format_hexdump(data: &[u8], base_offset: usize) -> String {
 }
 
 /// Memory mapping configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MmapConfig {
     /// Whether to use huge pages if available
     pub use_huge_pages: bool,
@@ -295,16 +295,6 @@ pub struct MmapConfig {
     pub populate: bool,
     /// Whether to lock the mapping in memory
     pub lock_memory: bool,
-}
-
-impl Default for MmapConfig {
-    fn default() -> Self {
-        Self {
-            use_huge_pages: false,
-            populate: false,
-            lock_memory: false,
-        }
-    }
 }
 
 /// Advanced memory mapping with configuration

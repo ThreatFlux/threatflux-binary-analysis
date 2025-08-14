@@ -7,7 +7,6 @@ use std::env;
 use std::fs;
 use threatflux_binary_analysis::{
     analysis::control_flow::{AnalysisConfig, ControlFlowAnalyzer},
-    types::Architecture,
     BinaryFile,
 };
 

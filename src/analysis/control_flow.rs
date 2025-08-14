@@ -9,16 +9,18 @@ use crate::{
         Architecture, BasicBlock, ComplexityMetrics, ControlFlow as FlowType, ControlFlowGraph,
         Function, Instruction, InstructionCategory,
     },
-    BinaryError, BinaryFile, Result,
+    BinaryFile, Result,
 };
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 
-#[cfg(feature = "control-flow")]
-use petgraph::{Directed, Graph};
+// Note: petgraph integration planned for future advanced CFG analysis
+// #[cfg(feature = "control-flow")]
+// use petgraph::{Directed, Graph};
 
 /// Control flow analyzer
 pub struct ControlFlowAnalyzer {
     /// Architecture being analyzed
+    #[allow(dead_code)]
     architecture: Architecture,
     /// Analysis configuration
     config: AnalysisConfig,
@@ -301,7 +303,7 @@ impl ControlFlowAnalyzer {
                             basic_blocks[i + 1].predecessors.push(i);
                         }
                     }
-                    FlowType::Call(target) => {
+                    FlowType::Call(_target) => {
                         // Function call - continues to next instruction
                         if i + 1 < basic_blocks.len() {
                             basic_blocks[i].successors.push(i + 1);
@@ -372,7 +374,7 @@ impl ControlFlowAnalyzer {
         // Use DFS to detect back edges (indicating loops)
         for i in 0..basic_blocks.len() {
             if !visited[i] {
-                loop_count += self.dfs_detect_loops(i, basic_blocks, &mut visited, &mut in_stack);
+                loop_count += Self::dfs_detect_loops(i, basic_blocks, &mut visited, &mut in_stack);
             }
         }
 
@@ -381,7 +383,6 @@ impl ControlFlowAnalyzer {
 
     /// DFS helper for loop detection
     fn dfs_detect_loops(
-        &self,
         node: usize,
         basic_blocks: &[BasicBlock],
         visited: &mut [bool],
@@ -393,7 +394,7 @@ impl ControlFlowAnalyzer {
 
         for &successor in &basic_blocks[node].successors {
             if !visited[successor] {
-                loops += self.dfs_detect_loops(successor, basic_blocks, visited, in_stack);
+                loops += Self::dfs_detect_loops(successor, basic_blocks, visited, in_stack);
             } else if in_stack[successor] {
                 // Back edge found - indicates a loop
                 loops += 1;

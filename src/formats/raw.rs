@@ -23,6 +23,7 @@ impl BinaryFormatParser for RawParser {
 
 /// Raw binary representation
 pub struct RawBinary {
+    #[allow(dead_code)]
     data: Vec<u8>,
     metadata: BinaryMetadata,
     sections: Vec<Section>,

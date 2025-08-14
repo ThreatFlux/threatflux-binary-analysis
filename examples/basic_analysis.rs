@@ -5,10 +5,7 @@
 
 use std::env;
 use std::fs;
-use threatflux_binary_analysis::{
-    types::{Architecture, BinaryFormat},
-    AnalysisConfig, BinaryAnalyzer, BinaryFile,
-};
+use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer, BinaryFile};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get binary file path from command line arguments

@@ -7,7 +7,6 @@ use crate::{
     types::{Architecture, ControlFlow as FlowType, Instruction, InstructionCategory},
     AnalysisConfig, BinaryError, BinaryFile, Result,
 };
-use std::collections::HashMap;
 
 #[cfg(feature = "disasm-capstone")]
 mod capstone_engine;
@@ -235,24 +234,6 @@ pub fn disassemble_binary(
     Ok(all_instructions)
 }
 
-/// Convert architecture to disassembly mode information
-fn arch_to_mode_info(arch: Architecture) -> Result<(u32, u32)> {
-    match arch {
-        Architecture::X86 => Ok((32, 32)),       // 32-bit mode
-        Architecture::X86_64 => Ok((64, 64)),    // 64-bit mode
-        Architecture::Arm => Ok((32, 32)),       // ARM 32-bit
-        Architecture::Arm64 => Ok((64, 64)),     // ARM 64-bit
-        Architecture::Mips => Ok((32, 32)),      // MIPS 32-bit
-        Architecture::Mips64 => Ok((64, 64)),    // MIPS 64-bit
-        Architecture::PowerPC => Ok((32, 32)),   // PowerPC 32-bit
-        Architecture::PowerPC64 => Ok((64, 64)), // PowerPC 64-bit
-        _ => Err(BinaryError::unsupported_arch(format!(
-            "Unsupported architecture: {:?}",
-            arch
-        ))),
-    }
-}
-
 /// Determine instruction category from mnemonic
 fn categorize_instruction(mnemonic: &str) -> InstructionCategory {
     let mnemonic_lower = mnemonic.to_lowercase();
@@ -359,8 +340,8 @@ fn extract_address_from_operands(operands: &str) -> Option<u64> {
     // Real implementation would need proper operand parsing
 
     // Look for hex addresses
-    if operands.starts_with("0x") {
-        if let Ok(addr) = u64::from_str_radix(&operands[2..], 16) {
+    if let Some(hex_part) = operands.strip_prefix("0x") {
+        if let Ok(addr) = u64::from_str_radix(hex_part, 16) {
             return Some(addr);
         }
     }
@@ -434,13 +415,5 @@ mod tests {
         assert_eq!(extract_address_from_operands("0x1000"), Some(0x1000));
         assert_eq!(extract_address_from_operands("4096"), Some(4096));
         assert_eq!(extract_address_from_operands("eax"), None);
-    }
-
-    #[test]
-    fn test_arch_mode_conversion() {
-        assert_eq!(arch_to_mode_info(Architecture::X86).unwrap(), (32, 32));
-        assert_eq!(arch_to_mode_info(Architecture::X86_64).unwrap(), (64, 64));
-        assert_eq!(arch_to_mode_info(Architecture::Arm).unwrap(), (32, 32));
-        assert_eq!(arch_to_mode_info(Architecture::Arm64).unwrap(), (64, 64));
     }
 }

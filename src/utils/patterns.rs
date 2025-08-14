@@ -134,6 +134,12 @@ pub struct SearchResults {
     pub duration_ms: u64,
 }
 
+impl Default for PatternMatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PatternMatcher {
     /// Create a new pattern matcher
     pub fn new() -> Self {
@@ -181,7 +187,7 @@ impl PatternMatcher {
             for pattern_match in pattern_matches {
                 by_category
                     .entry(pattern_match.pattern.category.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(pattern_match.clone());
 
                 matches.push(pattern_match);

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// Supported binary formats
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
 pub enum BinaryFormat {
     /// Executable and Linkable Format (Linux/Unix)
@@ -22,6 +22,7 @@ pub enum BinaryFormat {
     /// Raw binary data
     Raw,
     /// Unknown format
+    #[default]
     Unknown,
 }
 
@@ -40,7 +41,7 @@ impl std::fmt::Display for BinaryFormat {
 }
 
 /// Supported architectures
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
 pub enum Architecture {
     /// x86 32-bit
@@ -68,6 +69,7 @@ pub enum Architecture {
     /// Java Virtual Machine
     Jvm,
     /// Unknown architecture
+    #[default]
     Unknown,
 }
 
@@ -477,20 +479,15 @@ pub struct PackingIndicators {
 }
 
 /// Obfuscation level
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
 pub enum ObfuscationLevel {
+    #[default]
     None,
     Low,
     Medium,
     High,
     Extreme,
-}
-
-impl Default for ObfuscationLevel {
-    fn default() -> Self {
-        ObfuscationLevel::None
-    }
 }
 
 /// Security indicators
@@ -541,18 +538,6 @@ pub struct AnalysisResult {
     pub entropy: Option<EntropyAnalysis>,
     /// Security indicators (optional)
     pub security: Option<SecurityIndicators>,
-}
-
-impl Default for BinaryFormat {
-    fn default() -> Self {
-        BinaryFormat::Unknown
-    }
-}
-
-impl Default for Architecture {
-    fn default() -> Self {
-        Architecture::Unknown
-    }
 }
 
 impl Default for BinaryMetadata {

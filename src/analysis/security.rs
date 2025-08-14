@@ -12,6 +12,7 @@ use std::collections::HashSet;
 /// Security analyzer for binary files
 pub struct SecurityAnalyzer {
     /// Architecture being analyzed
+    #[allow(dead_code)]
     architecture: Architecture,
     /// Analysis configuration
     config: SecurityConfig,

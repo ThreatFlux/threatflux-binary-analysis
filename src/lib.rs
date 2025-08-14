@@ -108,6 +108,7 @@ impl BinaryAnalyzer {
 
     /// Analyze a parsed binary file
     pub fn analyze_binary(&self, binary: &BinaryFile) -> Result<AnalysisResult> {
+        #[allow(unused_mut)] // mut needed when optional analysis features are enabled
         let mut result = AnalysisResult {
             format: binary.format(),
             architecture: binary.architecture(),

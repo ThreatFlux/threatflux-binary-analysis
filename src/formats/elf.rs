@@ -26,7 +26,9 @@ impl BinaryFormatParser for ElfParser {
 
 /// Parsed ELF binary
 pub struct ElfBinary {
+    #[allow(dead_code)]
     elf: Elf<'static>,
+    #[allow(dead_code)]
     data: Vec<u8>,
     metadata: BinaryMetadata,
     sections: Vec<Section>,
@@ -148,13 +150,11 @@ fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
 
         let section_type = match section_header.sh_type {
             goblin::elf::section_header::SHT_PROGBITS => {
-                if (section_header.sh_flags as u64)
-                    & (goblin::elf::section_header::SHF_EXECINSTR as u64)
+                if section_header.sh_flags & (goblin::elf::section_header::SHF_EXECINSTR as u64)
                     != 0
                 {
                     SectionType::Code
-                } else if (section_header.sh_flags as u64)
-                    & (goblin::elf::section_header::SHF_WRITE as u64)
+                } else if section_header.sh_flags & (goblin::elf::section_header::SHF_WRITE as u64)
                     != 0
                 {
                     SectionType::Data
@@ -175,11 +175,8 @@ fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
 
         let permissions = SectionPermissions {
             read: true, // ELF sections are generally readable
-            write: (section_header.sh_flags as u64)
-                & (goblin::elf::section_header::SHF_WRITE as u64)
-                != 0,
-            execute: (section_header.sh_flags as u64)
-                & (goblin::elf::section_header::SHF_EXECINSTR as u64)
+            write: section_header.sh_flags & (goblin::elf::section_header::SHF_WRITE as u64) != 0,
+            execute: section_header.sh_flags & (goblin::elf::section_header::SHF_EXECINSTR as u64)
                 != 0,
         };
 

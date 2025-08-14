@@ -2,12 +2,13 @@
 
 use crate::{
     types::{EntropyAnalysis, EntropyRegion, ObfuscationLevel, PackingIndicators},
-    BinaryError, BinaryFile, Result,
+    BinaryFile, Result,
 };
 use std::collections::HashMap;
 
-#[cfg(feature = "entropy-analysis")]
-use statrs::statistics::Statistics;
+// Note: Advanced statistical analysis planned for future entropy features
+// #[cfg(feature = "entropy-analysis")]
+// use statrs::statistics::Statistics;
 
 /// Analyze entropy of a binary file
 pub fn analyze_binary(binary: &BinaryFile) -> Result<EntropyAnalysis> {

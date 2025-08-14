@@ -1,6 +1,5 @@
 //! Integration tests for the entire binary analysis pipeline
 
-use std::collections::HashMap;
 use std::io::Write;
 use tempfile::NamedTempFile;
 use threatflux_binary_analysis::types::*;
@@ -471,7 +470,7 @@ fn test_malformed_binaries() {
         // Should either succeed with Unknown format or fail gracefully
         if let Ok(analysis) = result {
             // If it succeeds, format should be Unknown for malformed data
-            if data.len() > 0 && !data.starts_with(&[0x7f, 0x45, 0x4c, 0x46]) {
+            if !data.is_empty() && !data.starts_with(&[0x7f, 0x45, 0x4c, 0x46]) {
                 // Allow ELF to be detected if it has the right magic
                 match data.get(0..2) {
                     Some([0x4d, 0x5a]) => {} // PE might be detected
@@ -493,11 +492,11 @@ fn test_security_features_detection() {
 
     // Security features should be initialized (even if all false for minimal binary)
     let sec_features = &result.metadata.security_features;
-    // We can't assert specific values since this is minimal test data,
-    // but we can verify the fields exist and are booleans
-    assert!(sec_features.nx_bit == true || sec_features.nx_bit == false);
-    assert!(sec_features.aslr == true || sec_features.aslr == false);
-    assert!(sec_features.stack_canary == true || sec_features.stack_canary == false);
+    // Security features are detected (values depend on the specific binary)
+    // Just verify the fields are accessible - specific values vary by binary
+    let _nx = sec_features.nx_bit;
+    let _aslr = sec_features.aslr;
+    let _canary = sec_features.stack_canary;
 }
 
 #[test]

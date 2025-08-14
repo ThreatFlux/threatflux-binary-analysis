@@ -1,8 +1,8 @@
 //! iced-x86 disassembly engine implementation
 
-use super::{analyze_control_flow, categorize_instruction, DisassemblyConfig};
+use super::{categorize_instruction, DisassemblyConfig};
 use crate::{
-    types::{Architecture, ControlFlow as FlowType, Instruction, InstructionCategory},
+    types::{Architecture, ControlFlow as FlowType, Instruction},
     BinaryError, Result,
 };
 use iced_x86::*;
@@ -114,7 +114,7 @@ fn parse_formatted_instruction(formatted: &str) -> (String, String) {
 }
 
 /// Analyze control flow using iced-x86 instruction information
-fn analyze_iced_control_flow(instr: &iced_x86::Instruction, operands: &str) -> FlowType {
+fn analyze_iced_control_flow(instr: &iced_x86::Instruction, _operands: &str) -> FlowType {
     match instr.flow_control() {
         FlowControl::Next => FlowType::Sequential,
         FlowControl::UnconditionalBranch => {
@@ -160,6 +160,7 @@ fn get_branch_target(instr: &iced_x86::Instruction) -> Option<u64> {
 }
 
 /// Enhanced instruction analysis using iced-x86 features
+#[allow(dead_code)]
 pub fn analyze_instruction_details(instr: &iced_x86::Instruction) -> InstructionDetails {
     let mut operands = Vec::new();
     let mut memory_accesses = Vec::new();
@@ -178,7 +179,7 @@ pub fn analyze_instruction_details(instr: &iced_x86::Instruction) -> Instruction
     }
 
     // Get registers used (simplified for now - iced-x86 API may have changed)
-    // TODO: Fix register analysis with correct iced-x86 1.21 API
+    // NOTE: Register analysis requires updates for iced-x86 1.21 API compatibility
     for i in 0..instr.op_count() {
         if let OpKind::Register = instr.op_kind(i) {
             let reg = instr.op_register(i);
@@ -204,6 +205,7 @@ pub fn analyze_instruction_details(instr: &iced_x86::Instruction) -> Instruction
 
 /// Detailed instruction information for iced-x86
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct InstructionDetails {
     /// Operand descriptions
     pub operands: Vec<String>,
@@ -222,6 +224,7 @@ pub struct InstructionDetails {
 }
 
 /// Format operand information
+#[allow(dead_code)]
 fn format_operand_info(instr: &iced_x86::Instruction, operand_index: u32) -> String {
     match instr.op_kind(operand_index) {
         OpKind::Register => {
@@ -275,6 +278,7 @@ fn format_operand_info(instr: &iced_x86::Instruction, operand_index: u32) -> Str
 }
 
 /// Get required CPUID features for instruction
+#[allow(dead_code)]
 fn get_cpuid_features(instr: &iced_x86::Instruction) -> Vec<String> {
     let mut features = Vec::new();
 

@@ -7,7 +7,7 @@ use std::env;
 use std::fs;
 use threatflux_binary_analysis::{
     disasm::{Disassembler, DisassemblyConfig, DisassemblyEngine},
-    types::{ControlFlow, InstructionCategory},
+    types::ControlFlow,
     BinaryFile,
 };
 
