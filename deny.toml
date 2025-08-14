@@ -17,7 +17,9 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 unmaintained = "all"
 yanked = "deny"
-ignore = []
+ignore = [
+    "RUSTSEC-2024-0436", # paste crate unmaintained - used indirectly via nalgebra/statrs
+]
 
 [licenses]
 allow = [
@@ -26,8 +28,6 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
-    "ISC",
-    "Unicode-DFS-2016",
     "Unicode-3.0",
 ]
 confidence-threshold = 0.8
