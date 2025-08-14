@@ -8,11 +8,8 @@ pub mod elf;
 pub mod macho;
 #[cfg(feature = "pe")]
 pub mod pe;
-// TODO: Implement these formats
-// #[cfg(feature = "java")]
-// pub mod java;
-// #[cfg(feature = "wasm")]
-// pub mod wasm;
+// Note: Java and WebAssembly format parsers not yet implemented
+// Format detection is supported but parsing returns UnsupportedFormat error
 
 pub mod raw;
 
@@ -34,12 +31,19 @@ pub fn detect_format(data: &[u8]) -> Result<Format> {
         return Ok(Format::Pe);
     }
 
-    // Check for Mach-O magic
+    // Check for Mach-O magic (handle both endiannesses)
     #[cfg(feature = "macho")]
     if data.len() >= 4 {
-        let magic = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-        match magic {
-            0xfeedface | 0xfeedfacf | 0xcafebabe | 0xcafebabf => {
+        let magic_le = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        let magic_be = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+        match magic_le {
+            0xfeedface | 0xfeedfacf | 0xcefaedfe | 0xcffaedfe => {
+                return Ok(Format::MachO);
+            }
+            _ => {}
+        }
+        match magic_be {
+            0xfeedface | 0xfeedfacf | 0xcefaedfe | 0xcffaedfe => {
                 return Ok(Format::MachO);
             }
             _ => {}
@@ -47,18 +51,16 @@ pub fn detect_format(data: &[u8]) -> Result<Format> {
     }
 
     // Check for Java class magic
-    #[cfg(feature = "java")]
     if data.len() >= 4 && &data[0..4] == b"\xca\xfe\xba\xbe" {
         return Ok(Format::Java);
     }
 
     // Check for WebAssembly magic
-    #[cfg(feature = "wasm")]
-    if data.len() >= 8 && &data[0..8] == b"\x00asm\x01\x00\x00\x00" {
+    if data.len() >= 4 && &data[0..4] == b"\x00asm" {
         return Ok(Format::Wasm);
     }
 
-    // Default to raw binary
+    // Default to raw binary for any data that doesn't match known formats
     Ok(Format::Raw)
 }
 
@@ -74,14 +76,9 @@ pub fn parse_binary(data: &[u8], format: Format) -> Result<Box<dyn BinaryFormatT
         #[cfg(feature = "macho")]
         Format::MachO => macho::MachOParser::parse(data),
 
-        // TODO: Implement these formats
-        // #[cfg(feature = "java")]
-        // Format::Java => java::JavaParser::parse(data),
-        //
-        // #[cfg(feature = "wasm")]
-        // Format::Wasm => wasm::WasmParser::parse(data),
+        Format::Java => Err(BinaryError::unsupported_format("Java".to_string())),
+        Format::Wasm => Err(BinaryError::unsupported_format("Wasm".to_string())),
         Format::Raw => raw::RawParser::parse(data),
-
-        _ => Err(BinaryError::unsupported_format(format!("{:?}", format))),
+        Format::Unknown => Err(BinaryError::unsupported_format("Unknown".to_string())),
     }
 }

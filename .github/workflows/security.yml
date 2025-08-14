@@ -27,7 +27,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
+      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
     
     - name: Install cargo-audit
       uses: taiki-e/install-action@v2
@@ -73,7 +73,7 @@ jobs:
         components: clippy
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
+      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
     
     - name: Install system dependencies
       run: |
@@ -225,7 +225,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
+      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
     
     - name: Install system dependencies
       run: |
@@ -265,7 +265,7 @@ jobs:
         components: rust-src
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
+      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
     
     - name: Install system dependencies
       run: |
