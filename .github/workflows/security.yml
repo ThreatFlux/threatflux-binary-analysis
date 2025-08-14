@@ -26,25 +26,22 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install cargo-audit
       uses: taiki-e/install-action@cargo-audit
     
     - name: Run cargo audit
       run: cargo audit --json --output-format json > audit-results.json || true
-      working-directory: threatflux-binary-analysis
     
     - name: Check audit results
       run: |
-        if [ -f threatflux-binary-analysis/audit-results.json ]; then
-          cat threatflux-binary-analysis/audit-results.json
+        if [ -f audit-results.json ]; then
+          cat audit-results.json
           # Check if there are any vulnerabilities
-          VULN_COUNT=$(cat threatflux-binary-analysis/audit-results.json | jq -r '.vulnerabilities.count // 0')
+          VULN_COUNT=$(cat audit-results.json | jq -r '.vulnerabilities.count // 0')
           if [ "$VULN_COUNT" -gt 0 ]; then
             echo "🚨 Found $VULN_COUNT security vulnerabilities!"
-            cat threatflux-binary-analysis/audit-results.json | jq -r '.vulnerabilities.list[]? | "- \(.advisory.title) (\(.advisory.id))"'
+            cat audit-results.json | jq -r '.vulnerabilities.list[]? | "- \(.advisory.title) (\(.advisory.id))"'
             exit 1
           else
             echo "✅ No security vulnerabilities found"
@@ -56,7 +53,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: security-audit-results
-        path: threatflux-binary-analysis/audit-results.json
+        path: audit-results.json
 
   security-clippy:
     name: Security Lints
@@ -72,8 +69,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -114,7 +109,6 @@ jobs:
           -W clippy::shadow_same \
           -W clippy::multiple_unsafe_ops_per_block \
           -W clippy::undocumented_unsafe_blocks
-      working-directory: threatflux-binary-analysis
 
   dependency-review:
     name: Dependency Review
@@ -150,7 +144,6 @@ jobs:
         else
           echo "exists=false" >> $GITHUB_OUTPUT
         fi
-      working-directory: threatflux-binary-analysis
     
     - name: Create deny.toml if not exists
       if: steps.check_deny.outputs.exists == 'false'
@@ -211,11 +204,9 @@ jobs:
         allow-registry = ["https://github.com/rust-lang/crates.io-index"]
         allow-git = []
         EOF
-      working-directory: threatflux-binary-analysis
     
     - name: Run cargo deny
       run: cargo deny check
-      working-directory: threatflux-binary-analysis
 
   semver-checks:
     name: Semantic Versioning
@@ -232,8 +223,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -256,7 +245,6 @@ jobs:
           echo "- Major version (x.0.0) for breaking changes"
           # Don't fail the build, just warn
         fi
-      working-directory: threatflux-binary-analysis
 
   unsafe-code-review:
     name: Unsafe Code Review
@@ -272,8 +260,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -301,14 +287,13 @@ jobs:
              - Unsafe methods: \(.unsafeties.used.methods)"
           '
         fi
-      working-directory: threatflux-binary-analysis
     
     - name: Upload geiger report
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: unsafe-code-report
-        path: threatflux-binary-analysis/geiger-report.json
+        path: geiger-report.json
 
   security-summary:
     name: Security Summary

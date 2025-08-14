@@ -38,8 +38,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
@@ -61,56 +59,44 @@ jobs:
     - name: Check formatting
       if: matrix.rust == 'stable'
       run: cargo fmt --all -- --check
-      working-directory: threatflux-binary-analysis
     
     - name: Run clippy (default features)
       run: cargo clippy --all-targets -- -D warnings
-      working-directory: threatflux-binary-analysis
     
     - name: Run clippy (all features)
       run: cargo clippy --all-targets --all-features -- -D warnings
-      working-directory: threatflux-binary-analysis
     
     - name: Run clippy (no default features)
       run: cargo clippy --all-targets --no-default-features -- -D warnings
-      working-directory: threatflux-binary-analysis
     
     - name: Build (default features)
       run: cargo build --verbose
-      working-directory: threatflux-binary-analysis
     
     - name: Build (all features)
       run: cargo build --verbose --all-features
-      working-directory: threatflux-binary-analysis
     
     - name: Build (no default features)
       run: cargo build --verbose --no-default-features
-      working-directory: threatflux-binary-analysis
     
     - name: Run tests (default features)
       run: cargo test --verbose
-      working-directory: threatflux-binary-analysis
     
     - name: Run tests (all features)
       run: cargo test --verbose --all-features
-      working-directory: threatflux-binary-analysis
     
     - name: Run tests (no default features)
       run: cargo test --verbose --no-default-features
-      working-directory: threatflux-binary-analysis
     
     - name: Run examples (default features)
       if: matrix.rust == 'stable'
       run: |
         cargo run --example basic_analysis
-      working-directory: threatflux-binary-analysis
     
     - name: Run examples (with features)
       if: matrix.rust == 'stable'
       run: |
         cargo run --example control_flow --features control-flow
         cargo run --example disassembly --features disasm-capstone
-      working-directory: threatflux-binary-analysis
 
   coverage:
     name: Code Coverage
@@ -127,8 +113,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -141,12 +125,11 @@ jobs:
     - name: Generate code coverage
       run: |
         cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-      working-directory: threatflux-binary-analysis
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
       with:
-        files: threatflux-binary-analysis/lcov.info
+        files: lcov.info
         fail_ci_if_error: true
 
   benchmark:
@@ -162,8 +145,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -176,7 +157,6 @@ jobs:
       run: |
         echo "Benchmarks will be run once benchmark files are implemented"
         # cargo bench --all-features
-      working-directory: threatflux-binary-analysis
 
   docs:
     name: Documentation Check
@@ -190,8 +170,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -200,7 +178,6 @@ jobs:
     
     - name: Check documentation
       run: cargo doc --all-features --no-deps --document-private-items
-      working-directory: threatflux-binary-analysis
       env:
         RUSTDOCFLAGS: "-D warnings"
 
@@ -216,8 +193,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |

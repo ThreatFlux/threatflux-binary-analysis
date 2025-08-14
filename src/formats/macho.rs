@@ -308,7 +308,7 @@ fn analyze_security_features(macho: &MachO) -> SecurityFeatures {
     // Check load commands for additional security features
     for load_command in &macho.load_commands {
         match load_command.command {
-            LoadCommand::CodeSignature(_) => {
+            LoadCommand::CodeSignature(_, _) => {
                 features.signed = true;
             }
             _ => {}
@@ -322,10 +322,10 @@ fn find_entry_point(macho: &MachO) -> Option<u64> {
     // Look for LC_MAIN or LC_UNIX_THREAD load commands
     for load_command in &macho.load_commands {
         match &load_command.command {
-            LoadCommand::EntryPoint(entry) => {
+            LoadCommand::Main(entry) => {
                 return Some(entry.entryoff);
             }
-            LoadCommand::UnixThread(thread) => {
+            LoadCommand::UnixThread(_) => {
                 // Entry point is in the thread state
                 // This is architecture-specific parsing
                 return Some(0); // Placeholder - would need arch-specific parsing

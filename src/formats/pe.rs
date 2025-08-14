@@ -2,9 +2,9 @@
 
 use crate::{
     types::{
-        Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export,
-        Import, Section, SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding,
-        SymbolType, SymbolVisibility,
+        Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
+        SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding, SymbolType,
+        SymbolVisibility,
     },
     BinaryFormatParser, BinaryFormatTrait, Result,
 };
@@ -70,7 +70,8 @@ impl PeBinary {
         let security_features = analyze_security_features(&pe);
 
         // Get base address and entry point from optional header
-        let (base_address, entry_point) = if let Some(optional_header) = &pe.header.optional_header {
+        let (base_address, entry_point) = if let Some(optional_header) = &pe.header.optional_header
+        {
             (
                 Some(optional_header.windows_fields.image_base),
                 Some(
@@ -244,8 +245,12 @@ fn parse_imports_exports(pe: &PE) -> Result<(Vec<Import>, Vec<Export>)> {
                 address: export.rva as u64,
                 ordinal: None, // PE exports don't have ordinals in goblin 0.10
                 forwarded_name: export.reexport.as_ref().map(|r| match r {
-                    goblin::pe::export::Reexport::DLLName { export, lib } => format!("{}.{}", lib, export),
-                    goblin::pe::export::Reexport::DLLOrdinal { ordinal, lib } => format!("{}.#{}", lib, ordinal),
+                    goblin::pe::export::Reexport::DLLName { export, lib } => {
+                        format!("{}.{}", lib, export)
+                    }
+                    goblin::pe::export::Reexport::DLLOrdinal { ordinal, lib } => {
+                        format!("{}.#{}", lib, ordinal)
+                    }
                 }),
             });
         }

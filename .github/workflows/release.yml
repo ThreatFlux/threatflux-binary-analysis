@@ -85,8 +85,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
@@ -106,19 +104,17 @@ jobs:
     
     - name: Build release
       run: cargo build --release --all-features
-      working-directory: threatflux-binary-analysis
     
     - name: Run tests
       run: cargo test --release --all-features
-      working-directory: threatflux-binary-analysis
     
     - name: Package artifacts
       if: matrix.os == 'ubuntu-latest'
       run: |
         mkdir -p artifacts
-        cp threatflux-binary-analysis/target/release/deps/libthreatflux_binary_analysis*.rlib artifacts/ || true
-        cp threatflux-binary-analysis/Cargo.toml artifacts/
-        cp threatflux-binary-analysis/README.md artifacts/
+        cp target/release/deps/libthreatflux_binary_analysis*.rlib artifacts/ || true
+        cp Cargo.toml artifacts/
+        cp README.md artifacts/
         tar -czf threatflux-binary-analysis-${{ needs.create-release.outputs.version }}-${{ matrix.os }}.tar.gz -C artifacts .
     
     - name: Upload Release Asset
@@ -146,8 +142,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -156,7 +150,7 @@ jobs:
     
     - name: Verify version matches tag
       run: |
-        CARGO_VERSION=$(grep '^version = ' threatflux-binary-analysis/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+        CARGO_VERSION=$(grep '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
         TAG_VERSION=${{ needs.create-release.outputs.version }}
         TAG_VERSION=${TAG_VERSION#v}  # Remove 'v' prefix
         if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
@@ -166,7 +160,6 @@ jobs:
     
     - name: Publish to crates.io
       run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
-      working-directory: threatflux-binary-analysis
 
   update-documentation:
     name: Update Documentation
@@ -182,8 +175,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -192,13 +183,12 @@ jobs:
     
     - name: Generate documentation
       run: cargo doc --all-features --no-deps
-      working-directory: threatflux-binary-analysis
     
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./threatflux-binary-analysis/target/doc
+        publish_dir: ./target/doc
         destination_dir: docs/${{ needs.create-release.outputs.version }}
 
   notify:

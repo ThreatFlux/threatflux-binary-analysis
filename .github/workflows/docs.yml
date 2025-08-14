@@ -4,19 +4,19 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'threatflux-binary-analysis/src/**'
-      - 'threatflux-binary-analysis/Cargo.toml'
-      - 'threatflux-binary-analysis/README.md'
-      - 'threatflux-binary-analysis/API.md'
-      - 'threatflux-binary-analysis/examples/**'
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'README.md'
+      - 'API.md'
+      - 'examples/**'
   pull_request:
     branches: [ main ]
     paths:
-      - 'threatflux-binary-analysis/src/**'
-      - 'threatflux-binary-analysis/Cargo.toml'
-      - 'threatflux-binary-analysis/README.md'
-      - 'threatflux-binary-analysis/API.md'
-      - 'threatflux-binary-analysis/examples/**'
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'README.md'
+      - 'API.md'
+      - 'examples/**'
   workflow_dispatch:
 
 env:
@@ -35,8 +35,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -46,14 +44,13 @@ jobs:
     - name: Build documentation
       run: |
         cargo doc --all-features --no-deps --document-private-items
-      working-directory: threatflux-binary-analysis
       env:
         RUSTDOCFLAGS: "-D warnings --cfg docsrs"
     
     - name: Check documentation links
       run: |
         # Check for broken internal links in documentation
-        find threatflux-binary-analysis/target/doc -name "*.html" -exec grep -l "broken-intra-doc-link" {} \; > broken-links.txt || true
+        find target/doc -name "*.html" -exec grep -l "broken-intra-doc-link" {} \; > broken-links.txt || true
         if [ -s broken-links.txt ]; then
           echo "🔗 Found broken documentation links:"
           cat broken-links.txt
@@ -70,8 +67,8 @@ jobs:
         echo "" >> doc-coverage.md
         
         # Count public items and documented items
-        PUBLIC_ITEMS=$(grep -r "pub " threatflux-binary-analysis/src/ --include="*.rs" | wc -l)
-        DOC_COMMENTS=$(grep -r "///" threatflux-binary-analysis/src/ --include="*.rs" | wc -l)
+        PUBLIC_ITEMS=$(grep -r "pub " src/ --include="*.rs" | wc -l)
+        DOC_COMMENTS=$(grep -r "///" src/ --include="*.rs" | wc -l)
         
         echo "- Public items: $PUBLIC_ITEMS" >> doc-coverage.md
         echo "- Documentation comments: $DOC_COMMENTS" >> doc-coverage.md
@@ -86,7 +83,7 @@ jobs:
         echo "" >> doc-coverage.md
         
         # Find public items without documentation
-        grep -n "pub " threatflux-binary-analysis/src/**/*.rs | while read -r line; do
+        grep -n "pub " src/**/*.rs | while read -r line; do
           FILE=$(echo "$line" | cut -d: -f1)
           LINE_NUM=$(echo "$line" | cut -d: -f2)
           PREV_LINE=$((LINE_NUM - 1))
@@ -105,7 +102,7 @@ jobs:
       with:
         name: documentation
         path: |
-          threatflux-binary-analysis/target/doc/
+          target/doc/
           doc-coverage.md
 
   docs-examples:
@@ -120,8 +117,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -131,17 +126,15 @@ jobs:
     - name: Test documentation examples
       run: |
         cargo test --doc --all-features
-      working-directory: threatflux-binary-analysis
     
     - name: Test examples compilation
       run: |
         cargo check --examples --all-features
-      working-directory: threatflux-binary-analysis
     
     - name: Run examples with minimal output
       run: |
         echo "🏃 Running examples..."
-        for example in threatflux-binary-analysis/examples/*.rs; do
+        for example in examples/*.rs; do
           example_name=$(basename "$example" .rs)
           echo "Running example: $example_name"
           
@@ -174,8 +167,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -190,7 +181,6 @@ jobs:
           -W clippy::missing_errors_doc \
           -W clippy::missing_panics_doc \
           -W clippy::missing_safety_doc
-      working-directory: threatflux-binary-analysis
 
   docs-publish:
     name: Publish Documentation
@@ -206,8 +196,6 @@ jobs:
     
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: threatflux-binary-analysis
     
     - name: Install system dependencies
       run: |
@@ -217,7 +205,6 @@ jobs:
     - name: Build documentation for publishing
       run: |
         cargo doc --all-features --no-deps
-      working-directory: threatflux-binary-analysis
       env:
         RUSTDOCFLAGS: "--cfg docsrs"
     
@@ -227,7 +214,7 @@ jobs:
     - name: Prepare documentation site
       run: |
         mkdir -p site/docs
-        cp -r threatflux-binary-analysis/target/doc/* site/docs/
+        cp -r target/doc/* site/docs/
         
         # Create index.html
         cat > site/index.html << 'EOF'
@@ -311,11 +298,11 @@ jobs:
     - name: Check README.md sync with lib.rs
       run: |
         # Extract doc comment from lib.rs
-        if [ -f threatflux-binary-analysis/src/lib.rs ]; then
+        if [ -f src/lib.rs ]; then
           echo "📝 Checking README.md sync with lib.rs documentation..."
           
           # Simple check - can be enhanced with more sophisticated tools
-          if grep -q "ThreatFlux Binary Analysis" threatflux-binary-analysis/README.md; then
+          if grep -q "ThreatFlux Binary Analysis" README.md; then
             echo "✅ README.md appears to be in sync"
           else
             echo "⚠️  README.md may need updating"
