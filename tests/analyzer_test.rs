@@ -131,7 +131,10 @@ fn test_analyze_invalid_binary() {
     // Depending on implementation, this might succeed with Unknown format
     // or fail with an error - either is acceptable
     if let Ok(analysis) = result {
-        assert!(matches!(analysis.format, BinaryFormat::Unknown | BinaryFormat::Raw));
+        assert!(matches!(
+            analysis.format,
+            BinaryFormat::Unknown | BinaryFormat::Raw
+        ));
     }
 }
 
