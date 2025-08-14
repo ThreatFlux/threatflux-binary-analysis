@@ -70,22 +70,26 @@ impl PeBinary {
         // Analyze security features
         let security_features = analyze_security_features(&pe);
 
-        // Get base address and entry point
-        let (base_address, entry_point) = match &pe.header {
-            Header::PE32(header) => (
-                Some(header.windows_fields.image_base as u64),
-                Some(
-                    header.standard_fields.address_of_entry_point as u64
-                        + header.windows_fields.image_base as u64,
+        // Get base address and entry point from optional header
+        let (base_address, entry_point) = if let Some(optional_header) = &pe.header.optional_header {
+            match optional_header {
+                goblin::pe::optional_header::OptionalHeader::WindowsPE32(header) => (
+                    Some(header.windows_fields.image_base as u64),
+                    Some(
+                        header.standard_fields.address_of_entry_point as u64
+                            + header.windows_fields.image_base as u64,
+                    ),
                 ),
-            ),
-            Header::PE32Plus(header) => (
-                Some(header.windows_fields.image_base),
-                Some(
-                    header.standard_fields.address_of_entry_point as u64
-                        + header.windows_fields.image_base,
+                goblin::pe::optional_header::OptionalHeader::WindowsPE32Plus(header) => (
+                    Some(header.windows_fields.image_base),
+                    Some(
+                        header.standard_fields.address_of_entry_point as u64
+                            + header.windows_fields.image_base,
+                    ),
                 ),
-            ),
+            }
+        } else {
+            (None, None)
         };
 
         let metadata = BinaryMetadata {
@@ -104,7 +108,7 @@ impl PeBinary {
         let sections = parse_sections(&pe, &data)?;
 
         // Parse symbols
-        let symbols = parse_symbols(&pe)?;
+        let symbols = parse_symbols(&pe, data)?;
 
         // Parse imports and exports
         let (imports, exports) = parse_imports_exports(&pe)?;
@@ -222,12 +226,14 @@ fn parse_sections(pe: &PE, data: &[u8]) -> Result<Vec<Section>> {
     Ok(sections)
 }
 
-fn parse_symbols(pe: &PE) -> Result<Vec<Symbol>> {
+fn parse_symbols(pe: &PE, data: &[u8]) -> Result<Vec<Symbol>> {
     let mut symbols = Vec::new();
 
     // PE symbols are typically in the COFF symbol table
-    for symbol in &pe.header.coff_header.symbols {
-        if let Some(name) = symbol.name(pe.header.coff_header.strings.as_ref()) {
+    if let Ok(symbols_iter) = pe.header.coff_header.symbols(&data) {
+        for symbol in symbols_iter {
+            let strings = pe.header.coff_header.strings(&data).unwrap_or_default();
+            if let Some(name) = symbol.name(&strings) {
             if name.is_empty() {
                 continue;
             }
@@ -270,19 +276,16 @@ fn parse_imports_exports(pe: &PE) -> Result<(Vec<Import>, Vec<Export>)> {
 
     // Parse imports
     for import in &pe.imports {
-        for function in &import.functions {
-            imports.push(Import {
-                name: function.name.clone(),
-                library: Some(import.dll.clone()),
-                address: Some(function.rva as u64),
-                ordinal: function.ordinal,
-            });
-        }
+        imports.push(Import {
+            name: import.name.to_string(),
+            library: Some(import.dll.to_string()),
+            address: Some(import.rva as u64),
+            ordinal: import.ordinal,
+        });
     }
 
     // Parse exports
-    if let Some(export_data) = &pe.exports {
-        for export in &export_data.exports {
+    for export in &pe.exports {
             if let Some(name) = &export.name {
                 exports.push(Export {
                     name: name.clone(),
@@ -300,8 +303,11 @@ fn parse_imports_exports(pe: &PE) -> Result<(Vec<Import>, Vec<Export>)> {
 fn analyze_security_features(pe: &PE) -> SecurityFeatures {
     let mut features = SecurityFeatures::default();
 
-    if let Some(dll_characteristics) = pe.header.optional_header() {
-        let characteristics = dll_characteristics.dll_characteristics;
+    if let Some(optional_header) = &pe.header.optional_header {
+        let characteristics = match optional_header {
+            goblin::pe::optional_header::OptionalHeader::WindowsPE32(header) => header.windows_fields.dll_characteristics,
+            goblin::pe::optional_header::OptionalHeader::WindowsPE32Plus(header) => header.windows_fields.dll_characteristics,
+        };
 
         // DEP/NX bit
         features.nx_bit = characteristics & IMAGE_DLLCHARACTERISTICS_NX_COMPAT != 0;
@@ -332,7 +338,7 @@ fn analyze_security_features(pe: &PE) -> SecurityFeatures {
 fn extract_compiler_info(pe: &PE) -> Option<String> {
     // Look for compiler strings in debug info or rich header
     // This is a simplified implementation
-    if pe.header.coff_header.number_of_symbols > 0 {
+    if pe.header.coff_header.number_of_symbol_table > 0 {
         Some("MSVC (detected from symbols)".to_string())
     } else {
         None

@@ -1,3 +1,5 @@
+[workspace]
+
 [package]
 name = "threatflux-binary-analysis"
 version = "0.1.0"
@@ -38,7 +40,7 @@ thiserror = "1.0"
 log = "0.4"
 
 # Binary parsing
-goblin = { version = "0.8", default-features = false }
+goblin = { version = "0.10", default-features = false }
 memmap2 = "0.9"
 
 # Disassembly engines (optional)
