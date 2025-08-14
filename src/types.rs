@@ -410,7 +410,7 @@ pub struct Parameter {
 }
 
 /// Parameter location
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
 pub enum ParameterLocation {
     Register(String),

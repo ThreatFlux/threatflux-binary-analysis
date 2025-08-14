@@ -183,7 +183,7 @@ pub fn analyze_instruction_details(instr: &iced_x86::Instruction) -> Instruction
         if let OpKind::Register = instr.op_kind(i) {
             let reg = instr.op_register(i);
             let reg_name = format!("{:?}", reg);
-            
+
             // For now, assume all registers are both read and written
             // This is a simplification until proper API usage is determined
             registers_read.push(reg_name.clone());

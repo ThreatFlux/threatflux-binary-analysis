@@ -108,10 +108,11 @@ pub fn verify_analysis_completeness(result: &AnalysisResult) {
     assert!(result.metadata.size > 0, "File size should be positive");
 
     // Collections should be initialized (but may be empty)
-    assert!(result.sections.len() >= 0);
-    assert!(result.symbols.len() >= 0);
-    assert!(result.imports.len() >= 0);
-    assert!(result.exports.len() >= 0);
+    // Note: len() >= 0 is always true, so we just verify they exist
+    let _ = result.sections.len();
+    let _ = result.symbols.len();
+    let _ = result.imports.len();
+    let _ = result.exports.len();
 }
 
 /// Verify that analysis result metadata is valid
@@ -418,11 +419,11 @@ pub fn test_error_handling() {
     assert!(result.is_err(), "Empty data should cause error");
 
     // Test very small data
-    let result = analyzer.analyze(&[0x00]);
+    let _result = analyzer.analyze(&[0x00]);
     // This might succeed with Unknown format or fail - both acceptable
 
     // Test corrupted magic bytes
-    let result = analyzer.analyze(&[0xff, 0xff, 0xff, 0xff]);
+    let _result = analyzer.analyze(&[0xff, 0xff, 0xff, 0xff]);
     // This might succeed with Unknown format or fail - both acceptable
 }
 

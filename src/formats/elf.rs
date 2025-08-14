@@ -2,10 +2,11 @@
 
 use crate::{
     types::{
-        Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export,
-        Import, Section, SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding,
-        SymbolType, SymbolVisibility,
-    }, BinaryFormatParser, BinaryFormatTrait, Result,
+        Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
+        SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding, SymbolType,
+        SymbolVisibility,
+    },
+    BinaryFormatParser, BinaryFormatTrait, Result,
 };
 use goblin::elf::Elf;
 
@@ -147,9 +148,15 @@ fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
 
         let section_type = match section_header.sh_type {
             goblin::elf::section_header::SHT_PROGBITS => {
-                if (section_header.sh_flags as u64) & (goblin::elf::section_header::SHF_EXECINSTR as u64) != 0 {
+                if (section_header.sh_flags as u64)
+                    & (goblin::elf::section_header::SHF_EXECINSTR as u64)
+                    != 0
+                {
                     SectionType::Code
-                } else if (section_header.sh_flags as u64) & (goblin::elf::section_header::SHF_WRITE as u64) != 0 {
+                } else if (section_header.sh_flags as u64)
+                    & (goblin::elf::section_header::SHF_WRITE as u64)
+                    != 0
+                {
                     SectionType::Data
                 } else {
                     SectionType::ReadOnlyData
@@ -168,8 +175,12 @@ fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
 
         let permissions = SectionPermissions {
             read: true, // ELF sections are generally readable
-            write: (section_header.sh_flags as u64) & (goblin::elf::section_header::SHF_WRITE as u64) != 0,
-            execute: (section_header.sh_flags as u64) & (goblin::elf::section_header::SHF_EXECINSTR as u64) != 0,
+            write: (section_header.sh_flags as u64)
+                & (goblin::elf::section_header::SHF_WRITE as u64)
+                != 0,
+            execute: (section_header.sh_flags as u64)
+                & (goblin::elf::section_header::SHF_EXECINSTR as u64)
+                != 0,
         };
 
         // Extract small section data

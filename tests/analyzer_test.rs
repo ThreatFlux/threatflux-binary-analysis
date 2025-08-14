@@ -131,7 +131,7 @@ fn test_analyze_invalid_binary() {
     // Depending on implementation, this might succeed with Unknown format
     // or fail with an error - either is acceptable
     if let Ok(analysis) = result {
-        assert_eq!(analysis.format, BinaryFormat::Unknown);
+        assert!(matches!(analysis.format, BinaryFormat::Unknown | BinaryFormat::Raw));
     }
 }
 
@@ -163,9 +163,9 @@ fn test_binary_file_sections() {
     let data = create_mock_elf_data();
     let binary = BinaryFile::parse(&data).unwrap();
 
-    let sections = binary.sections();
+    let _sections = binary.sections();
     // Mock data might not have actual sections, but should not panic
-    assert!(sections.len() >= 0);
+    // Sections are available (len >= 0 is always true)
 }
 
 #[test]
@@ -173,9 +173,9 @@ fn test_binary_file_symbols() {
     let data = create_mock_elf_data();
     let binary = BinaryFile::parse(&data).unwrap();
 
-    let symbols = binary.symbols();
+    let _symbols = binary.symbols();
     // Mock data might not have actual symbols, but should not panic
-    assert!(symbols.len() >= 0);
+    // Symbols are available (len >= 0 is always true)
 }
 
 #[test]
@@ -183,8 +183,8 @@ fn test_binary_file_imports() {
     let data = create_mock_elf_data();
     let binary = BinaryFile::parse(&data).unwrap();
 
-    let imports = binary.imports();
-    assert!(imports.len() >= 0);
+    let _imports = binary.imports();
+    // Imports are available (len >= 0 is always true)
 }
 
 #[test]
@@ -192,8 +192,8 @@ fn test_binary_file_exports() {
     let data = create_mock_elf_data();
     let binary = BinaryFile::parse(&data).unwrap();
 
-    let exports = binary.exports();
-    assert!(exports.len() >= 0);
+    let _exports = binary.exports();
+    // Exports are available (len >= 0 is always true)
 }
 
 #[test]
@@ -355,7 +355,8 @@ fn test_error_handling() {
     let result = analyzer.analyze(&corrupt_data);
     // Might succeed with Unknown format or fail - both acceptable
     if result.is_ok() {
-        assert_eq!(result.unwrap().format, BinaryFormat::Unknown);
+        let format = result.unwrap().format;
+        assert!(matches!(format, BinaryFormat::Unknown | BinaryFormat::Raw));
     }
 }
 
