@@ -167,7 +167,7 @@ jobs:
         db-path = "~/.cargo/advisory-db"
         db-urls = ["https://github.com/rustsec/advisory-db"]
         unmaintained = "all"
-        yanked = "all"
+        yanked = "deny"
         ignore = []
         
         [licenses]
