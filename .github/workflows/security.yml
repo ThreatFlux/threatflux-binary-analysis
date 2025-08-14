@@ -19,16 +19,20 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
     
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
+      with:
+        toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install cargo-audit
-      uses: taiki-e/install-action@cargo-audit
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-audit
     
     - name: Run cargo audit
       run: cargo audit --json --output-format json > audit-results.json || true
@@ -60,15 +64,16 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
     
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
       with:
+        toolchain: stable
         components: clippy
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -117,7 +122,7 @@ jobs:
     
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
     
     - name: Dependency Review
       uses: actions/dependency-review-action@v3
@@ -131,10 +136,12 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
     
     - name: Install cargo-deny
-      uses: taiki-e/install-action@cargo-deny
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-deny
     
     - name: Check deny.toml exists
       id: check_deny
@@ -208,15 +215,17 @@ jobs:
     if: github.event_name == 'pull_request'
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
       with:
         fetch-depth: 0
     
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
+      with:
+        toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -224,7 +233,9 @@ jobs:
         sudo apt-get install -y libcapstone-dev pkg-config
     
     - name: Install cargo-semver-checks
-      uses: taiki-e/install-action@cargo-semver-checks
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-semver-checks
     
     - name: Check semantic versioning
       run: |
@@ -245,15 +256,16 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
     
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@nightly
+      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
       with:
+        toolchain: nightly
         components: rust-src
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -261,7 +273,9 @@ jobs:
         sudo apt-get install -y libcapstone-dev pkg-config
     
     - name: Install cargo-geiger
-      uses: taiki-e/install-action@cargo-geiger
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-geiger
     
     - name: Run cargo geiger
       run: |
