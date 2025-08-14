@@ -27,11 +27,12 @@ impl PerformanceTester {
     }
 
     pub fn assert_under(self, max_duration: Duration) {
+        let name = self.name.clone();
         let duration = self.finish();
         assert!(
             duration <= max_duration,
             "Performance test '{}' took {:?}, expected under {:?}",
-            self.name,
+            name,
             duration,
             max_duration
         );

@@ -3,8 +3,7 @@
 use crate::{
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
-        SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding, SymbolType,
-        SymbolVisibility,
+        SectionPermissions, SectionType, SecurityFeatures, Symbol,
     },
     BinaryFormatParser, BinaryFormatTrait, Result,
 };

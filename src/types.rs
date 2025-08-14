@@ -295,7 +295,7 @@ pub struct Instruction {
 }
 
 /// Instruction categories
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
 pub enum InstructionCategory {
     Arithmetic,

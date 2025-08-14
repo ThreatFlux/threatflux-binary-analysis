@@ -5,7 +5,6 @@
 
 use crate::{BinaryError, Result};
 use std::collections::HashMap;
-use std::convert::TryInto;
 
 /// Pattern matcher for binary data
 pub struct PatternMatcher {

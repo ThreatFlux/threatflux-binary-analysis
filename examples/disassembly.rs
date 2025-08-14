@@ -184,7 +184,7 @@ fn analyze_instruction_stats(instructions: &[threatflux_binary_analysis::types::
     categories.sort_by_key(|(_, count)| std::cmp::Reverse(**count));
 
     for (category, count) in categories.iter().take(5) {
-        let percentage = (*count as f64 / instructions.len() as f64) * 100.0;
+        let percentage = (**count as f64 / instructions.len() as f64) * 100.0;
         println!("  {:?}: {} ({:.1}%)", category, count, percentage);
     }
 
@@ -193,8 +193,8 @@ fn analyze_instruction_stats(instructions: &[threatflux_binary_analysis::types::
     let mut flows: Vec<_> = flow_counts.iter().collect();
     flows.sort_by_key(|(_, count)| std::cmp::Reverse(**count));
 
-    for (flow, count) in flows {
-        let percentage = (*count as f64 / instructions.len() as f64) * 100.0;
+    for (flow, count) in flows.iter().take(10) {
+        let percentage = (**count as f64 / instructions.len() as f64) * 100.0;
         println!("  {}: {} ({:.1}%)", flow, count, percentage);
     }
 
@@ -204,7 +204,7 @@ fn analyze_instruction_stats(instructions: &[threatflux_binary_analysis::types::
     mnemonics.sort_by_key(|(_, count)| std::cmp::Reverse(**count));
 
     for (mnemonic, count) in mnemonics.iter().take(10) {
-        let percentage = (*count as f64 / instructions.len() as f64) * 100.0;
+        let percentage = (**count as f64 / instructions.len() as f64) * 100.0;
         println!("  {}: {} ({:.1}%)", mnemonic, count, percentage);
     }
 

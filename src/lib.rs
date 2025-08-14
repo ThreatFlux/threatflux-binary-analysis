@@ -95,6 +95,11 @@ impl BinaryAnalyzer {
         Self { config }
     }
 
+    /// Get a reference to the analysis configuration
+    pub fn config(&self) -> &AnalysisConfig {
+        &self.config
+    }
+
     /// Analyze a binary file from raw data
     pub fn analyze(&self, data: &[u8]) -> Result<AnalysisResult> {
         let binary_file = BinaryFile::parse(data)?;

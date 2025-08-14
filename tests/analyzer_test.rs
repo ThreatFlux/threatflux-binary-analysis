@@ -64,12 +64,12 @@ fn create_mock_pe_data() -> Vec<u8> {
 #[test]
 fn test_analyzer_creation() {
     let analyzer = BinaryAnalyzer::new();
-    assert!(analyzer.config.enable_disassembly);
-    assert!(analyzer.config.enable_control_flow);
-    assert!(analyzer.config.enable_entropy);
-    assert!(analyzer.config.enable_symbols);
-    assert_eq!(analyzer.config.max_analysis_size, 100 * 1024 * 1024);
-    assert!(analyzer.config.architecture_hint.is_none());
+    assert!(analyzer.config().enable_disassembly);
+    assert!(analyzer.config().enable_control_flow);
+    assert!(analyzer.config().enable_entropy);
+    assert!(analyzer.config().enable_symbols);
+    assert_eq!(analyzer.config().max_analysis_size, 100 * 1024 * 1024);
+    assert!(analyzer.config().architecture_hint.is_none());
 }
 
 #[test]
@@ -84,13 +84,13 @@ fn test_analyzer_with_custom_config() {
     };
 
     let analyzer = BinaryAnalyzer::with_config(config);
-    assert!(!analyzer.config.enable_disassembly);
-    assert!(analyzer.config.enable_control_flow);
-    assert!(!analyzer.config.enable_entropy);
-    assert!(analyzer.config.enable_symbols);
-    assert_eq!(analyzer.config.max_analysis_size, 1024);
+    assert!(!analyzer.config().enable_disassembly);
+    assert!(analyzer.config().enable_control_flow);
+    assert!(!analyzer.config().enable_entropy);
+    assert!(analyzer.config().enable_symbols);
+    assert_eq!(analyzer.config().max_analysis_size, 1024);
     assert_eq!(
-        analyzer.config.architecture_hint,
+        analyzer.config().architecture_hint,
         Some(Architecture::X86_64)
     );
 }
@@ -225,20 +225,20 @@ fn test_analyzer_default() {
 
     // Both should have same configuration
     assert_eq!(
-        analyzer1.config.enable_disassembly,
-        analyzer2.config.enable_disassembly
+        analyzer1.config().enable_disassembly,
+        analyzer2.config().enable_disassembly
     );
     assert_eq!(
-        analyzer1.config.enable_control_flow,
-        analyzer2.config.enable_control_flow
+        analyzer1.config().enable_control_flow,
+        analyzer2.config().enable_control_flow
     );
     assert_eq!(
-        analyzer1.config.enable_entropy,
-        analyzer2.config.enable_entropy
+        analyzer1.config().enable_entropy,
+        analyzer2.config().enable_entropy
     );
     assert_eq!(
-        analyzer1.config.enable_symbols,
-        analyzer2.config.enable_symbols
+        analyzer1.config().enable_symbols,
+        analyzer2.config().enable_symbols
     );
 }
 

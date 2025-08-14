@@ -5,13 +5,11 @@
 
 use crate::{
     types::{
-        Architecture, BinaryMetadata, Export, Import, Section, SectionPermissions, SectionType,
+        Architecture, Import, Section,
         SecurityFeatures, SecurityIndicators, Symbol,
-    },
-    BinaryError, BinaryFile, Result,
+    }, BinaryFile, Result,
 };
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::collections::HashSet;
 
 /// Security analyzer for binary files
 pub struct SecurityAnalyzer {
@@ -113,7 +111,7 @@ pub enum FindingCategory {
 }
 
 /// Finding severity levels
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Severity {
     /// Informational
     Info,

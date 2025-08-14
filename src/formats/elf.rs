@@ -2,14 +2,12 @@
 
 use crate::{
     types::{
-        Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, FunctionType,
+        Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export,
         Import, Section, SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding,
         SymbolType, SymbolVisibility,
-    },
-    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
+    }, BinaryFormatParser, BinaryFormatTrait, Result,
 };
-use goblin::elf::{Elf, SectionHeader, Sym};
-use std::collections::HashMap;
+use goblin::elf::Elf;
 
 /// ELF format parser
 pub struct ElfParser;
@@ -149,9 +147,9 @@ fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
 
         let section_type = match section_header.sh_type {
             goblin::elf::section_header::SHT_PROGBITS => {
-                if section_header.sh_flags & goblin::elf::section_header::SHF_EXECINSTR != 0 {
+                if (section_header.sh_flags as u64) & (goblin::elf::section_header::SHF_EXECINSTR as u64) != 0 {
                     SectionType::Code
-                } else if section_header.sh_flags & goblin::elf::section_header::SHF_WRITE != 0 {
+                } else if (section_header.sh_flags as u64) & (goblin::elf::section_header::SHF_WRITE as u64) != 0 {
                     SectionType::Data
                 } else {
                     SectionType::ReadOnlyData
@@ -170,8 +168,8 @@ fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
 
         let permissions = SectionPermissions {
             read: true, // ELF sections are generally readable
-            write: section_header.sh_flags & goblin::elf::section_header::SHF_WRITE != 0,
-            execute: section_header.sh_flags & goblin::elf::section_header::SHF_EXECINSTR != 0,
+            write: (section_header.sh_flags as u64) & (goblin::elf::section_header::SHF_WRITE as u64) != 0,
+            execute: (section_header.sh_flags as u64) & (goblin::elf::section_header::SHF_EXECINSTR as u64) != 0,
         };
 
         // Extract small section data
@@ -243,10 +241,10 @@ fn parse_symbols(elf: &Elf) -> Result<Vec<Symbol>> {
             _ => SymbolVisibility::Default,
         };
 
-        let section_index = if sym.st_shndx == goblin::elf::section_header::SHN_UNDEF {
+        let section_index = if sym.st_shndx == (goblin::elf::section_header::SHN_UNDEF as usize) {
             None
         } else {
-            Some(sym.st_shndx as usize)
+            Some(sym.st_shndx)
         };
 
         symbols.push(Symbol {
@@ -280,7 +278,7 @@ fn parse_imports_exports(elf: &Elf) -> Result<(Vec<Import>, Vec<Export>)> {
             continue;
         }
 
-        if sym.st_shndx == goblin::elf::section_header::SHN_UNDEF {
+        if sym.st_shndx == (goblin::elf::section_header::SHN_UNDEF as usize) {
             // This is an import
             imports.push(Import {
                 name,

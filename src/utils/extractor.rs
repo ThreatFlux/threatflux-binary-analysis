@@ -1,6 +1,6 @@
 //! Extract and adapt binary analysis code from file-scanner
 
-use crate::{BinaryError, Result};
+use crate::Result;
 
 /// Extract the core binary analysis logic from file-scanner modules
 /// This is a temporary utility to help migrate existing code
