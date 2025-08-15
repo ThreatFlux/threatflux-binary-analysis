@@ -1,19 +1,21 @@
 //! Java class and JAR file parser
 
 use crate::{
+    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
         SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding, SymbolType,
         SymbolVisibility,
     },
-    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
 };
+
+type ParseResult = Result<Box<dyn BinaryFormatTrait>>;
 
 /// Java binary format parser (class files and JAR archives)
 pub struct JavaParser;
 
 impl JavaParser {
-    fn parse_class(data: &[u8]) -> Result<Box<dyn BinaryFormatTrait>> {
+    fn parse_class(data: &[u8]) -> ParseResult {
         if data.len() < 4 || &data[0..4] != b"\xca\xfe\xba\xbe" {
             return Err(BinaryError::invalid_data("Invalid Java class magic"));
         }
@@ -64,7 +66,7 @@ impl JavaParser {
         }))
     }
 
-    fn parse_jar(data: &[u8]) -> Result<Box<dyn BinaryFormatTrait>> {
+    fn parse_jar(data: &[u8]) -> ParseResult {
         use std::io::Cursor;
         use zip::ZipArchive;
 

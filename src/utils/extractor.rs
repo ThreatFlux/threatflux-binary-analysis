@@ -52,12 +52,12 @@ impl TypeAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{BinaryFormat, Architecture};
+    use crate::types::{Architecture, BinaryFormat};
 
     #[test]
     fn test_code_extractor_extract_binary_parser() {
         let result = CodeExtractor::extract_binary_parser();
-        
+
         assert!(result.is_ok(), "extract_binary_parser should succeed");
         let content = result.unwrap();
         assert_eq!(content, "// TODO: Extract binary_parser.rs functionality");
@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn test_code_extractor_extract_disassembly() {
         let result = CodeExtractor::extract_disassembly();
-        
+
         assert!(result.is_ok(), "extract_disassembly should succeed");
         let content = result.unwrap();
         assert_eq!(content, "// TODO: Extract disassembly.rs functionality");
@@ -77,7 +77,7 @@ mod tests {
     #[test]
     fn test_code_extractor_extract_control_flow() {
         let result = CodeExtractor::extract_control_flow();
-        
+
         assert!(result.is_ok(), "extract_control_flow should succeed");
         let content = result.unwrap();
         assert_eq!(content, "// TODO: Extract control_flow.rs functionality");
@@ -87,10 +87,13 @@ mod tests {
     #[test]
     fn test_code_extractor_extract_function_analysis() {
         let result = CodeExtractor::extract_function_analysis();
-        
+
         assert!(result.is_ok(), "extract_function_analysis should succeed");
         let content = result.unwrap();
-        assert_eq!(content, "// TODO: Extract function_analysis.rs functionality");
+        assert_eq!(
+            content,
+            "// TODO: Extract function_analysis.rs functionality"
+        );
         assert!(!content.is_empty(), "Content should not be empty");
     }
 
@@ -106,17 +109,23 @@ mod tests {
         for method in &methods {
             let result = method();
             assert!(result.is_ok(), "All extraction methods should succeed");
-            
+
             let content = result.unwrap();
-            assert!(content.starts_with("// TODO:"), "All methods should return TODO comments");
-            assert!(content.contains("functionality"), "All methods should mention functionality");
+            assert!(
+                content.starts_with("// TODO:"),
+                "All methods should return TODO comments"
+            );
+            assert!(
+                content.contains("functionality"),
+                "All methods should mention functionality"
+            );
         }
     }
 
     #[test]
     fn test_type_adapter_adapt_binary_format() {
         let format = TypeAdapter::adapt_binary_format();
-        
+
         // Test that it returns the default Unknown format
         assert_eq!(format, BinaryFormat::Unknown);
     }
@@ -124,7 +133,7 @@ mod tests {
     #[test]
     fn test_type_adapter_adapt_architecture() {
         let arch = TypeAdapter::adapt_architecture();
-        
+
         // Test that it returns the default Unknown architecture
         assert_eq!(arch, Architecture::Unknown);
     }
@@ -134,7 +143,10 @@ mod tests {
         // Test that multiple calls return the same result
         let format1 = TypeAdapter::adapt_binary_format();
         let format2 = TypeAdapter::adapt_binary_format();
-        assert_eq!(format1, format2, "adapt_binary_format should be deterministic");
+        assert_eq!(
+            format1, format2,
+            "adapt_binary_format should be deterministic"
+        );
 
         let arch1 = TypeAdapter::adapt_architecture();
         let arch2 = TypeAdapter::adapt_architecture();
@@ -146,9 +158,13 @@ mod tests {
         let format = TypeAdapter::adapt_binary_format();
         // Verify it's one of the valid BinaryFormat variants
         match format {
-            BinaryFormat::Elf | BinaryFormat::Pe | BinaryFormat::MachO | 
-            BinaryFormat::Java | BinaryFormat::Wasm | BinaryFormat::Raw | 
-            BinaryFormat::Unknown => {
+            BinaryFormat::Elf
+            | BinaryFormat::Pe
+            | BinaryFormat::MachO
+            | BinaryFormat::Java
+            | BinaryFormat::Wasm
+            | BinaryFormat::Raw
+            | BinaryFormat::Unknown => {
                 // Valid variant
             }
         }
@@ -156,11 +172,19 @@ mod tests {
         let arch = TypeAdapter::adapt_architecture();
         // Verify it's one of the valid Architecture variants
         match arch {
-            Architecture::X86 | Architecture::X86_64 | Architecture::Arm | 
-            Architecture::Arm64 | Architecture::Mips | Architecture::Mips64 |
-            Architecture::PowerPC | Architecture::PowerPC64 | Architecture::RiscV |
-            Architecture::RiscV64 | Architecture::Wasm | Architecture::Jvm |
-            Architecture::Unknown => {
+            Architecture::X86
+            | Architecture::X86_64
+            | Architecture::Arm
+            | Architecture::Arm64
+            | Architecture::Mips
+            | Architecture::Mips64
+            | Architecture::PowerPC
+            | Architecture::PowerPC64
+            | Architecture::RiscV
+            | Architecture::RiscV64
+            | Architecture::Wasm
+            | Architecture::Jvm
+            | Architecture::Unknown => {
                 // Valid variant
             }
         }
@@ -170,7 +194,7 @@ mod tests {
     fn test_code_extractor_struct_instantiation() {
         // Test that we can create the struct (even though methods are static)
         let _extractor = CodeExtractor;
-        
+
         // Methods are static, so they must be called on the type
         let result = CodeExtractor::extract_binary_parser();
         assert!(result.is_ok());
@@ -180,11 +204,11 @@ mod tests {
     fn test_type_adapter_struct_instantiation() {
         // Test that we can create the struct (even though methods are static)
         let _adapter = TypeAdapter;
-        
+
         // Methods are static, so they must be called on the type
         let format = TypeAdapter::adapt_binary_format();
         assert_eq!(format, BinaryFormat::Unknown);
-        
+
         let arch = TypeAdapter::adapt_architecture();
         assert_eq!(arch, Architecture::Unknown);
     }
@@ -203,7 +227,7 @@ mod tests {
             // Test that we can use standard Result methods
             assert!(result.is_ok());
             assert!(!result.is_err());
-            
+
             // Test that we can unwrap safely since we know they're Ok
             let _content = result.as_ref().unwrap();
         }
@@ -213,7 +237,7 @@ mod tests {
     fn test_error_handling_compatibility() {
         // Test that our Result type is compatible with error handling patterns
         let result = CodeExtractor::extract_binary_parser();
-        
+
         match &result {
             Ok(content) => {
                 assert!(!content.is_empty());
@@ -222,11 +246,9 @@ mod tests {
                 panic!("This test case should never fail");
             }
         }
-        
+
         // Test with map/and_then patterns
-        let mapped = result
-            .map(|s| s.len())
-            .map(|len| len > 0);
+        let mapped = result.map(|s| s.len()).map(|len| len > 0);
         assert!(mapped.is_ok());
         assert_eq!(mapped.unwrap(), true);
     }
@@ -235,20 +257,23 @@ mod tests {
     fn test_string_content_properties() {
         let methods = [
             CodeExtractor::extract_binary_parser,
-            CodeExtractor::extract_disassembly, 
+            CodeExtractor::extract_disassembly,
             CodeExtractor::extract_control_flow,
             CodeExtractor::extract_function_analysis,
         ];
 
         for method in &methods {
             let result = method().unwrap();
-            
+
             // Test string properties
             assert!(!result.is_empty(), "Result should not be empty");
             assert!(result.is_ascii(), "Result should be ASCII");
-            assert!(!result.contains('\0'), "Result should not contain null bytes");
+            assert!(
+                !result.contains('\0'),
+                "Result should not contain null bytes"
+            );
             assert!(result.len() > 10, "Result should have meaningful content");
-            
+
             // Test that it's a valid comment
             assert!(result.starts_with("//"), "Should be a comment");
         }
@@ -262,7 +287,7 @@ mod tests {
             let _result2 = CodeExtractor::extract_disassembly();
             let _result3 = CodeExtractor::extract_control_flow();
             let _result4 = CodeExtractor::extract_function_analysis();
-            
+
             let _format = TypeAdapter::adapt_binary_format();
             let _arch = TypeAdapter::adapt_architecture();
         }
@@ -271,15 +296,17 @@ mod tests {
     #[test]
     fn test_concurrent_access() {
         use std::thread;
-        
+
         // Test that methods are thread-safe
-        let handles: Vec<_> = (0..10).map(|_| {
-            thread::spawn(|| {
-                let _result = CodeExtractor::extract_binary_parser();
-                let _format = TypeAdapter::adapt_binary_format();
+        let handles: Vec<_> = (0..10)
+            .map(|_| {
+                thread::spawn(|| {
+                    let _result = CodeExtractor::extract_binary_parser();
+                    let _format = TypeAdapter::adapt_binary_format();
+                })
             })
-        }).collect();
-        
+            .collect();
+
         for handle in handles {
             handle.join().unwrap();
         }

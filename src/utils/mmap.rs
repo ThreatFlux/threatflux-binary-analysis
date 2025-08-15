@@ -406,7 +406,7 @@ mod tests {
     fn test_mapped_binary_deref() {
         let file = create_test_file();
         let mapped = MappedBinary::new(file.path()).unwrap();
-        
+
         // Test Deref implementation
         assert_eq!(&mapped[0..5], b"Hello");
         assert_eq!(mapped.len(), 34);
@@ -427,7 +427,12 @@ mod tests {
         // Test error case - range exceeds file size
         let result = mapped.slice(0..100);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Range exceeds file size"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Range exceeds file size")
+        );
     }
 
     #[test]
@@ -456,7 +461,12 @@ mod tests {
         // Test read_at with out of bounds
         let result = mapped.read_at(0, 100);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Read exceeds file size"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Read exceeds file size")
+        );
 
         // Test read_at with offset out of bounds
         let result = mapped.read_at(50, 5);
@@ -469,7 +479,12 @@ mod tests {
         // Test read_u8 with offset out of bounds
         let result = mapped.read_u8(100);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Offset exceeds file size"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Offset exceeds file size")
+        );
     }
 
     #[test]
@@ -546,13 +561,18 @@ mod tests {
         // Create data with invalid UTF-8
         file.write_all(&[0xFF, 0xFE, 0x00]).unwrap();
         file.flush().unwrap();
-        
+
         let mapped = MappedBinary::new(file.path()).unwrap();
-        
+
         // Test invalid UTF-8 string
         let result = mapped.read_cstring(0, 10);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid UTF-8 string"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid UTF-8 string")
+        );
     }
 
     #[test]
@@ -577,7 +597,7 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(b"ababcabab").unwrap();
         file.flush().unwrap();
-        
+
         let mapped = MappedBinary::new(file.path()).unwrap();
 
         // Test find_all_patterns with multiple occurrences
@@ -620,7 +640,7 @@ mod tests {
         assert!(mapped.starts_with(b"Hello"));
         assert!(!mapped.starts_with(b"World"));
         assert!(mapped.starts_with(b"")); // Empty pattern should match
-        
+
         // Test with signature longer than file
         let mut long_signature = vec![0; 100];
         long_signature[0] = b'H';
@@ -655,7 +675,12 @@ mod tests {
         // Test error case
         let result = mapped.view(0..100);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Range exceeds file size"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Range exceeds file size")
+        );
     }
 
     #[test]
@@ -666,7 +691,7 @@ mod tests {
         let view = mapped.view(7..12).unwrap();
         assert_eq!(view.offset(), 7);
         assert_eq!(view.size(), 5);
-        
+
         // Test to_vec method
         let vec = view.to_vec();
         assert_eq!(vec, b"World".to_vec());
@@ -689,7 +714,10 @@ mod tests {
         assert_eq!(hexdump, "");
 
         // Test data with non-printable characters
-        let data = &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F];
+        let data = &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E, 0x0F,
+        ];
         let hexdump = format_hexdump(data, 0x1000);
         assert!(hexdump.contains("00001000:"));
         assert!(hexdump.contains("00 01 02 03 04 05 06 07"));
@@ -711,9 +739,9 @@ mod tests {
     fn test_empty_file_handling() {
         let file = create_empty_file();
         let mapped = MappedBinary::new(file.path()).unwrap();
-        
+
         assert_eq!(mapped.size(), 0);
-        
+
         // Test operations on empty file
         assert!(mapped.read_u8(0).is_err());
         assert!(mapped.read_at(0, 1).is_err());
@@ -721,7 +749,7 @@ mod tests {
         assert_eq!(mapped.find_all_patterns(b"test"), vec![]);
         assert!(mapped.starts_with(b"")); // Empty pattern should match empty file
         assert!(!mapped.starts_with(b"test"));
-        
+
         let result = mapped.view(0..1);
         assert!(result.is_err());
     }
@@ -765,10 +793,10 @@ mod tests {
         let file = create_test_file();
         let config = MmapConfig::default();
         let advanced = AdvancedMmap::new(file.path(), config.clone()).unwrap();
-        
+
         assert_eq!(advanced.data().len(), 34);
         assert_eq!(advanced.data()[0..5], *b"Hello");
-        
+
         let returned_config = advanced.config();
         assert_eq!(returned_config.use_huge_pages, config.use_huge_pages);
         assert_eq!(returned_config.populate, config.populate);
@@ -784,7 +812,7 @@ mod tests {
             lock_memory: false,
         };
         let advanced = AdvancedMmap::new(file.path(), config).unwrap();
-        
+
         assert_eq!(advanced.data().len(), 34);
         assert!(advanced.config().populate);
     }
@@ -812,17 +840,17 @@ mod tests {
         let large_data = vec![0xAB; 10000]; // 10KB of 0xAB
         file.write_all(&large_data).unwrap();
         file.flush().unwrap();
-        
+
         let mapped = MappedBinary::new(file.path()).unwrap();
-        
+
         // Test reading from various positions
         assert_eq!(mapped.read_u8(5000).unwrap(), 0xAB);
         assert_eq!(mapped.read_bytes(1000, 100).unwrap().len(), 100);
-        
+
         // Test pattern finding in large data
         let positions = mapped.find_all_patterns(&[0xAB, 0xAB]);
         assert!(positions.len() > 1000); // Should find many overlapping patterns
-        
+
         // Test hexdump with large offset
         let hexdump = mapped.hexdump(8000, 32).unwrap();
         assert!(hexdump.contains("00001f40:")); // 8000 in hex
@@ -832,19 +860,19 @@ mod tests {
     fn test_boundary_conditions() {
         let file = create_test_file(); // 34 bytes: "Hello, World! This is a test file."
         let mapped = MappedBinary::new(file.path()).unwrap();
-        
+
         // Test reading at exact file boundary
         assert!(mapped.read_u8(33).is_ok()); // Last byte
         assert!(mapped.read_u8(34).is_err()); // One past end
-        
+
         // Test reading exactly to the end
         assert!(mapped.read_at(30, 4).is_ok()); // Last 4 bytes
         assert!(mapped.read_at(30, 5).is_err()); // One byte too many
-        
+
         // Test slice at boundary
         assert!(mapped.slice(0..34).is_ok()); // Entire file
         assert!(mapped.slice(0..35).is_err()); // One byte too many
-        
+
         // Test view at boundary
         assert!(mapped.view(0..34).is_ok()); // Entire file
         assert!(mapped.view(0..35).is_err()); // One byte too many

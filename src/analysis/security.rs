@@ -4,8 +4,8 @@
 //! including vulnerability detection, malware indicators, and security feature analysis.
 
 use crate::{
-    types::{Architecture, Import, Section, SecurityFeatures, SecurityIndicators, Symbol},
     BinaryFile, Result,
+    types::{Architecture, Import, Section, SecurityFeatures, SecurityIndicators, Symbol},
 };
 use std::collections::HashSet;
 
@@ -828,10 +828,19 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.suspicious_apis.len(), 2);
-        assert!(indicators.suspicious_apis.contains(&"VirtualAllocEx".to_string()));
-        assert!(indicators.suspicious_apis.contains(&"WriteProcessMemory".to_string()));
-        
-        let suspicious_findings: Vec<_> = findings.iter()
+        assert!(
+            indicators
+                .suspicious_apis
+                .contains(&"VirtualAllocEx".to_string())
+        );
+        assert!(
+            indicators
+                .suspicious_apis
+                .contains(&"WriteProcessMemory".to_string())
+        );
+
+        let suspicious_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::SuspiciousApi)
             .collect();
         assert_eq!(suspicious_findings.len(), 2);
@@ -862,10 +871,19 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.anti_debug.len(), 2);
-        assert!(indicators.anti_debug.contains(&"IsDebuggerPresent".to_string()));
-        assert!(indicators.anti_debug.contains(&"CheckRemoteDebuggerPresent".to_string()));
-        
-        let anti_debug_findings: Vec<_> = findings.iter()
+        assert!(
+            indicators
+                .anti_debug
+                .contains(&"IsDebuggerPresent".to_string())
+        );
+        assert!(
+            indicators
+                .anti_debug
+                .contains(&"CheckRemoteDebuggerPresent".to_string())
+        );
+
+        let anti_debug_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::AntiDebug)
             .collect();
         assert_eq!(anti_debug_findings.len(), 2);
@@ -896,7 +914,8 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.anti_vm.len(), 2);
-        let anti_vm_findings: Vec<_> = findings.iter()
+        let anti_vm_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::AntiVm)
             .collect();
         assert_eq!(anti_vm_findings.len(), 2);
@@ -927,7 +946,8 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.crypto_indicators.len(), 2);
-        let crypto_findings: Vec<_> = findings.iter()
+        let crypto_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::Cryptographic)
             .collect();
         assert_eq!(crypto_findings.len(), 2);
@@ -958,7 +978,8 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.network_indicators.len(), 2);
-        let network_findings: Vec<_> = findings.iter()
+        let network_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::Network)
             .collect();
         assert_eq!(network_findings.len(), 2);
@@ -989,7 +1010,8 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.filesystem_indicators.len(), 2);
-        let fs_findings: Vec<_> = findings.iter()
+        let fs_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::Filesystem)
             .collect();
         assert_eq!(fs_findings.len(), 2);
@@ -1020,7 +1042,8 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.registry_indicators.len(), 2);
-        let reg_findings: Vec<_> = findings.iter()
+        let reg_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::Registry)
             .collect();
         assert_eq!(reg_findings.len(), 2);
@@ -1065,7 +1088,8 @@ mod tests {
 
         analyzer.analyze_sections(&sections, &mut indicators, &mut findings);
 
-        let code_injection_findings: Vec<_> = findings.iter()
+        let code_injection_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::CodeInjection)
             .collect();
         assert_eq!(code_injection_findings.len(), 1);
@@ -1110,7 +1134,8 @@ mod tests {
 
         analyzer.analyze_sections(&sections, &mut indicators, &mut findings);
 
-        let obfuscation_findings: Vec<_> = findings.iter()
+        let obfuscation_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::Obfuscation)
             .collect();
         assert_eq!(obfuscation_findings.len(), 2);
@@ -1159,7 +1184,8 @@ mod tests {
 
         analyzer.analyze_symbols(&symbols, &mut indicators, &mut findings);
 
-        let suspicious_symbol_findings: Vec<_> = findings.iter()
+        let suspicious_symbol_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::SuspiciousApi && f.data.is_some())
             .collect();
         assert_eq!(suspicious_symbol_findings.len(), 2);
@@ -1185,18 +1211,27 @@ mod tests {
 
         analyzer.analyze_security_features(&features, &mut findings);
 
-        let missing_security_findings: Vec<_> = findings.iter()
+        let missing_security_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::MissingSecurity)
             .collect();
-        
+
         // Should find 4 missing features: nx_bit, aslr, stack_canary, cfi
         assert_eq!(missing_security_findings.len(), 4);
-        
+
         // Check specific findings
         assert!(findings.iter().any(|f| f.description.contains("NX/DEP")));
         assert!(findings.iter().any(|f| f.description.contains("ASLR")));
-        assert!(findings.iter().any(|f| f.description.contains("Stack canaries")));
-        assert!(findings.iter().any(|f| f.description.contains("Control Flow Integrity")));
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.description.contains("Stack canaries"))
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.description.contains("Control Flow Integrity"))
+        );
     }
 
     #[test]
@@ -1217,7 +1252,8 @@ mod tests {
 
         analyzer.analyze_security_features(&features, &mut findings);
 
-        let missing_security_findings: Vec<_> = findings.iter()
+        let missing_security_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.category == FindingCategory::MissingSecurity)
             .collect();
         assert_eq!(missing_security_findings.len(), 0);
@@ -1227,7 +1263,7 @@ mod tests {
     #[test]
     fn test_calculate_risk_score_low_risk() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
-        
+
         let indicators = SecurityIndicators {
             suspicious_apis: vec![],
             anti_debug: vec![],
@@ -1273,9 +1309,12 @@ mod tests {
     #[test]
     fn test_calculate_risk_score_high_risk() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
-        
+
         let indicators = SecurityIndicators {
-            suspicious_apis: vec!["VirtualAllocEx".to_string(), "WriteProcessMemory".to_string()],
+            suspicious_apis: vec![
+                "VirtualAllocEx".to_string(),
+                "WriteProcessMemory".to_string(),
+            ],
             anti_debug: vec!["IsDebuggerPresent".to_string()],
             anti_vm: vec!["GetSystemInfo".to_string()],
             crypto_indicators: vec![],
@@ -1328,7 +1367,7 @@ mod tests {
     fn test_get_suspicious_apis() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
         let apis = analyzer.get_suspicious_apis();
-        
+
         assert!(apis.contains("VirtualAllocEx"));
         assert!(apis.contains("WriteProcessMemory"));
         assert!(apis.contains("CreateRemoteThread"));
@@ -1342,7 +1381,7 @@ mod tests {
     fn test_get_anti_debug_apis() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
         let apis = analyzer.get_anti_debug_apis();
-        
+
         assert!(apis.contains("IsDebuggerPresent"));
         assert!(apis.contains("CheckRemoteDebuggerPresent"));
         assert!(apis.contains("NtQueryInformationProcess"));
@@ -1355,7 +1394,7 @@ mod tests {
     fn test_get_anti_vm_apis() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
         let apis = analyzer.get_anti_vm_apis();
-        
+
         assert!(apis.contains("GetSystemInfo"));
         assert!(apis.contains("GlobalMemoryStatusEx"));
         assert!(apis.contains("GetAdaptersInfo"));
@@ -1367,7 +1406,7 @@ mod tests {
     fn test_get_crypto_apis() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
         let apis = analyzer.get_crypto_apis();
-        
+
         assert!(apis.contains("CryptAcquireContext"));
         assert!(apis.contains("CryptCreateHash"));
         assert!(apis.contains("CryptEncrypt"));
@@ -1379,7 +1418,7 @@ mod tests {
     fn test_get_network_apis() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
         let apis = analyzer.get_network_apis();
-        
+
         assert!(apis.contains("WSAStartup"));
         assert!(apis.contains("socket"));
         assert!(apis.contains("connect"));
@@ -1391,7 +1430,7 @@ mod tests {
     fn test_get_filesystem_apis() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
         let apis = analyzer.get_filesystem_apis();
-        
+
         assert!(apis.contains("CreateFile"));
         assert!(apis.contains("WriteFile"));
         assert!(apis.contains("DeleteFile"));
@@ -1403,7 +1442,7 @@ mod tests {
     fn test_get_registry_apis() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
         let apis = analyzer.get_registry_apis();
-        
+
         assert!(apis.contains("RegOpenKeyEx"));
         assert!(apis.contains("RegCreateKeyEx"));
         assert!(apis.contains("RegSetValueEx"));
@@ -1415,7 +1454,7 @@ mod tests {
     #[test]
     fn test_suspicious_section_detection() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
-        
+
         // Test suspicious section names
         assert!(analyzer.is_suspicious_section_name(".upx0"));
         assert!(analyzer.is_suspicious_section_name(".packed"));
@@ -1424,11 +1463,11 @@ mod tests {
         assert!(analyzer.is_suspicious_section_name(".enigma"));
         assert!(analyzer.is_suspicious_section_name(".vmprotect"));
         assert!(analyzer.is_suspicious_section_name(".shell"));
-        
+
         // Test case insensitivity
         assert!(analyzer.is_suspicious_section_name(".UPX0"));
         assert!(analyzer.is_suspicious_section_name(".PACKED"));
-        
+
         // Test normal section names
         assert!(!analyzer.is_suspicious_section_name(".text"));
         assert!(!analyzer.is_suspicious_section_name(".data"));
@@ -1439,7 +1478,7 @@ mod tests {
     #[test]
     fn test_suspicious_symbol_detection() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
-        
+
         // Test suspicious symbol patterns
         assert!(analyzer.is_suspicious_symbol_name("inject_code"));
         assert!(analyzer.is_suspicious_symbol_name("bypass_check"));
@@ -1450,11 +1489,11 @@ mod tests {
         assert!(analyzer.is_suspicious_symbol_name("rootkit_hide"));
         assert!(analyzer.is_suspicious_symbol_name("keylogger_start"));
         assert!(analyzer.is_suspicious_symbol_name("stealth_mode"));
-        
+
         // Test case insensitivity
         assert!(analyzer.is_suspicious_symbol_name("INJECT_CODE"));
         assert!(analyzer.is_suspicious_symbol_name("Bypass_Check"));
-        
+
         // Test normal symbol names
         assert!(!analyzer.is_suspicious_symbol_name("main"));
         assert!(!analyzer.is_suspicious_symbol_name("printf"));
@@ -1537,11 +1576,11 @@ mod tests {
     #[test]
     fn test_risk_score_bounds() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
-        
+
         // Test that risk score is always between 0 and 100
         let indicators = SecurityIndicators::default();
         let features = SecurityFeatures::default();
-        
+
         // Empty findings should give 0 or very low score
         let empty_findings = vec![];
         let score = analyzer.calculate_risk_score(&indicators, &features, &empty_findings);
@@ -1569,15 +1608,21 @@ mod tests {
             signed: false,
         };
 
-        let critical_findings: Vec<SecurityFinding> = (0..10).map(|i| SecurityFinding {
-            category: FindingCategory::SuspiciousApi,
-            severity: Severity::Critical,
-            description: format!("Critical finding {}", i),
-            location: None,
-            data: None,
-        }).collect();
+        let critical_findings: Vec<SecurityFinding> = (0..10)
+            .map(|i| SecurityFinding {
+                category: FindingCategory::SuspiciousApi,
+                severity: Severity::Critical,
+                description: format!("Critical finding {}", i),
+                location: None,
+                data: None,
+            })
+            .collect();
 
-        let max_score = analyzer.calculate_risk_score(&high_risk_indicators, &insecure_features, &critical_findings);
+        let max_score = analyzer.calculate_risk_score(
+            &high_risk_indicators,
+            &insecure_features,
+            &critical_findings,
+        );
         assert!(max_score <= 100.0);
     }
 
@@ -1592,14 +1637,12 @@ mod tests {
         let mut indicators = SecurityIndicators::default();
         let mut findings = Vec::new();
 
-        let imports = vec![
-            Import {
-                name: "VirtualAllocEx".to_string(),
-                library: Some("kernel32.dll".to_string()),
-                address: Some(0x1000),
-                ordinal: None,
-            },
-        ];
+        let imports = vec![Import {
+            name: "VirtualAllocEx".to_string(),
+            library: Some("kernel32.dll".to_string()),
+            address: Some(0x1000),
+            ordinal: None,
+        }];
 
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
@@ -1607,7 +1650,7 @@ mod tests {
         // The config flags are checked in the main analyze() method
         // So VirtualAllocEx will still be detected as suspicious, but other categories work
         assert!(!indicators.suspicious_apis.is_empty());
-        
+
         // But we can test that the config affects the main analyze flow
         // by testing a scenario with different detection flags
         let config2 = SecurityConfig {
@@ -1620,7 +1663,7 @@ mod tests {
             ..SecurityConfig::default()
         };
         let analyzer2 = SecurityAnalyzer::with_config(Architecture::X86_64, config2);
-        
+
         // Test that individual detection methods can be configured
         assert!(!analyzer2.config.detect_anti_debug);
         assert!(!analyzer2.config.detect_anti_vm);
@@ -1735,10 +1778,10 @@ mod tests {
                 compiler_info: None,
                 endian: Endianness::Little,
                 security_features: SecurityFeatures {
-                    nx_bit: false,      // Missing security feature
-                    aslr: false,        // Missing security feature
+                    nx_bit: false,       // Missing security feature
+                    aslr: false,         // Missing security feature
                     stack_canary: false, // Missing security feature
-                    cfi: false,         // Missing security feature
+                    cfi: false,          // Missing security feature
                     fortify: false,
                     pie: false,
                     relro: false,
@@ -1751,11 +1794,26 @@ mod tests {
 
         // Verify high-risk indicators
         assert!(!result.indicators.suspicious_apis.is_empty());
-        assert!(result.indicators.suspicious_apis.contains(&"VirtualAllocEx".to_string()));
-        assert!(result.indicators.suspicious_apis.contains(&"WriteProcessMemory".to_string()));
-        
+        assert!(
+            result
+                .indicators
+                .suspicious_apis
+                .contains(&"VirtualAllocEx".to_string())
+        );
+        assert!(
+            result
+                .indicators
+                .suspicious_apis
+                .contains(&"WriteProcessMemory".to_string())
+        );
+
         assert!(!result.indicators.anti_debug.is_empty());
-        assert!(result.indicators.anti_debug.contains(&"IsDebuggerPresent".to_string()));
+        assert!(
+            result
+                .indicators
+                .anti_debug
+                .contains(&"IsDebuggerPresent".to_string())
+        );
 
         // Verify security features
         assert!(!result.features.nx_bit);
@@ -1765,39 +1823,52 @@ mod tests {
 
         // Verify findings
         assert!(!result.findings.is_empty());
-        
+
         // Should have suspicious API findings
-        let suspicious_findings: Vec<_> = result.findings.iter()
+        let suspicious_findings: Vec<_> = result
+            .findings
+            .iter()
             .filter(|f| f.category == FindingCategory::SuspiciousApi)
             .collect();
         assert!(!suspicious_findings.is_empty());
-        
+
         // Should have anti-debug findings
-        let anti_debug_findings: Vec<_> = result.findings.iter()
+        let anti_debug_findings: Vec<_> = result
+            .findings
+            .iter()
             .filter(|f| f.category == FindingCategory::AntiDebug)
             .collect();
         assert!(!anti_debug_findings.is_empty());
-        
+
         // Should have code injection findings (RWX section)
-        let code_injection_findings: Vec<_> = result.findings.iter()
+        let code_injection_findings: Vec<_> = result
+            .findings
+            .iter()
             .filter(|f| f.category == FindingCategory::CodeInjection)
             .collect();
         assert!(!code_injection_findings.is_empty());
-        
+
         // Should have obfuscation findings (suspicious section name)
-        let obfuscation_findings: Vec<_> = result.findings.iter()
+        let obfuscation_findings: Vec<_> = result
+            .findings
+            .iter()
             .filter(|f| f.category == FindingCategory::Obfuscation)
             .collect();
         assert!(!obfuscation_findings.is_empty());
-        
+
         // Should have missing security findings
-        let missing_security_findings: Vec<_> = result.findings.iter()
+        let missing_security_findings: Vec<_> = result
+            .findings
+            .iter()
             .filter(|f| f.category == FindingCategory::MissingSecurity)
             .collect();
         assert!(!missing_security_findings.is_empty());
 
         // Should have high risk score due to multiple indicators
-        assert!(result.risk_score > 30.0, "Risk score should be high for malicious binary");
+        assert!(
+            result.risk_score > 30.0,
+            "Risk score should be high for malicious binary"
+        );
     }
 
     #[test]
@@ -1897,10 +1968,10 @@ mod tests {
                 compiler_info: None,
                 endian: Endianness::Little,
                 security_features: SecurityFeatures {
-                    nx_bit: true,        // Security feature enabled
-                    aslr: true,          // Security feature enabled
-                    stack_canary: true,  // Security feature enabled
-                    cfi: true,           // Security feature enabled
+                    nx_bit: true,       // Security feature enabled
+                    aslr: true,         // Security feature enabled
+                    stack_canary: true, // Security feature enabled
+                    cfi: true,          // Security feature enabled
                     fortify: true,
                     pie: true,
                     relro: true,
@@ -1923,24 +1994,34 @@ mod tests {
         assert!(result.features.cfi);
 
         // Should have no or very few security findings
-        let suspicious_findings: Vec<_> = result.findings.iter()
-            .filter(|f| matches!(f.category, 
-                FindingCategory::SuspiciousApi |
-                FindingCategory::AntiDebug |
-                FindingCategory::AntiVm |
-                FindingCategory::CodeInjection
-            ))
+        let suspicious_findings: Vec<_> = result
+            .findings
+            .iter()
+            .filter(|f| {
+                matches!(
+                    f.category,
+                    FindingCategory::SuspiciousApi
+                        | FindingCategory::AntiDebug
+                        | FindingCategory::AntiVm
+                        | FindingCategory::CodeInjection
+                )
+            })
             .collect();
         assert!(suspicious_findings.is_empty());
 
         // Should have no missing security findings since all features are enabled
-        let missing_security_findings: Vec<_> = result.findings.iter()
+        let missing_security_findings: Vec<_> = result
+            .findings
+            .iter()
             .filter(|f| f.category == FindingCategory::MissingSecurity)
             .collect();
         assert!(missing_security_findings.is_empty());
 
         // Should have low risk score
-        assert!(result.risk_score < 10.0, "Risk score should be low for benign binary");
+        assert!(
+            result.risk_score < 10.0,
+            "Risk score should be low for benign binary"
+        );
     }
 
     #[test]
@@ -1948,17 +2029,22 @@ mod tests {
         // This test is simplified since analyze_binary_security expects a BinaryFile
         // but we can test the function exists and works with proper parameters
         let binary = create_test_binary_file();
-        
+
         // Test using our analyze_mock_binary helper which exercises the same logic
         let result = analyze_mock_binary(&binary);
-        
+
         // Verify the result contains expected fields
         assert!(!result.indicators.suspicious_apis.is_empty());
         assert!(result.risk_score > 0.0);
         assert!(!result.findings.is_empty());
-        
+
         // Verify that the function detected the suspicious API from our test data
-        assert!(result.indicators.suspicious_apis.contains(&"VirtualAllocEx".to_string()));
+        assert!(
+            result
+                .indicators
+                .suspicious_apis
+                .contains(&"VirtualAllocEx".to_string())
+        );
     }
 
     #[test]
@@ -1991,13 +2077,15 @@ mod tests {
 
         // Verify all fields of SecurityAnalysisResult are populated
         // indicators should be populated
-        assert!(result.indicators.suspicious_apis.len() > 0 || 
-                result.indicators.anti_debug.len() > 0 ||
-                result.indicators.anti_vm.len() > 0 ||
-                result.indicators.crypto_indicators.len() > 0 ||
-                result.indicators.network_indicators.len() > 0 ||
-                result.indicators.filesystem_indicators.len() > 0 ||
-                result.indicators.registry_indicators.len() > 0);
+        assert!(
+            result.indicators.suspicious_apis.len() > 0
+                || result.indicators.anti_debug.len() > 0
+                || result.indicators.anti_vm.len() > 0
+                || result.indicators.crypto_indicators.len() > 0
+                || result.indicators.network_indicators.len() > 0
+                || result.indicators.filesystem_indicators.len() > 0
+                || result.indicators.registry_indicators.len() > 0
+        );
 
         // features should be copied from metadata
         // (values don't matter, just that they're populated)
@@ -2028,14 +2116,12 @@ mod tests {
         let mut indicators = SecurityIndicators::default();
         let mut findings = Vec::new();
 
-        let imports = vec![
-            Import {
-                name: "VirtualAllocEx".to_string(),
-                library: Some("kernel32.dll".to_string()),
-                address: Some(0x1000),
-                ordinal: None,
-            },
-        ];
+        let imports = vec![Import {
+            name: "VirtualAllocEx".to_string(),
+            library: Some("kernel32.dll".to_string()),
+            address: Some(0x1000),
+            ordinal: None,
+        }];
 
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
         assert!(!indicators.suspicious_apis.is_empty());
@@ -2047,14 +2133,12 @@ mod tests {
         let mut indicators = SecurityIndicators::default();
         let mut findings = Vec::new();
 
-        let imports = vec![
-            Import {
-                name: "IsDebuggerPresent".to_string(),
-                library: Some("kernel32.dll".to_string()),
-                address: Some(0x1000),
-                ordinal: None,
-            },
-        ];
+        let imports = vec![Import {
+            name: "IsDebuggerPresent".to_string(),
+            library: Some("kernel32.dll".to_string()),
+            address: Some(0x1000),
+            ordinal: None,
+        }];
 
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
         assert!(!indicators.anti_debug.is_empty());

@@ -587,8 +587,12 @@ mod tests {
     #[test]
     fn test_add_single_pattern() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::Bytes, PatternData::Bytes(b"test".to_vec()));
-        
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Bytes,
+            PatternData::Bytes(b"test".to_vec()),
+        );
+
         matcher.add_pattern(pattern);
         assert_eq!(matcher.patterns.len(), 1);
         assert_eq!(matcher.patterns[0].name, "test");
@@ -598,10 +602,18 @@ mod tests {
     fn test_add_multiple_patterns() {
         let mut matcher = PatternMatcher::new();
         let patterns = vec![
-            create_test_pattern("test1", PatternType::Bytes, PatternData::Bytes(b"test1".to_vec())),
-            create_test_pattern("test2", PatternType::String, PatternData::String("test2".to_string())),
+            create_test_pattern(
+                "test1",
+                PatternType::Bytes,
+                PatternData::Bytes(b"test1".to_vec()),
+            ),
+            create_test_pattern(
+                "test2",
+                PatternType::String,
+                PatternData::String("test2".to_string()),
+            ),
         ];
-        
+
         matcher.add_patterns(patterns);
         assert_eq!(matcher.patterns.len(), 2);
     }
@@ -727,7 +739,11 @@ mod tests {
     #[test]
     fn test_byte_pattern_search_multiple_matches() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::Bytes, PatternData::Bytes(b"abc".to_vec()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Bytes,
+            PatternData::Bytes(b"abc".to_vec()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"abcabcabc";
@@ -739,7 +755,11 @@ mod tests {
     #[test]
     fn test_byte_pattern_search_overlapping_matches() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::Bytes, PatternData::Bytes(b"aaa".to_vec()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Bytes,
+            PatternData::Bytes(b"aaa".to_vec()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"aaaaa";
@@ -751,7 +771,11 @@ mod tests {
     #[test]
     fn test_byte_pattern_search_no_match() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::Bytes, PatternData::Bytes(b"xyz".to_vec()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Bytes,
+            PatternData::Bytes(b"xyz".to_vec()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"hello world";
@@ -763,7 +787,11 @@ mod tests {
     #[test]
     fn test_byte_pattern_search_too_short() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::Bytes, PatternData::Bytes(b"ab".to_vec()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Bytes,
+            PatternData::Bytes(b"ab".to_vec()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"hello world";
@@ -779,7 +807,11 @@ mod tests {
             ..Default::default()
         };
         let mut matcher = PatternMatcher::with_config(config);
-        let pattern = create_test_pattern("test", PatternType::Bytes, PatternData::Bytes(b"test".to_vec()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Bytes,
+            PatternData::Bytes(b"test".to_vec()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"test test test test";
@@ -795,7 +827,11 @@ mod tests {
     #[test]
     fn test_string_pattern_search_case_sensitive() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::String, PatternData::String("Hello".to_string()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::String,
+            PatternData::String("Hello".to_string()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"Say Hello to the world";
@@ -812,7 +848,11 @@ mod tests {
             ..Default::default()
         };
         let mut matcher = PatternMatcher::with_config(config);
-        let pattern = create_test_pattern("test", PatternType::String, PatternData::String("HELLO".to_string()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::String,
+            PatternData::String("HELLO".to_string()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"Say hello to the world";
@@ -825,7 +865,11 @@ mod tests {
     #[test]
     fn test_string_pattern_search_invalid_utf8() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::String, PatternData::String("test".to_string()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::String,
+            PatternData::String("test".to_string()),
+        );
         matcher.add_pattern(pattern);
 
         let data = &[0xFF, 0xFE, 0xFD, 0xFC]; // Invalid UTF-8
@@ -837,7 +881,11 @@ mod tests {
     #[test]
     fn test_string_pattern_search_too_short() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::String, PatternData::String("ab".to_string()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::String,
+            PatternData::String("ab".to_string()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"hello ab world";
@@ -853,7 +901,11 @@ mod tests {
     #[test]
     fn test_hex_wildcard_pattern_search() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::HexWildcard, PatternData::HexWildcard("48 65 ?? 6c 6f".to_string()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::HexWildcard,
+            PatternData::HexWildcard("48 65 ?? 6c 6f".to_string()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"Hello"; // 48 65 6c 6c 6f
@@ -867,7 +919,11 @@ mod tests {
     #[test]
     fn test_hex_wildcard_pattern_search_invalid_pattern() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::HexWildcard, PatternData::HexWildcard("48 65 X".to_string()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::HexWildcard,
+            PatternData::HexWildcard("48 65 X".to_string()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"Hello";
@@ -883,7 +939,8 @@ mod tests {
     #[test]
     fn test_magic_pattern_search_match() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("PE", PatternType::Magic, PatternData::Bytes(b"MZ".to_vec()));
+        let pattern =
+            create_test_pattern("PE", PatternType::Magic, PatternData::Bytes(b"MZ".to_vec()));
         matcher.add_pattern(pattern);
 
         let data = b"MZ\x90\x00\x03\x00"; // PE header start
@@ -897,7 +954,8 @@ mod tests {
     #[test]
     fn test_magic_pattern_search_no_match_wrong_position() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("PE", PatternType::Magic, PatternData::Bytes(b"MZ".to_vec()));
+        let pattern =
+            create_test_pattern("PE", PatternType::Magic, PatternData::Bytes(b"MZ".to_vec()));
         matcher.add_pattern(pattern);
 
         let data = b"XXMZ"; // Magic not at beginning
@@ -909,7 +967,8 @@ mod tests {
     #[test]
     fn test_magic_pattern_search_too_short() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("PE", PatternType::Magic, PatternData::Bytes(b"MZ".to_vec()));
+        let pattern =
+            create_test_pattern("PE", PatternType::Magic, PatternData::Bytes(b"MZ".to_vec()));
         matcher.add_pattern(pattern);
 
         let data = b"M"; // Too short
@@ -925,7 +984,11 @@ mod tests {
     #[test]
     fn test_regex_pattern_search_returns_empty() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::Regex, PatternData::Regex("test.*".to_string()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Regex,
+            PatternData::Regex("test.*".to_string()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"test pattern";
@@ -937,7 +1000,11 @@ mod tests {
     #[test]
     fn test_structural_pattern_search_returns_empty() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::Structural, PatternData::Bytes(b"test".to_vec()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Structural,
+            PatternData::Bytes(b"test".to_vec()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"test pattern";
@@ -964,7 +1031,7 @@ mod tests {
     fn test_file_format_patterns() {
         let patterns = get_file_format_patterns();
         assert!(patterns.len() >= 4);
-        
+
         let names: Vec<&str> = patterns.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"PE_MZ"));
         assert!(names.contains(&"ELF"));
@@ -976,7 +1043,7 @@ mod tests {
     fn test_compiler_patterns() {
         let patterns = get_compiler_patterns();
         assert!(!patterns.is_empty());
-        
+
         let names: Vec<&str> = patterns.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"GCC"));
         assert!(names.contains(&"MSVC"));
@@ -986,7 +1053,7 @@ mod tests {
     fn test_packer_patterns() {
         let patterns = get_packer_patterns();
         assert!(!patterns.is_empty());
-        
+
         let names: Vec<&str> = patterns.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"UPX"));
     }
@@ -995,7 +1062,7 @@ mod tests {
     fn test_crypto_patterns() {
         let patterns = get_crypto_patterns();
         assert!(!patterns.is_empty());
-        
+
         let names: Vec<&str> = patterns.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"MD5_Init"));
     }
@@ -1004,7 +1071,7 @@ mod tests {
     fn test_malware_patterns() {
         let patterns = get_malware_patterns();
         assert!(!patterns.is_empty());
-        
+
         let names: Vec<&str> = patterns.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"Suspicious_API"));
     }
@@ -1013,7 +1080,7 @@ mod tests {
     fn test_api_patterns() {
         let patterns = get_api_patterns();
         assert!(!patterns.is_empty());
-        
+
         let names: Vec<&str> = patterns.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"CreateProcess"));
     }
@@ -1022,7 +1089,7 @@ mod tests {
     fn test_get_builtin_patterns_unknown_category() {
         let patterns = get_builtin_patterns(&PatternCategory::Debug);
         assert!(patterns.is_empty()); // Debug not implemented
-        
+
         let patterns = get_builtin_patterns(&PatternCategory::Network);
         assert!(patterns.is_empty()); // Network not implemented
     }
@@ -1035,15 +1102,27 @@ mod tests {
             PatternCategory::Compiler,
             PatternCategory::Packer,
         ];
-        
+
         matcher.load_builtin_patterns(&categories);
         assert!(matcher.patterns.len() > 0);
-        
+
         // Verify patterns from all categories are loaded
-        let format_count = matcher.patterns.iter().filter(|p| p.category == PatternCategory::FileFormat).count();
-        let compiler_count = matcher.patterns.iter().filter(|p| p.category == PatternCategory::Compiler).count();
-        let packer_count = matcher.patterns.iter().filter(|p| p.category == PatternCategory::Packer).count();
-        
+        let format_count = matcher
+            .patterns
+            .iter()
+            .filter(|p| p.category == PatternCategory::FileFormat)
+            .count();
+        let compiler_count = matcher
+            .patterns
+            .iter()
+            .filter(|p| p.category == PatternCategory::Compiler)
+            .count();
+        let packer_count = matcher
+            .patterns
+            .iter()
+            .filter(|p| p.category == PatternCategory::Packer)
+            .count();
+
         assert!(format_count > 0);
         assert!(compiler_count > 0);
         assert!(packer_count > 0);
@@ -1056,9 +1135,17 @@ mod tests {
     #[test]
     fn test_search_results_structure() {
         let mut matcher = PatternMatcher::new();
-        let pattern1 = create_test_pattern("test1", PatternType::Bytes, PatternData::Bytes(b"test".to_vec()));
-        let pattern2 = create_test_pattern("test2", PatternType::String, PatternData::String("hello".to_string()));
-        
+        let pattern1 = create_test_pattern(
+            "test1",
+            PatternType::Bytes,
+            PatternData::Bytes(b"test".to_vec()),
+        );
+        let pattern2 = create_test_pattern(
+            "test2",
+            PatternType::String,
+            PatternData::String("hello".to_string()),
+        );
+
         matcher.add_pattern(pattern1);
         matcher.add_pattern(pattern2);
 
@@ -1100,7 +1187,7 @@ mod tests {
             category: PatternCategory::Compiler,
             description: "GCC compiler".to_string(),
         };
-        
+
         matcher.add_pattern(pattern1);
         matcher.add_pattern(pattern2);
 
@@ -1109,7 +1196,11 @@ mod tests {
 
         assert_eq!(results.matches.len(), 2);
         assert_eq!(results.by_category.len(), 2);
-        assert!(results.by_category.contains_key(&PatternCategory::FileFormat));
+        assert!(
+            results
+                .by_category
+                .contains_key(&PatternCategory::FileFormat)
+        );
         assert!(results.by_category.contains_key(&PatternCategory::Compiler));
     }
 
@@ -1136,7 +1227,11 @@ mod tests {
     #[test]
     fn test_search_empty_data() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::Bytes, PatternData::Bytes(b"test".to_vec()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Bytes,
+            PatternData::Bytes(b"test".to_vec()),
+        );
         matcher.add_pattern(pattern);
 
         let data = b"";
@@ -1149,7 +1244,11 @@ mod tests {
     #[test]
     fn test_search_large_data() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::Bytes, PatternData::Bytes(b"needle".to_vec()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Bytes,
+            PatternData::Bytes(b"needle".to_vec()),
+        );
         matcher.add_pattern(pattern);
 
         let mut data = vec![b'X'; 100000];
@@ -1165,7 +1264,11 @@ mod tests {
     #[test]
     fn test_pattern_match_structure() {
         let mut matcher = PatternMatcher::new();
-        let pattern = create_test_pattern("test", PatternType::Bytes, PatternData::Bytes(b"test".to_vec()));
+        let pattern = create_test_pattern(
+            "test",
+            PatternType::Bytes,
+            PatternData::Bytes(b"test".to_vec()),
+        );
         matcher.add_pattern(pattern.clone());
 
         let data = b"find test here";
@@ -1183,12 +1286,28 @@ mod tests {
     #[test]
     fn test_multiple_pattern_types_search() {
         let mut matcher = PatternMatcher::new();
-        
+
         // Add different pattern types
-        matcher.add_pattern(create_test_pattern("bytes", PatternType::Bytes, PatternData::Bytes(b"test".to_vec())));
-        matcher.add_pattern(create_test_pattern("string", PatternType::String, PatternData::String("hello".to_string())));
-        matcher.add_pattern(create_test_pattern("magic", PatternType::Magic, PatternData::Bytes(b"MZ".to_vec())));
-        matcher.add_pattern(create_test_pattern("hex", PatternType::HexWildcard, PatternData::HexWildcard("77 6F ?? 6C 64".to_string())));
+        matcher.add_pattern(create_test_pattern(
+            "bytes",
+            PatternType::Bytes,
+            PatternData::Bytes(b"test".to_vec()),
+        ));
+        matcher.add_pattern(create_test_pattern(
+            "string",
+            PatternType::String,
+            PatternData::String("hello".to_string()),
+        ));
+        matcher.add_pattern(create_test_pattern(
+            "magic",
+            PatternType::Magic,
+            PatternData::Bytes(b"MZ".to_vec()),
+        ));
+        matcher.add_pattern(create_test_pattern(
+            "hex",
+            PatternType::HexWildcard,
+            PatternData::HexWildcard("77 6F ?? 6C 64".to_string()),
+        ));
 
         let data = b"MZ test hello world";
         let results = matcher.search(data).unwrap();

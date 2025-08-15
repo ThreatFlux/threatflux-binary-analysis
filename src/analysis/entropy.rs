@@ -1,8 +1,8 @@
 //! Entropy analysis for binary files
 
 use crate::{
-    types::{EntropyAnalysis, EntropyRegion, ObfuscationLevel, PackingIndicators},
     BinaryFile, Result,
+    types::{EntropyAnalysis, EntropyRegion, ObfuscationLevel, PackingIndicators},
 };
 use std::collections::HashMap;
 

@@ -1,9 +1,9 @@
 //! iced-x86 disassembly engine implementation
 
-use super::{categorize_instruction, DisassemblyConfig};
+use super::{DisassemblyConfig, categorize_instruction};
 use crate::{
-    types::{Architecture, ControlFlow as FlowType, Instruction},
     BinaryError, Result,
+    types::{Architecture, ControlFlow as FlowType, Instruction},
 };
 use iced_x86::*;
 
@@ -292,7 +292,7 @@ fn get_cpuid_features(instr: &iced_x86::Instruction) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{InstructionCategory, ControlFlow as FlowType};
+    use crate::types::{ControlFlow as FlowType, InstructionCategory};
 
     #[test]
     fn test_iced_engine_x86_64() {
@@ -485,7 +485,10 @@ mod tests {
         assert_eq!(result[0].category, InstructionCategory::System);
         assert_eq!(result[0].mnemonic, "syscall");
         // iced-x86 categorizes SYSCALL differently than INT3
-        assert!(matches!(result[0].flow, FlowType::Interrupt | FlowType::Unknown));
+        assert!(matches!(
+            result[0].flow,
+            FlowType::Interrupt | FlowType::Unknown
+        ));
     }
 
     #[test]
@@ -522,7 +525,7 @@ mod tests {
         // Mix valid and invalid bytes
         let data = &[0x90, 0xff, 0xff, 0xff, 0x90]; // NOP, invalid bytes, NOP
         let result = disassemble(data, 0x1000, Architecture::X86_64, &config).unwrap();
-        
+
         // Should skip invalid instruction and only return valid ones
         assert!(result.len() >= 1);
         assert_eq!(result[0].mnemonic, "nop");
@@ -538,7 +541,7 @@ mod tests {
         // Multiple NOPs
         let data = &[0x90, 0x90, 0x90, 0x90, 0x90]; // 5 NOPs
         let result = disassemble(data, 0x1000, Architecture::X86_64, &config).unwrap();
-        
+
         // Should only return 2 instructions due to limit
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].mnemonic, "nop");
@@ -556,7 +559,7 @@ mod tests {
     #[test]
     fn test_single_byte_instruction() {
         let config = DisassemblyConfig::default();
-        
+
         // NOP (0x90)
         let data = &[0x90];
         let result = disassemble(data, 0x1000, Architecture::X86_64, &config).unwrap();
@@ -569,7 +572,7 @@ mod tests {
     #[test]
     fn test_multi_byte_instruction() {
         let config = DisassemblyConfig::default();
-        
+
         // MOV EAX, immediate (b8 + 4 bytes)
         let data = &[0xb8, 0x00, 0x10, 0x00, 0x00];
         let result = disassemble(data, 0x1000, Architecture::X86_64, &config).unwrap();
@@ -583,11 +586,11 @@ mod tests {
     fn test_instruction_addressing() {
         let config = DisassemblyConfig::default();
         let base_addr = 0x401000;
-        
+
         // Multiple instructions with different addresses
         let data = &[0x90, 0x90, 0x90]; // 3 NOPs
         let result = disassemble(data, base_addr, Architecture::X86_64, &config).unwrap();
-        
+
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].address, base_addr);
         assert_eq!(result[1].address, base_addr + 1);
@@ -597,7 +600,7 @@ mod tests {
     #[test]
     fn test_x86_32bit_mode() {
         let config = DisassemblyConfig::default();
-        
+
         // Test 32-bit specific instruction
         let data = &[0x90]; // NOP
         let result = disassemble(data, 0x1000, Architecture::X86, &config).unwrap();
@@ -657,7 +660,7 @@ mod tests {
     #[test]
     fn test_analyze_iced_control_flow_variants() {
         use iced_x86::*;
-        
+
         // Create a simple instruction for testing
         let mut decoder = Decoder::with_ip(64, &[0x90], 0x1000, DecoderOptions::NONE);
         let mut instr = Instruction::default();
@@ -672,7 +675,7 @@ mod tests {
     #[test]
     fn test_get_branch_target() {
         use iced_x86::*;
-        
+
         // Test with jump instruction
         let data = &[0xeb, 0x05]; // JMP +5
         let mut decoder = Decoder::with_ip(64, data, 0x1000, DecoderOptions::NONE);
@@ -696,7 +699,7 @@ mod tests {
     #[test]
     fn test_analyze_instruction_details() {
         use iced_x86::*;
-        
+
         // Test with MOV EAX, EBX
         let data = &[0x89, 0xd8];
         let mut decoder = Decoder::with_ip(64, data, 0x1000, DecoderOptions::NONE);
@@ -704,7 +707,7 @@ mod tests {
         decoder.decode_out(&mut instr);
 
         let details = analyze_instruction_details(&instr);
-        
+
         assert!(!details.operands.is_empty());
         assert!(!details.encoding.is_empty());
     }
@@ -712,7 +715,7 @@ mod tests {
     #[test]
     fn test_format_operand_info() {
         use iced_x86::*;
-        
+
         // Test with register operand
         let data = &[0x89, 0xd8]; // MOV EAX, EBX
         let mut decoder = Decoder::with_ip(64, data, 0x1000, DecoderOptions::NONE);
@@ -735,7 +738,7 @@ mod tests {
     #[test]
     fn test_get_cpuid_features() {
         use iced_x86::*;
-        
+
         let data = &[0x90]; // NOP
         let mut decoder = Decoder::with_ip(64, data, 0x1000, DecoderOptions::NONE);
         let mut instr = Instruction::default();
@@ -773,7 +776,7 @@ mod tests {
         // Complex sequence: PUSH EBP, MOV EBP ESP, RET
         let data = &[0x55, 0x89, 0xe5, 0xc3]; // Function prologue + epilogue
         let result = disassemble(data, 0x1000, Architecture::X86_64, &config).unwrap();
-        
+
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].mnemonic, "push");
         assert_eq!(result[1].mnemonic, "mov");
@@ -802,13 +805,13 @@ mod tests {
     fn test_instruction_bytes_accuracy() {
         let config = DisassemblyConfig::default();
         let base_addr = 0x1000;
-        
+
         // Test various instruction lengths
         let test_cases = vec![
-            (&[0x90][..], 1),                              // NOP (1 byte)
-            (&[0x89, 0xd8][..], 2),                       // MOV EAX, EBX (2 bytes)
-            (&[0x0f, 0x10, 0xc1][..], 3),                 // MOVUPS (3 bytes)
-            (&[0xb8, 0x00, 0x10, 0x00, 0x00][..], 5),     // MOV EAX, imm32 (5 bytes)
+            (&[0x90][..], 1),                         // NOP (1 byte)
+            (&[0x89, 0xd8][..], 2),                   // MOV EAX, EBX (2 bytes)
+            (&[0x0f, 0x10, 0xc1][..], 3),             // MOVUPS (3 bytes)
+            (&[0xb8, 0x00, 0x10, 0x00, 0x00][..], 5), // MOV EAX, imm32 (5 bytes)
         ];
 
         for (data, expected_size) in test_cases {

@@ -1,9 +1,9 @@
 //! Capstone disassembly engine implementation
 
-use super::{analyze_control_flow, categorize_instruction, DisassemblyConfig};
+use super::{DisassemblyConfig, analyze_control_flow, categorize_instruction};
 use crate::{
-    types::{Architecture, ControlFlow as FlowType, Instruction},
     BinaryError, Result,
+    types::{Architecture, ControlFlow as FlowType, Instruction},
 };
 use capstone::prelude::*;
 use capstone::{Arch, Mode};

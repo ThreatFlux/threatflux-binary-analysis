@@ -71,7 +71,7 @@ fn test_detect_java_format() {
 #[test]
 fn test_detect_java_jar_format() {
     use std::io::Write;
-    use zip::{write::FileOptions, ZipWriter};
+    use zip::{ZipWriter, write::FileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
