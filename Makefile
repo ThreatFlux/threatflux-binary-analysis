@@ -21,14 +21,18 @@ CYAN = \033[0;36m
 WHITE = \033[0;37m
 NC = \033[0m # No Color
 
-.PHONY: help all all-docker clean docker-build docker-clean
+.PHONY: help all all-coverage all-docker all-docker-coverage clean docker-build docker-clean
 .PHONY: fmt fmt-check fmt-docker lint lint-docker audit audit-docker deny deny-docker
 .PHONY: test test-docker test-doc test-doc-docker build build-docker build-all build-all-docker
 .PHONY: docs docs-docker examples examples-docker bench bench-docker
-.PHONY: install-tools ci-local setup-dev
+.PHONY: coverage coverage-open coverage-lcov coverage-html coverage-summary coverage-json coverage-docker
+.PHONY: install-tools ci-local ci-local-coverage setup-dev
 
 # Default target
 all: fmt-check lint audit deny test docs build examples ## Run all checks and builds locally
+
+# Extended target with coverage
+all-coverage: fmt-check lint audit deny test coverage docs build examples ## Run all checks including coverage locally
 
 # Docker all-in-one target
 all-docker: docker-build ## Run all checks and builds in Docker container
@@ -51,6 +55,30 @@ all-docker: docker-build ## Run all checks and builds in Docker container
 		echo '$(BLUE)=== Examples ===$(NC)' && \
 		cargo build --examples --all-features && \
 		echo '$(GREEN)✅ All checks passed!$(NC)' \
+	"
+
+# Docker all-in-one target with coverage
+all-docker-coverage: docker-build ## Run all checks including coverage in Docker container
+	@echo "$(CYAN)Running all checks with coverage in Docker container...$(NC)"
+	@docker run --rm -v "$(PWD):/workspace" $(DOCKER_FULL_NAME) sh -c " \
+		echo '$(BLUE)=== Formatting Check ===$(NC)' && \
+		cargo fmt --all -- --check && \
+		echo '$(BLUE)=== Linting ===$(NC)' && \
+		cargo clippy --all-targets --all-features -- -D warnings && \
+		echo '$(BLUE)=== Security Audit ===$(NC)' && \
+		cargo audit && \
+		echo '$(BLUE)=== Dependency Check ===$(NC)' && \
+		cargo deny check && \
+		echo '$(BLUE)=== Tests with Coverage ===$(NC)' && \
+		cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info && \
+		cargo llvm-cov --all-features --workspace --html && \
+		echo '$(BLUE)=== Documentation ===$(NC)' && \
+		cargo doc --all-features --no-deps && \
+		echo '$(BLUE)=== Build ===$(NC)' && \
+		cargo build --all-features && \
+		echo '$(BLUE)=== Examples ===$(NC)' && \
+		cargo build --examples --all-features && \
+		echo '$(GREEN)✅ All checks with coverage passed!$(NC)' \
 	"
 
 help: ## Show this help message
@@ -245,10 +273,36 @@ bench-docker: docker-build ## Run benchmarks in Docker
 # Coverage and Profiling
 # =============================================================================
 
-coverage: ## Generate test coverage report
+coverage: ## Generate test coverage report (HTML + LCOV)
 	@echo "$(CYAN)Generating coverage report...$(NC)"
 	@cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
 	@cargo llvm-cov --all-features --workspace --html
+	@echo "$(GREEN)✅ Coverage report generated in target/llvm-cov/html/index.html$(NC)"
+
+coverage-open: coverage ## Generate and open HTML coverage report
+	@echo "$(CYAN)Opening coverage report...$(NC)"
+	@open target/llvm-cov/html/index.html 2>/dev/null || \
+	 xdg-open target/llvm-cov/html/index.html 2>/dev/null || \
+	 echo "$(YELLOW)Please open target/llvm-cov/html/index.html manually$(NC)"
+
+coverage-lcov: ## Generate LCOV coverage report only
+	@echo "$(CYAN)Generating LCOV coverage report...$(NC)"
+	@cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+	@echo "$(GREEN)✅ LCOV report generated at lcov.info$(NC)"
+
+coverage-html: ## Generate HTML coverage report only
+	@echo "$(CYAN)Generating HTML coverage report...$(NC)"
+	@cargo llvm-cov --all-features --workspace --html
+	@echo "$(GREEN)✅ HTML report generated in target/llvm-cov/html/index.html$(NC)"
+
+coverage-summary: ## Show coverage summary
+	@echo "$(CYAN)Generating coverage summary...$(NC)"
+	@cargo llvm-cov --all-features --workspace --summary-only
+
+coverage-json: ## Generate JSON coverage report
+	@echo "$(CYAN)Generating JSON coverage report...$(NC)"
+	@cargo llvm-cov --all-features --workspace --json --output-path coverage.json
+	@echo "$(GREEN)✅ JSON report generated at coverage.json$(NC)"
 
 coverage-docker: docker-build ## Generate test coverage report in Docker
 	@echo "$(CYAN)Generating coverage report in Docker...$(NC)"
@@ -278,15 +332,34 @@ ci-local: ## Run CI-like checks locally
 	@$(MAKE) build-all
 	@echo "$(GREEN)✅ All CI checks passed locally!$(NC)"
 
+ci-local-coverage: ## Run CI-like checks locally with coverage
+	@echo "$(CYAN)Running CI checks with coverage locally...$(NC)"
+	@echo "$(BLUE)=== Formatting ===$(NC)"
+	@$(MAKE) fmt-check
+	@echo "$(BLUE)=== Linting ===$(NC)"
+	@$(MAKE) lint
+	@echo "$(BLUE)=== Security Audit ===$(NC)"
+	@$(MAKE) audit
+	@echo "$(BLUE)=== Dependency Check ===$(NC)"
+	@$(MAKE) deny
+	@echo "$(BLUE)=== Tests with Coverage ===$(NC)"
+	@$(MAKE) coverage-summary
+	@echo "$(BLUE)=== Documentation ===$(NC)"
+	@$(MAKE) docs
+	@echo "$(BLUE)=== Build ===$(NC)"
+	@$(MAKE) build-all
+	@echo "$(GREEN)✅ All CI checks with coverage passed locally!$(NC)"
+
 # =============================================================================
 # Utility Commands
 # =============================================================================
 
-clean: ## Clean build artifacts
+clean: ## Clean build artifacts and coverage reports
 	@echo "$(CYAN)Cleaning build artifacts...$(NC)"
 	@cargo clean
 	@rm -rf target/
-	@rm -f lcov.info
+	@rm -f lcov.info coverage.json
+	@echo "$(GREEN)✅ Clean complete!$(NC)"
 
 watch: ## Watch for changes and run tests
 	@echo "$(CYAN)Watching for changes...$(NC)"
