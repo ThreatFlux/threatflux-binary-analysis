@@ -1,0 +1,20 @@
+FROM rust:1.89-alpine
+
+# Install system dependencies
+RUN apk add --no-cache \
+    pkgconfig \
+    capstone-dev \
+    musl-dev
+
+# Install rustfmt component
+RUN rustup component add rustfmt
+
+# Set working directory
+WORKDIR /workspace
+
+# Set environment variables to match CI
+ENV CARGO_TERM_COLOR=always
+ENV RUST_BACKTRACE=1
+
+# Default command to run formatting
+CMD ["cargo", "fmt", "--all"]

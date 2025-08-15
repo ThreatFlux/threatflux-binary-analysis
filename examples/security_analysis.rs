@@ -6,9 +6,9 @@
 use std::env;
 use std::fs;
 use threatflux_binary_analysis::{
-    BinaryFile,
     analysis::security::{SecurityAnalyzer, SecurityConfig},
     utils::patterns::{PatternCategory, PatternMatcher},
+    BinaryFile,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;

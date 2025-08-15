@@ -5,11 +5,11 @@
 //! complexity metrics calculation.
 
 use crate::{
-    BinaryFile, Result,
     types::{
         Architecture, BasicBlock, ComplexityMetrics, ControlFlow as FlowType, ControlFlowGraph,
         Function, Instruction, InstructionCategory,
     },
+    BinaryFile, Result,
 };
 use std::collections::{HashMap, HashSet};
 
