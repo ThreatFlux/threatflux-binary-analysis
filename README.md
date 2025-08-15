@@ -74,7 +74,7 @@ threatflux-binary-analysis = {
 | `java` | JAR/class file support | ❌ |
 | `wasm` | WebAssembly support | ❌ |
 | `disasm-capstone` | Capstone disassembly | ✅ |
-| `disasm-iced` | iced-x86 disassembly | ❌ |
+| `disasm-iced` | iced-x86 disassembly | ✅ |
 | `control-flow` | Control flow analysis | ❌ |
 | `entropy-analysis` | Entropy calculation | ❌ |
 | `symbol-resolution` | Debug symbol support | ❌ |
@@ -678,15 +678,32 @@ let elf_analysis = elf_parser.parse(&file_data)?;
 Multiple disassembly engines are supported:
 
 ```rust
+use threatflux_binary_analysis::disasm::{
+    Disassembler, DisassemblyConfig, DisassemblyEngine,
+};
+use threatflux_binary_analysis::types::Architecture;
+
 // Capstone engine (supports many architectures)
-use threatflux_binary_analysis::disasm::CapstoneEngine;
-let capstone = CapstoneEngine::new(Architecture::X86_64)?;
-let instructions = capstone.disassemble(&code, address)?;
+#[cfg(feature = "disasm-capstone")]
+let capstone_cfg = DisassemblyConfig {
+    engine: DisassemblyEngine::Capstone,
+    ..Default::default()
+};
+#[cfg(feature = "disasm-capstone")]
+let capstone = Disassembler::with_config(Architecture::X86_64, capstone_cfg)?;
+#[cfg(feature = "disasm-capstone")]
+let capstone_instructions = capstone.disassemble(&code, address)?;
 
 // iced-x86 engine (x86/x64 only, but very detailed)
-use threatflux_binary_analysis::disasm::IcedEngine;
-let iced = IcedEngine::new(Architecture::X86_64)?;
-let instructions = iced.disassemble(&code, address)?;
+#[cfg(feature = "disasm-iced")]
+let iced_cfg = DisassemblyConfig {
+    engine: DisassemblyEngine::Iced,
+    ..Default::default()
+};
+#[cfg(feature = "disasm-iced")]
+let iced = Disassembler::with_config(Architecture::X86_64, iced_cfg)?;
+#[cfg(feature = "disasm-iced")]
+let iced_instructions = iced.disassemble(&code, address)?;
 ```
 
 ## 📈 Performance

@@ -1,9 +1,9 @@
 //! iced-x86 disassembly engine implementation
 
-use super::{DisassemblyConfig, categorize_instruction};
+use super::{categorize_instruction, DisassemblyConfig};
 use crate::{
-    BinaryError, Result,
     types::{Architecture, ControlFlow as FlowType, Instruction},
+    BinaryError, Result,
 };
 use iced_x86::*;
 
