@@ -1,11 +1,11 @@
 //! Mach-O format parser for macOS/iOS binaries
 
 use crate::{
-    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
         SectionPermissions, SectionType, SecurityFeatures, Symbol,
     },
+    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
 };
 use goblin::mach::{Mach, MachO};
 
