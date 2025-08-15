@@ -565,9 +565,9 @@ mod tests {
             min_pattern_length: 5,
         };
         let matcher = PatternMatcher::with_config(config.clone());
-        assert_eq!(matcher.config.case_sensitive, false);
+        assert!(!matcher.config.case_sensitive);
         assert_eq!(matcher.config.max_matches, 500);
-        assert_eq!(matcher.config.enable_wildcards, false);
+        assert!(!matcher.config.enable_wildcards);
         assert_eq!(matcher.config.min_pattern_length, 5);
     }
 
@@ -1104,7 +1104,7 @@ mod tests {
         ];
 
         matcher.load_builtin_patterns(&categories);
-        assert!(matcher.patterns.len() > 0);
+        assert!(!matcher.patterns.is_empty());
 
         // Verify patterns from all categories are loaded
         let format_count = matcher
@@ -1196,11 +1196,9 @@ mod tests {
 
         assert_eq!(results.matches.len(), 2);
         assert_eq!(results.by_category.len(), 2);
-        assert!(
-            results
-                .by_category
-                .contains_key(&PatternCategory::FileFormat)
-        );
+        assert!(results
+            .by_category
+            .contains_key(&PatternCategory::FileFormat));
         assert!(results.by_category.contains_key(&PatternCategory::Compiler));
     }
 

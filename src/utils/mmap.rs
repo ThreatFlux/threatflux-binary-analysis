@@ -376,8 +376,7 @@ mod tests {
     }
 
     fn create_empty_file() -> NamedTempFile {
-        let file = NamedTempFile::new().unwrap();
-        file
+        NamedTempFile::new().unwrap()
     }
 
     #[test]
@@ -427,12 +426,10 @@ mod tests {
         // Test error case - range exceeds file size
         let result = mapped.slice(0..100);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Range exceeds file size")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Range exceeds file size"));
     }
 
     #[test]
@@ -461,12 +458,10 @@ mod tests {
         // Test read_at with out of bounds
         let result = mapped.read_at(0, 100);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Read exceeds file size")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Read exceeds file size"));
 
         // Test read_at with offset out of bounds
         let result = mapped.read_at(50, 5);
@@ -479,12 +474,10 @@ mod tests {
         // Test read_u8 with offset out of bounds
         let result = mapped.read_u8(100);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Offset exceeds file size")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Offset exceeds file size"));
     }
 
     #[test]
@@ -567,12 +560,10 @@ mod tests {
         // Test invalid UTF-8 string
         let result = mapped.read_cstring(0, 10);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid UTF-8 string")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid UTF-8 string"));
     }
 
     #[test]
@@ -675,12 +666,10 @@ mod tests {
         // Test error case
         let result = mapped.view(0..100);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Range exceeds file size")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Range exceeds file size"));
     }
 
     #[test]
@@ -783,9 +772,9 @@ mod tests {
             lock_memory: false,
         };
         let cloned = config.clone();
-        assert_eq!(cloned.use_huge_pages, true);
-        assert_eq!(cloned.populate, true);
-        assert_eq!(cloned.lock_memory, false);
+        assert!(cloned.use_huge_pages);
+        assert!(cloned.populate);
+        assert!(!cloned.lock_memory);
     }
 
     #[test]

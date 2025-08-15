@@ -1,9 +1,9 @@
 //! iced-x86 disassembly engine implementation
 
-use super::{DisassemblyConfig, categorize_instruction};
+use super::{categorize_instruction, DisassemblyConfig};
 use crate::{
-    BinaryError, Result,
     types::{Architecture, ControlFlow as FlowType, Instruction},
+    BinaryError, Result,
 };
 use iced_x86::*;
 
@@ -527,7 +527,7 @@ mod tests {
         let result = disassemble(data, 0x1000, Architecture::X86_64, &config).unwrap();
 
         // Should skip invalid instruction and only return valid ones
-        assert!(result.len() >= 1);
+        assert!(!result.is_empty());
         assert_eq!(result[0].mnemonic, "nop");
     }
 
@@ -746,7 +746,7 @@ mod tests {
 
         let features = get_cpuid_features(&instr);
         // NOP should have minimal CPUID requirements - just verify we can get features
-        assert!(features.len() == 0 || features.len() > 0); // Always true, but tests the function
+        assert!(features.is_empty() || !features.is_empty()); // Always true, but tests the function
     }
 
     #[test]

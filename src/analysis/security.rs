@@ -4,8 +4,8 @@
 //! including vulnerability detection, malware indicators, and security feature analysis.
 
 use crate::{
-    BinaryFile, Result,
     types::{Architecture, Import, Section, SecurityFeatures, SecurityIndicators, Symbol},
+    BinaryFile, Result,
 };
 use std::collections::HashSet;
 
@@ -828,16 +828,12 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.suspicious_apis.len(), 2);
-        assert!(
-            indicators
-                .suspicious_apis
-                .contains(&"VirtualAllocEx".to_string())
-        );
-        assert!(
-            indicators
-                .suspicious_apis
-                .contains(&"WriteProcessMemory".to_string())
-        );
+        assert!(indicators
+            .suspicious_apis
+            .contains(&"VirtualAllocEx".to_string()));
+        assert!(indicators
+            .suspicious_apis
+            .contains(&"WriteProcessMemory".to_string()));
 
         let suspicious_findings: Vec<_> = findings
             .iter()
@@ -871,16 +867,12 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.anti_debug.len(), 2);
-        assert!(
-            indicators
-                .anti_debug
-                .contains(&"IsDebuggerPresent".to_string())
-        );
-        assert!(
-            indicators
-                .anti_debug
-                .contains(&"CheckRemoteDebuggerPresent".to_string())
-        );
+        assert!(indicators
+            .anti_debug
+            .contains(&"IsDebuggerPresent".to_string()));
+        assert!(indicators
+            .anti_debug
+            .contains(&"CheckRemoteDebuggerPresent".to_string()));
 
         let anti_debug_findings: Vec<_> = findings
             .iter()
@@ -1222,16 +1214,12 @@ mod tests {
         // Check specific findings
         assert!(findings.iter().any(|f| f.description.contains("NX/DEP")));
         assert!(findings.iter().any(|f| f.description.contains("ASLR")));
-        assert!(
-            findings
-                .iter()
-                .any(|f| f.description.contains("Stack canaries"))
-        );
-        assert!(
-            findings
-                .iter()
-                .any(|f| f.description.contains("Control Flow Integrity"))
-        );
+        assert!(findings
+            .iter()
+            .any(|f| f.description.contains("Stack canaries")));
+        assert!(findings
+            .iter()
+            .any(|f| f.description.contains("Control Flow Integrity")));
     }
 
     #[test]
@@ -1584,7 +1572,7 @@ mod tests {
         // Empty findings should give 0 or very low score
         let empty_findings = vec![];
         let score = analyzer.calculate_risk_score(&indicators, &features, &empty_findings);
-        assert!(score >= 0.0 && score <= 100.0);
+        assert!((0.0..=100.0).contains(&score));
 
         // Maximum risk scenario
         let high_risk_indicators = SecurityIndicators {
@@ -1794,26 +1782,20 @@ mod tests {
 
         // Verify high-risk indicators
         assert!(!result.indicators.suspicious_apis.is_empty());
-        assert!(
-            result
-                .indicators
-                .suspicious_apis
-                .contains(&"VirtualAllocEx".to_string())
-        );
-        assert!(
-            result
-                .indicators
-                .suspicious_apis
-                .contains(&"WriteProcessMemory".to_string())
-        );
+        assert!(result
+            .indicators
+            .suspicious_apis
+            .contains(&"VirtualAllocEx".to_string()));
+        assert!(result
+            .indicators
+            .suspicious_apis
+            .contains(&"WriteProcessMemory".to_string()));
 
         assert!(!result.indicators.anti_debug.is_empty());
-        assert!(
-            result
-                .indicators
-                .anti_debug
-                .contains(&"IsDebuggerPresent".to_string())
-        );
+        assert!(result
+            .indicators
+            .anti_debug
+            .contains(&"IsDebuggerPresent".to_string()));
 
         // Verify security features
         assert!(!result.features.nx_bit);
@@ -2039,12 +2021,10 @@ mod tests {
         assert!(!result.findings.is_empty());
 
         // Verify that the function detected the suspicious API from our test data
-        assert!(
-            result
-                .indicators
-                .suspicious_apis
-                .contains(&"VirtualAllocEx".to_string())
-        );
+        assert!(result
+            .indicators
+            .suspicious_apis
+            .contains(&"VirtualAllocEx".to_string()));
     }
 
     #[test]
@@ -2078,13 +2058,13 @@ mod tests {
         // Verify all fields of SecurityAnalysisResult are populated
         // indicators should be populated
         assert!(
-            result.indicators.suspicious_apis.len() > 0
-                || result.indicators.anti_debug.len() > 0
-                || result.indicators.anti_vm.len() > 0
-                || result.indicators.crypto_indicators.len() > 0
-                || result.indicators.network_indicators.len() > 0
-                || result.indicators.filesystem_indicators.len() > 0
-                || result.indicators.registry_indicators.len() > 0
+            !result.indicators.suspicious_apis.is_empty()
+                || !result.indicators.anti_debug.is_empty()
+                || !result.indicators.anti_vm.is_empty()
+                || !result.indicators.crypto_indicators.is_empty()
+                || !result.indicators.network_indicators.is_empty()
+                || !result.indicators.filesystem_indicators.is_empty()
+                || !result.indicators.registry_indicators.is_empty()
         );
 
         // features should be copied from metadata

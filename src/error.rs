@@ -347,11 +347,9 @@ mod tests {
         let binary_err: BinaryError = goblin_err.into();
 
         assert!(matches!(binary_err, BinaryError::ParseError(_)));
-        assert!(
-            binary_err
-                .to_string()
-                .contains("Failed to parse binary format")
-        );
+        assert!(binary_err
+            .to_string()
+            .contains("Failed to parse binary format"));
         assert!(binary_err.to_string().contains("invalid header"));
     }
 
@@ -425,11 +423,9 @@ mod tests {
         let binary_err: BinaryError = wasm_err.into();
 
         assert!(matches!(binary_err, BinaryError::ParseError(_)));
-        assert!(
-            binary_err
-                .to_string()
-                .contains("Failed to parse binary format")
-        );
+        assert!(binary_err
+            .to_string()
+            .contains("Failed to parse binary format"));
         assert!(binary_err.to_string().contains("WASM parse error"));
     }
 
@@ -482,7 +478,7 @@ mod tests {
         // Test that constructors accept both &str and String
         let _e1 = BinaryError::parse("str literal");
         let _e2 = BinaryError::parse(String::from("owned string"));
-        let _e3 = BinaryError::parse(&"str reference".to_string());
+        let _e3 = BinaryError::parse("str reference".to_string());
 
         // Test empty strings
         let _e4 = BinaryError::internal("");
