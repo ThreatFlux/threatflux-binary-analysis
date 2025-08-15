@@ -12,6 +12,7 @@ This document provides a comprehensive reference for the ThreatFlux Binary Analy
 - [Utility APIs](#utility-apis)
 - [Error Handling](#error-handling)
 - [Configuration](#configuration)
+- [Feature Flags](#feature-flags)
 
 ## Core API
 
@@ -1236,3 +1237,27 @@ impl Default for AnalysisConfig {
 ```
 
 This comprehensive API reference covers all major components of the ThreatFlux Binary Analysis library. For more specific usage examples and implementation details, refer to the individual module documentation and example code.
+
+## Feature Flags
+
+| Feature | Description | Default |
+|---------|-------------|---------|
+| `elf` | ELF format support | ✅ |
+| `pe` | PE format support | ✅ |
+| `macho` | Mach-O format support | ✅ |
+| `java` | JAR/class file support | ✅ |
+| `wasm` | WebAssembly support | ❌ |
+| `disasm-capstone` | Capstone disassembly | ✅ |
+| `disasm-iced` | iced-x86 disassembly | ❌ |
+| `control-flow` | Control flow analysis | ❌ |
+| `entropy-analysis` | Entropy calculation | ✅ |
+| `symbol-resolution` | Debug symbol support | ✅ |
+| `compression` | Compressed section support | ✅ |
+| `visualization` | Graph visualization | ✅ |
+| `serde-support` | JSON serialization | ✅ |
+
+Enable optional capabilities using Cargo feature flags, for example:
+
+```bash
+cargo build --features "wasm,control-flow"
+```

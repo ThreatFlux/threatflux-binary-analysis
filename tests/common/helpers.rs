@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Test helper functions for threatflux-binary-analysis
 
 use std::io::Write;

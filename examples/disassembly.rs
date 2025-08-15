@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     }
 
     let file_path = &args[1];
-    println!("Disassembling binary file: {}", file_path);
+    println!("Disassembling binary file: {file_path}");
 
     // Read and parse the binary file
     let data = fs::read(file_path)?;
@@ -75,7 +75,11 @@ fn main() -> Result<()> {
                         analyze_instruction_stats(&instructions);
                     }
                     Err(e) => {
-                        eprintln!("Failed to disassemble section {}: {}", section.name, e);
+                        eprintln!(
+                            "Failed to disassemble section {name}: {e}",
+                            name = section.name,
+                            e = e
+                        );
                     }
                 }
             } else {
@@ -85,12 +89,12 @@ fn main() -> Result<()> {
     }
 
     println!("\n=== Summary ===");
-    println!("Total instructions disassembled: {}", total_instructions);
+    println!("Total instructions disassembled: {total_instructions}");
 
     // Try to disassemble from entry point if available
     if let Some(entry_point) = binary.entry_point() {
         println!("\n=== Entry Point Analysis ===");
-        println!("Entry point: 0x{:x}", entry_point);
+        println!("Entry point: 0x{entry_point:x}");
 
         // Find the section containing the entry point
         for section in binary.sections() {
@@ -111,7 +115,7 @@ fn main() -> Result<()> {
                                 }
                             }
                             Err(e) => {
-                                eprintln!("Failed to disassemble entry point: {}", e);
+                                eprintln!("Failed to disassemble entry point: {e}");
                             }
                         }
                     }
@@ -130,7 +134,7 @@ fn print_instruction(index: usize, instr: &threatflux_binary_analysis::types::In
     let bytes_str = instr
         .bytes
         .iter()
-        .map(|b| format!("{:02x}", b))
+        .map(|b| format!("{b:02x}"))
         .collect::<Vec<_>>()
         .join(" ");
 
@@ -150,15 +154,15 @@ fn print_instruction(index: usize, instr: &threatflux_binary_analysis::types::In
     let category_str = format!("{:?}", instr.category);
     let flow_info = match &instr.flow {
         ControlFlow::Sequential => "sequential".to_string(),
-        ControlFlow::Jump(addr) => format!("jmp -> 0x{:x}", addr),
-        ControlFlow::ConditionalJump(addr) => format!("branch -> 0x{:x}", addr),
-        ControlFlow::Call(addr) => format!("call -> 0x{:x}", addr),
+        ControlFlow::Jump(addr) => format!("jmp -> 0x{addr:x}"),
+        ControlFlow::ConditionalJump(addr) => format!("branch -> 0x{addr:x}"),
+        ControlFlow::Call(addr) => format!("call -> 0x{addr:x}"),
         ControlFlow::Return => "return".to_string(),
         ControlFlow::Interrupt => "interrupt".to_string(),
         ControlFlow::Unknown => "unknown".to_string(),
     };
 
-    println!("      [{}] [{}]", category_str, flow_info);
+    println!("      [{category_str}] [{flow_info}]");
 }
 
 /// Analyze and print instruction statistics
@@ -187,7 +191,7 @@ fn analyze_instruction_stats(instructions: &[threatflux_binary_analysis::types::
 
     for (category, count) in categories.iter().take(5) {
         let percentage = (**count as f64 / instructions.len() as f64) * 100.0;
-        println!("  {:?}: {} ({:.1}%)", category, count, percentage);
+        println!("  {category:?}: {count} ({percentage:.1}%)");
     }
 
     // Print control flow distribution
@@ -197,7 +201,7 @@ fn analyze_instruction_stats(instructions: &[threatflux_binary_analysis::types::
 
     for (flow, count) in flows.iter().take(10) {
         let percentage = (**count as f64 / instructions.len() as f64) * 100.0;
-        println!("  {}: {} ({:.1}%)", flow, count, percentage);
+        println!("  {flow}: {count} ({percentage:.1}%)");
     }
 
     // Print most common mnemonics
@@ -207,13 +211,13 @@ fn analyze_instruction_stats(instructions: &[threatflux_binary_analysis::types::
 
     for (mnemonic, count) in mnemonics.iter().take(10) {
         let percentage = (**count as f64 / instructions.len() as f64) * 100.0;
-        println!("  {}: {} ({:.1}%)", mnemonic, count, percentage);
+        println!("  {mnemonic}: {count} ({percentage:.1}%)");
     }
 
     // Calculate average instruction size
     let total_size: usize = instructions.iter().map(|i| i.size).sum();
     let avg_size = total_size as f64 / instructions.len() as f64;
-    println!("\nAverage instruction size: {:.2} bytes", avg_size);
+    println!("\nAverage instruction size: {avg_size:.2} bytes");
 
     // Find jumps and calls
     let jumps: Vec<_> = instructions
