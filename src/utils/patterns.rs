@@ -1196,9 +1196,11 @@ mod tests {
 
         assert_eq!(results.matches.len(), 2);
         assert_eq!(results.by_category.len(), 2);
-        assert!(results
-            .by_category
-            .contains_key(&PatternCategory::FileFormat));
+        assert!(
+            results
+                .by_category
+                .contains_key(&PatternCategory::FileFormat)
+        );
         assert!(results.by_category.contains_key(&PatternCategory::Compiler));
     }
 

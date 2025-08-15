@@ -4,8 +4,8 @@
 //! The choice of engine can be configured based on requirements and availability.
 
 use crate::{
-    types::{Architecture, ControlFlow as FlowType, Instruction, InstructionCategory},
     AnalysisConfig, BinaryError, BinaryFile, Result,
+    types::{Architecture, ControlFlow as FlowType, Instruction, InstructionCategory},
 };
 
 #[cfg(feature = "disasm-capstone")]

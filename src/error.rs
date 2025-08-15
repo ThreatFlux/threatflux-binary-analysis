@@ -347,9 +347,11 @@ mod tests {
         let binary_err: BinaryError = goblin_err.into();
 
         assert!(matches!(binary_err, BinaryError::ParseError(_)));
-        assert!(binary_err
-            .to_string()
-            .contains("Failed to parse binary format"));
+        assert!(
+            binary_err
+                .to_string()
+                .contains("Failed to parse binary format")
+        );
         assert!(binary_err.to_string().contains("invalid header"));
     }
 
@@ -423,9 +425,11 @@ mod tests {
         let binary_err: BinaryError = wasm_err.into();
 
         assert!(matches!(binary_err, BinaryError::ParseError(_)));
-        assert!(binary_err
-            .to_string()
-            .contains("Failed to parse binary format"));
+        assert!(
+            binary_err
+                .to_string()
+                .contains("Failed to parse binary format")
+        );
         assert!(binary_err.to_string().contains("WASM parse error"));
     }
 
