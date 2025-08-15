@@ -10,8 +10,8 @@ pub mod java;
 pub mod macho;
 #[cfg(feature = "pe")]
 pub mod pe;
-// Note: WebAssembly format parser not yet implemented
-// Format detection is supported but parsing returns UnsupportedFormat error
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 pub mod raw;
 
@@ -97,6 +97,9 @@ pub fn parse_binary(data: &[u8], format: Format) -> crate::types::ParseResult {
         Format::Java => java::JavaParser::parse(data),
         #[cfg(not(feature = "java"))]
         Format::Java => Err(BinaryError::unsupported_format("Java".to_string())),
+        #[cfg(feature = "wasm")]
+        Format::Wasm => wasm::WasmParser::parse(data),
+        #[cfg(not(feature = "wasm"))]
         Format::Wasm => Err(BinaryError::unsupported_format("Wasm".to_string())),
         Format::Raw => raw::RawParser::parse(data),
         Format::Unknown => Err(BinaryError::unsupported_format("Unknown".to_string())),

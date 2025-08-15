@@ -189,7 +189,7 @@ mod test_data {
             0x01, 0x00, 0x00, 0x00, // version 1
             // Type section
             0x01, // section id
-            0x07, // section size
+            0x06, // section size
             0x01, // num types
             0x60, // func type
             0x01, // num params

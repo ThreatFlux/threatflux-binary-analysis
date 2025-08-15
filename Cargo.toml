@@ -82,6 +82,7 @@ env_logger = "0.10"
 tokio-test = "0.4"
 # Performance and stress testing
 rand = "0.8"
+wat = "1.0"
 
 [[example]]
 name = "basic_analysis"
