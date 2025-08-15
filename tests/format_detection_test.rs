@@ -69,6 +69,7 @@ fn test_detect_java_format() {
 }
 
 #[test]
+#[cfg(feature = "java")]
 fn test_detect_java_jar_format() {
     use std::io::Write;
     use zip::{write::FileOptions, ZipWriter};

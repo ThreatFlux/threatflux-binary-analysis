@@ -42,6 +42,8 @@ all-docker: docker-build ## Run all checks and builds in Docker container
 		cargo fmt --all -- --check && \
 		echo '$(BLUE)=== Linting ===$(NC)' && \
 		cargo clippy --all-targets --all-features -- -D warnings && \
+		cargo clippy --all-targets --no-default-features -- -D warnings && \
+		cargo clippy --all-targets -- -D warnings && \
 		echo '$(BLUE)=== Security Audit ===$(NC)' && \
 		cargo audit && \
 		echo '$(BLUE)=== Dependency Check ===$(NC)' && \
@@ -65,6 +67,8 @@ all-docker-coverage: docker-build ## Run all checks including coverage in Docker
 		cargo fmt --all -- --check && \
 		echo '$(BLUE)=== Linting ===$(NC)' && \
 		cargo clippy --all-targets --all-features -- -D warnings && \
+		cargo clippy --all-targets --no-default-features -- -D warnings && \
+		cargo clippy --all-targets -- -D warnings && \
 		echo '$(BLUE)=== Security Audit ===$(NC)' && \
 		cargo audit && \
 		echo '$(BLUE)=== Dependency Check ===$(NC)' && \
@@ -151,12 +155,22 @@ fmt-docker: docker-build ## Format code using Docker
 
 lint: ## Run clippy linting
 	@echo "$(CYAN)Running clippy linting...$(NC)"
+	@echo "$(BLUE)  With all features...$(NC)"
 	@cargo clippy --all-targets --all-features -- -D warnings
+	@echo "$(BLUE)  With no default features...$(NC)"
+	@cargo clippy --all-targets --no-default-features -- -D warnings
+	@echo "$(BLUE)  With default features...$(NC)"
+	@cargo clippy --all-targets -- -D warnings
 
 lint-docker: docker-build ## Run clippy linting in Docker
 	@echo "$(CYAN)Running clippy linting in Docker...$(NC)"
-	@docker run --rm -v "$(PWD):/workspace" $(DOCKER_FULL_NAME) \
-		cargo clippy --all-targets --all-features -- -D warnings
+	@docker run --rm -v "$(PWD):/workspace" $(DOCKER_FULL_NAME) sh -c "\
+		echo '$(BLUE)  With all features...$(NC)' && \
+		cargo clippy --all-targets --all-features -- -D warnings && \
+		echo '$(BLUE)  With no default features...$(NC)' && \
+		cargo clippy --all-targets --no-default-features -- -D warnings && \
+		echo '$(BLUE)  With default features...$(NC)' && \
+		cargo clippy --all-targets -- -D warnings"
 
 # =============================================================================
 # Security and Dependency Commands

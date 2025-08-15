@@ -1,4 +1,5 @@
 //! Tests for Mach-O format parser
+#![cfg(feature = "macho")]
 
 use threatflux_binary_analysis::formats::macho::MachOParser;
 use threatflux_binary_analysis::types::*;

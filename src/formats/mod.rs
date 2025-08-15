@@ -86,12 +86,18 @@ pub fn parse_binary(data: &[u8], format: Format) -> crate::types::ParseResult {
     match format {
         #[cfg(feature = "elf")]
         Format::Elf => elf::ElfParser::parse(data),
+        #[cfg(not(feature = "elf"))]
+        Format::Elf => Err(BinaryError::unsupported_format("ELF".to_string())),
 
         #[cfg(feature = "pe")]
         Format::Pe => pe::PeParser::parse(data),
+        #[cfg(not(feature = "pe"))]
+        Format::Pe => Err(BinaryError::unsupported_format("PE".to_string())),
 
         #[cfg(feature = "macho")]
         Format::MachO => macho::MachOParser::parse(data),
+        #[cfg(not(feature = "macho"))]
+        Format::MachO => Err(BinaryError::unsupported_format("MachO".to_string())),
 
         #[cfg(feature = "java")]
         Format::Java => java::JavaParser::parse(data),

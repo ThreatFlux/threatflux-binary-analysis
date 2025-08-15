@@ -215,6 +215,7 @@ mod test_data {
         ]
     }
 
+    #[cfg(feature = "java")]
     pub fn create_java_jar() -> Vec<u8> {
         use std::io::Write;
         use zip::{write::FileOptions, ZipWriter};
@@ -228,9 +229,15 @@ mod test_data {
         let cursor = zip.finish().unwrap();
         cursor.into_inner()
     }
+
+    #[cfg(not(feature = "java"))]
+    pub fn create_java_jar() -> Vec<u8> {
+        vec![]
+    }
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_complete_elf_analysis() {
     let data = test_data::create_minimal_elf();
     let analyzer = BinaryAnalyzer::new();
@@ -249,6 +256,7 @@ fn test_complete_elf_analysis() {
 }
 
 #[test]
+#[cfg(feature = "pe")]
 fn test_complete_pe_analysis() {
     let data = test_data::create_minimal_pe();
     let analyzer = BinaryAnalyzer::new();
@@ -265,6 +273,7 @@ fn test_complete_pe_analysis() {
 }
 
 #[test]
+#[cfg(feature = "macho")]
 fn test_complete_macho_analysis() {
     let data = test_data::create_minimal_macho();
     let analyzer = BinaryAnalyzer::new();
@@ -287,6 +296,7 @@ fn test_complete_macho_analysis() {
 }
 
 #[test]
+#[cfg(feature = "java")]
 fn test_complete_java_analysis() {
     let data = test_data::create_java_class();
     let analyzer = BinaryAnalyzer::new();
@@ -311,6 +321,7 @@ fn test_complete_java_jar_analysis() {
 }
 
 #[test]
+#[cfg(feature = "wasm")]
 fn test_complete_wasm_analysis() {
     let data = test_data::create_wasm_module();
     let analyzer = BinaryAnalyzer::new();

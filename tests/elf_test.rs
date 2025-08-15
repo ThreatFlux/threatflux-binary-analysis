@@ -1,4 +1,5 @@
 //! Tests for ELF format parser
+#![cfg(feature = "elf")]
 
 use threatflux_binary_analysis::formats::elf::ElfParser;
 use threatflux_binary_analysis::types::*;
