@@ -169,4 +169,42 @@ mod tests {
         let result = create_capstone_engine(Architecture::Unknown);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_complex_instruction_sequence() {
+        let config = DisassemblyConfig {
+            analyze_control_flow: true,
+            ..DisassemblyConfig::default()
+        };
+
+        // Function prologue + epilogue: push rbp; mov rbp, rsp; ret
+        let data = &[0x55, 0x48, 0x89, 0xe5, 0xc3];
+        let result = disassemble(data, 0x1000, Architecture::X86_64, &config).unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].mnemonic, "push");
+        assert_eq!(result[1].mnemonic, "mov");
+        assert_eq!(result[2].mnemonic, "ret");
+        assert_eq!(result[2].flow, FlowType::Return);
+    }
+
+    #[test]
+    fn test_instruction_bytes_accuracy() {
+        let config = DisassemblyConfig::default();
+        let base_addr = 0x1000;
+
+        let test_cases = vec![
+            (&[0x90u8][..], 1usize),                  // NOP
+            (&[0x89, 0xd8][..], 2),                   // MOV EAX, EBX
+            (&[0x0f, 0x10, 0xc1][..], 3),             // MOVUPS XMM0, XMM1
+            (&[0xb8, 0x00, 0x10, 0x00, 0x00][..], 5), // MOV EAX, imm32
+        ];
+
+        for (data, expected_size) in test_cases {
+            let result = disassemble(data, base_addr, Architecture::X86_64, &config).unwrap();
+            assert_eq!(result[0].size, expected_size);
+            assert_eq!(result[0].bytes.len(), expected_size);
+            assert_eq!(result[0].bytes, data);
+        }
+    }
 }
