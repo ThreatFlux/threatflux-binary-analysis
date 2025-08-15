@@ -48,13 +48,13 @@ capstone = { version = "0.13", optional = true }
 iced-x86 = { version = "1.21", optional = true }
 
 # WASM support (optional)
-wasmparser = { version = "0.217", optional = true }
+wasmparser = { version = "0.236", optional = true }
 
 # Control flow analysis (optional)
 petgraph = { version = "0.6", optional = true }
 
 # Statistical analysis (optional)  
-statrs = { version = "0.17", optional = true }
+statrs = { version = "0.18", optional = true }
 
 # Symbol resolution (optional)
 gimli = { version = "0.31", optional = true }
