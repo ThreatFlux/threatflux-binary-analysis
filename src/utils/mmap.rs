@@ -601,7 +601,7 @@ mod tests {
 
         // Test with no occurrences
         let positions = mapped.find_all_patterns(b"xyz");
-        assert_eq!(positions, vec![]);
+        assert_eq!(positions, Vec::<usize>::new());
 
         // Test with single byte pattern
         let positions = mapped.find_all_patterns(b"a");
@@ -735,7 +735,7 @@ mod tests {
         assert!(mapped.read_u8(0).is_err());
         assert!(mapped.read_at(0, 1).is_err());
         assert_eq!(mapped.find_pattern(b"test"), None);
-        assert_eq!(mapped.find_all_patterns(b"test"), vec![]);
+        assert_eq!(mapped.find_all_patterns(b"test"), Vec::<usize>::new());
         assert!(mapped.starts_with(b"")); // Empty pattern should match empty file
         assert!(!mapped.starts_with(b"test"));
 
