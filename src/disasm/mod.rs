@@ -4,9 +4,12 @@
 //! The choice of engine can be configured based on requirements and availability.
 
 use crate::{
+    types::{Architecture, Instruction, InstructionCategory},
     AnalysisConfig, BinaryError, BinaryFile, Result,
-    types::{Architecture, ControlFlow as FlowType, Instruction, InstructionCategory},
 };
+
+#[cfg(feature = "disasm-capstone")]
+use crate::types::ControlFlow as FlowType;
 
 #[cfg(feature = "disasm-capstone")]
 mod capstone_engine;
@@ -302,6 +305,7 @@ fn categorize_instruction(mnemonic: &str) -> InstructionCategory {
 }
 
 /// Determine control flow type from instruction
+#[cfg(feature = "disasm-capstone")]
 fn analyze_control_flow(mnemonic: &str, operands: &str) -> FlowType {
     let mnemonic_lower = mnemonic.to_lowercase();
 
@@ -335,6 +339,7 @@ fn analyze_control_flow(mnemonic: &str, operands: &str) -> FlowType {
 }
 
 /// Extract address from instruction operands (simplified)
+#[cfg(feature = "disasm-capstone")]
 fn extract_address_from_operands(operands: &str) -> Option<u64> {
     // This is a simplified implementation
     // Real implementation would need proper operand parsing
@@ -389,6 +394,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "disasm-capstone")]
     #[test]
     fn test_control_flow_analysis() {
         assert_eq!(analyze_control_flow("ret", ""), FlowType::Return);
@@ -410,6 +416,8 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "disasm-capstone")]
+    #[cfg(feature = "disasm-capstone")]
     #[test]
     fn test_address_extraction() {
         assert_eq!(extract_address_from_operands("0x1000"), Some(0x1000));
