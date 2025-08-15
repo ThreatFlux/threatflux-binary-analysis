@@ -4,7 +4,7 @@ A comprehensive Rust library for binary analysis with multi-format support, disa
 
 [![Crates.io](https://img.shields.io/crates/v/threatflux-binary-analysis.svg)](https://crates.io/crates/threatflux-binary-analysis)
 [![Documentation](https://docs.rs/threatflux-binary-analysis/badge.svg)](https://docs.rs/threatflux-binary-analysis)
-[![License: MIT](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
 
 ## 🚀 Features
