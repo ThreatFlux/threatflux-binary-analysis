@@ -1,9 +1,9 @@
 //! iced-x86 disassembly engine implementation
 
-use super::{categorize_instruction, DisassemblyConfig};
+use super::{DisassemblyConfig, categorize_instruction};
 use crate::{
-    types::{Architecture, ControlFlow as FlowType, Instruction},
     BinaryError, Result,
+    types::{Architecture, ControlFlow as FlowType, Instruction},
 };
 use iced_x86::*;
 
@@ -76,7 +76,7 @@ pub fn disassemble(
 }
 
 /// Create iced-x86 decoder
-fn create_decoder(bitness: u32, data: &[u8], address: u64) -> Result<Decoder> {
+fn create_decoder(bitness: u32, data: &[u8], address: u64) -> Result<Decoder<'_>> {
     let decoder_options = DecoderOptions::NONE;
 
     let decoder = match bitness {

@@ -1,12 +1,12 @@
 //! Java class and JAR file parser
 
 use crate::{
+    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
         SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding, SymbolType,
         SymbolVisibility,
     },
-    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
 };
 
 type ParseResult = Result<Box<dyn BinaryFormatTrait>>;

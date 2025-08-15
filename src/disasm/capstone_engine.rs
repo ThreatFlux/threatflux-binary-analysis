@@ -1,9 +1,9 @@
 //! Capstone disassembly engine implementation
 
-use super::{analyze_control_flow, categorize_instruction, DisassemblyConfig};
+use super::{DisassemblyConfig, analyze_control_flow, categorize_instruction};
 use crate::{
-    types::{Architecture, ControlFlow as FlowType, Instruction},
     BinaryError, Result,
+    types::{Architecture, ControlFlow as FlowType, Instruction},
 };
 use capstone::prelude::*;
 use capstone::{Arch, Mode};
@@ -156,8 +156,7 @@ mod tests {
         let data = &[0x90];
         let result = disassemble(data, 0x1000, Architecture::X86_64, &config);
 
-        if result.is_ok() {
-            let instructions = result.unwrap();
+        if let Ok(instructions) = result {
             assert!(!instructions.is_empty());
             assert_eq!(instructions[0].mnemonic, "nop");
             assert_eq!(instructions[0].address, 0x1000);

@@ -1,13 +1,13 @@
 //! PE (Portable Executable) format parser for Windows binaries
 
 use crate::{
+    BinaryFormatParser, BinaryFormatTrait, Result,
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
         SectionPermissions, SectionType, SecurityFeatures, Symbol,
     },
-    BinaryFormatParser, BinaryFormatTrait, Result,
 };
-use goblin::pe::{dll_characteristic::*, PE};
+use goblin::pe::{PE, dll_characteristic::*};
 
 /// PE format parser
 pub struct PeParser;

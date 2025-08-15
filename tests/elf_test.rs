@@ -1,8 +1,8 @@
 //! Tests for ELF format parser
 
+use threatflux_binary_analysis::BinaryFormatParser;
 use threatflux_binary_analysis::formats::elf::ElfParser;
 use threatflux_binary_analysis::types::*;
-use threatflux_binary_analysis::BinaryFormatParser;
 
 /// Test data generators for various ELF formats
 mod elf_test_data {

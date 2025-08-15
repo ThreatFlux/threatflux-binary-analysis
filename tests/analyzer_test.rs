@@ -356,8 +356,8 @@ fn test_error_handling() {
     let corrupt_data = vec![0xff; 10];
     let result = analyzer.analyze(&corrupt_data);
     // Might succeed with Unknown format or fail - both acceptable
-    if result.is_ok() {
-        let format = result.unwrap().format;
+    if let Ok(analysis_result) = result {
+        let format = analysis_result.format;
         assert!(matches!(format, BinaryFormat::Unknown | BinaryFormat::Raw));
     }
 }

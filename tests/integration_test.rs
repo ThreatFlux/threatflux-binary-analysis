@@ -216,7 +216,7 @@ mod test_data {
 
     pub fn create_java_jar() -> Vec<u8> {
         use std::io::Write;
-        use zip::{write::FileOptions, ZipWriter};
+        use zip::{ZipWriter, write::FileOptions};
 
         let class_data = create_java_class();
         let cursor = std::io::Cursor::new(Vec::new());

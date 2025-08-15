@@ -4,8 +4,8 @@
 //! including vulnerability detection, malware indicators, and security feature analysis.
 
 use crate::{
-    types::{Architecture, Import, Section, SecurityFeatures, SecurityIndicators, Symbol},
     BinaryFile, Result,
+    types::{Architecture, Import, Section, SecurityFeatures, SecurityIndicators, Symbol},
 };
 use std::collections::HashSet;
 
@@ -828,12 +828,16 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.suspicious_apis.len(), 2);
-        assert!(indicators
-            .suspicious_apis
-            .contains(&"VirtualAllocEx".to_string()));
-        assert!(indicators
-            .suspicious_apis
-            .contains(&"WriteProcessMemory".to_string()));
+        assert!(
+            indicators
+                .suspicious_apis
+                .contains(&"VirtualAllocEx".to_string())
+        );
+        assert!(
+            indicators
+                .suspicious_apis
+                .contains(&"WriteProcessMemory".to_string())
+        );
 
         let suspicious_findings: Vec<_> = findings
             .iter()
@@ -867,12 +871,16 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.anti_debug.len(), 2);
-        assert!(indicators
-            .anti_debug
-            .contains(&"IsDebuggerPresent".to_string()));
-        assert!(indicators
-            .anti_debug
-            .contains(&"CheckRemoteDebuggerPresent".to_string()));
+        assert!(
+            indicators
+                .anti_debug
+                .contains(&"IsDebuggerPresent".to_string())
+        );
+        assert!(
+            indicators
+                .anti_debug
+                .contains(&"CheckRemoteDebuggerPresent".to_string())
+        );
 
         let anti_debug_findings: Vec<_> = findings
             .iter()
@@ -1214,12 +1222,16 @@ mod tests {
         // Check specific findings
         assert!(findings.iter().any(|f| f.description.contains("NX/DEP")));
         assert!(findings.iter().any(|f| f.description.contains("ASLR")));
-        assert!(findings
-            .iter()
-            .any(|f| f.description.contains("Stack canaries")));
-        assert!(findings
-            .iter()
-            .any(|f| f.description.contains("Control Flow Integrity")));
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.description.contains("Stack canaries"))
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.description.contains("Control Flow Integrity"))
+        );
     }
 
     #[test]
@@ -1782,20 +1794,26 @@ mod tests {
 
         // Verify high-risk indicators
         assert!(!result.indicators.suspicious_apis.is_empty());
-        assert!(result
-            .indicators
-            .suspicious_apis
-            .contains(&"VirtualAllocEx".to_string()));
-        assert!(result
-            .indicators
-            .suspicious_apis
-            .contains(&"WriteProcessMemory".to_string()));
+        assert!(
+            result
+                .indicators
+                .suspicious_apis
+                .contains(&"VirtualAllocEx".to_string())
+        );
+        assert!(
+            result
+                .indicators
+                .suspicious_apis
+                .contains(&"WriteProcessMemory".to_string())
+        );
 
         assert!(!result.indicators.anti_debug.is_empty());
-        assert!(result
-            .indicators
-            .anti_debug
-            .contains(&"IsDebuggerPresent".to_string()));
+        assert!(
+            result
+                .indicators
+                .anti_debug
+                .contains(&"IsDebuggerPresent".to_string())
+        );
 
         // Verify security features
         assert!(!result.features.nx_bit);
@@ -2021,10 +2039,12 @@ mod tests {
         assert!(!result.findings.is_empty());
 
         // Verify that the function detected the suspicious API from our test data
-        assert!(result
-            .indicators
-            .suspicious_apis
-            .contains(&"VirtualAllocEx".to_string()));
+        assert!(
+            result
+                .indicators
+                .suspicious_apis
+                .contains(&"VirtualAllocEx".to_string())
+        );
     }
 
     #[test]
