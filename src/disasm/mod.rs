@@ -203,7 +203,7 @@ pub fn disassemble_binary(
     config: &AnalysisConfig,
 ) -> Result<Vec<Instruction>> {
     let disasm_config = DisassemblyConfig {
-        engine: DisassemblyEngine::Auto,
+        engine: config.disassembly_engine,
         max_instructions: config.max_analysis_size / 16, // Estimate ~16 bytes per instruction
         detailed: true,
         analyze_control_flow: true,

@@ -60,6 +60,7 @@ threatflux-binary-analysis = {
         "macho",           # macOS Mach-O format support
         "wasm",            # WebAssembly module support
         "disasm-capstone", # Capstone disassembly engine
+        "disasm-iced",     # iced-x86 disassembly engine
         "control-flow",    # Control flow analysis
         "entropy-analysis",# Statistical analysis
         "symbol-resolution",# Debug symbol support
@@ -87,6 +88,8 @@ threatflux-binary-analysis = {
 | `compression` | Compressed section support | ✅ |
 | `visualization` | Graph visualization | ✅ |
 | `serde-support` | JSON serialization | ✅ |
+
+*The `disasm-iced` feature enables the [iced-x86](https://github.com/icedland/iced) disassembly engine. Activate it with `--features "disasm-iced"` to use iced-x86 instead of Capstone.*
 
 ## 🚀 Quick Start
 

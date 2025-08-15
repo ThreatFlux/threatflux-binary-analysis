@@ -70,6 +70,7 @@ pub fn analyze_minimal(data: &[u8]) -> HelperResult<AnalysisResult> {
         enable_symbols: false,
         max_analysis_size: 1024,
         architecture_hint: None,
+        ..Default::default()
     };
     analyze_with_config(data, config)
 }
@@ -83,6 +84,7 @@ pub fn analyze_maximal(data: &[u8]) -> HelperResult<AnalysisResult> {
         enable_symbols: true,
         max_analysis_size: 100 * 1024 * 1024,
         architecture_hint: None,
+        ..Default::default()
     };
     analyze_with_config(data, config)
 }
@@ -394,6 +396,7 @@ pub fn stress_test_config() -> AnalysisConfig {
         enable_symbols: true,
         max_analysis_size: 1024 * 1024, // 1MB limit for stress testing
         architecture_hint: None,
+        ..Default::default()
     }
 }
 
@@ -406,6 +409,7 @@ pub fn performance_test_config() -> AnalysisConfig {
         enable_symbols: true,                // Keep basic symbol analysis
         max_analysis_size: 10 * 1024 * 1024, // 10MB limit
         architecture_hint: None,
+        ..Default::default()
     }
 }
 

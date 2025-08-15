@@ -1,4 +1,7 @@
-#![cfg(all(feature = "control-flow", feature = "disasm-capstone"))]
+#![cfg(all(
+    feature = "control-flow",
+    any(feature = "disasm-capstone", feature = "disasm-iced")
+))]
 
 use threatflux_binary_analysis::analysis::control_flow;
 use threatflux_binary_analysis::types::ControlFlow as FlowType;
