@@ -21,7 +21,7 @@ fn main() -> Result<()> {
     }
 
     let file_path = &args[1];
-    println!("Analyzing control flow in: {}", file_path);
+    println!("Analyzing control flow in: {file_path}");
 
     // Read and parse the binary file
     let data = fs::read(file_path)?;
@@ -56,7 +56,7 @@ fn main() -> Result<()> {
                 println!("  Type: {:?}", cfg.function.function_type);
 
                 if let Some(calling_convention) = &cfg.function.calling_convention {
-                    println!("  Calling convention: {}", calling_convention);
+                    println!("  Calling convention: {calling_convention}");
                 }
 
                 // Print basic blocks
@@ -107,7 +107,7 @@ fn main() -> Result<()> {
 
                 // Complexity assessment
                 let complexity_level = assess_complexity(metrics.cyclomatic_complexity);
-                println!("    Complexity level: {}", complexity_level);
+                println!("    Complexity level: {complexity_level}");
             }
 
             if cfgs.len() > 10 {
@@ -124,16 +124,16 @@ fn main() -> Result<()> {
             let total_loops: u32 = cfgs.iter().map(|cfg| cfg.complexity.loop_count).sum();
 
             println!("Total functions analyzed: {}", cfgs.len());
-            println!("Total basic blocks: {}", total_blocks);
-            println!("Total cyclomatic complexity: {}", total_complexity);
-            println!("Total loops detected: {}", total_loops);
+            println!("Total basic blocks: {total_blocks}");
+            println!("Total cyclomatic complexity: {total_complexity}");
+            println!("Total loops detected: {total_loops}");
 
             if !cfgs.is_empty() {
                 let avg_complexity = total_complexity as f64 / cfgs.len() as f64;
                 let avg_blocks = total_blocks as f64 / cfgs.len() as f64;
 
-                println!("Average complexity per function: {:.2}", avg_complexity);
-                println!("Average blocks per function: {:.2}", avg_blocks);
+                println!("Average complexity per function: {avg_complexity:.2}");
+                println!("Average blocks per function: {avg_blocks:.2}");
             }
 
             // Find most complex functions
@@ -151,7 +151,7 @@ fn main() -> Result<()> {
             }
         }
         Err(e) => {
-            eprintln!("Control flow analysis failed: {}", e);
+            eprintln!("Control flow analysis failed: {e}");
             return Err(e.into());
         }
     }

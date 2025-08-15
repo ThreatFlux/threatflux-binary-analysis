@@ -21,7 +21,7 @@ A comprehensive Rust library for binary analysis with multi-format support, disa
 - **🔍 Header Analysis**: Parse and validate file headers
 - **📊 Section Analysis**: Enumerate and analyze sections/segments
 - **🔗 Symbol Resolution**: Extract and resolve function symbols
-- **📈 Control Flow Analysis**: Build call graphs and control flow graphs
+- **📈 Control Flow Analysis**: Build control flow graphs with complexity metrics
 - **🎯 Disassembly**: Multiple disassembly engines (Capstone, iced-x86)
 - **🔒 Security Analysis**: Detect security features and vulnerabilities
 - **📐 Entropy Analysis**: Calculate entropy for packed/encrypted sections
@@ -203,23 +203,21 @@ for instruction in instructions {
 ### Control Flow Analysis
 
 ```rust
-use threatflux_binary_analysis::analysis::{ControlFlowAnalyzer, CallGraph};
+use threatflux_binary_analysis::analysis::control_flow;
+use threatflux_binary_analysis::BinaryFile;
 
-// Build control flow graph
-let cf_analyzer = ControlFlowAnalyzer::new();
-let cfg = cf_analyzer.build_control_flow_graph(&analysis).await?;
+// Parse binary and build control flow graphs
+let binary = BinaryFile::parse(&data)?;
+let cfgs = control_flow::analyze_binary(&binary)?;
 
-println!("Basic blocks: {}", cfg.basic_blocks.len());
-println!("Edges: {}", cfg.edges.len());
-
-// Build call graph
-let call_graph = cf_analyzer.build_call_graph(&analysis).await?;
-println!("Functions: {}", call_graph.functions.len());
-println!("Calls: {}", call_graph.calls.len());
-
-// Find cycles (potential loops)
-let cycles = cf_analyzer.find_cycles(&cfg);
-println!("Potential loops: {}", cycles.len());
+for cfg in cfgs {
+    println!(
+        "Function {} has {} basic blocks",
+        cfg.function.name,
+        cfg.basic_blocks.len()
+    );
+    println!("Cyclomatic complexity: {}", cfg.complexity.cyclomatic_complexity);
+}
 ```
 
 ### Security Analysis

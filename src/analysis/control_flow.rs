@@ -5,12 +5,14 @@
 //! complexity metrics calculation.
 
 use crate::{
+    disasm::Disassembler,
     types::{
         Architecture, BasicBlock, ComplexityMetrics, ControlFlow as FlowType, ControlFlowGraph,
-        Function, Instruction, InstructionCategory,
+        Function, Instruction,
     },
-    BinaryFile, Result,
+    BinaryError, BinaryFile, Result,
 };
+use std::cmp;
 use std::collections::{HashMap, HashSet};
 
 // Note: petgraph integration planned for future advanced CFG analysis
@@ -149,35 +151,42 @@ impl ControlFlowAnalyzer {
         Ok(functions)
     }
 
-    /// Get instructions for a function (placeholder - would need disassembly)
+    /// Get instructions for a function using the disassembly module
     fn get_function_instructions(
         &self,
-        _binary: &BinaryFile,
+        binary: &BinaryFile,
         function: &Function,
     ) -> Result<Vec<Instruction>> {
-        // This would normally use the disassembly module
-        // For now, return a minimal set of placeholder instructions
-        let mut instructions = Vec::new();
+        // Locate the section containing this function
+        for section in binary.sections() {
+            let start = section.address;
+            let end = start + section.size;
 
-        // Create some sample instructions for demonstration
-        for i in 0..10 {
-            let addr = function.start_address + (i * 4);
-            instructions.push(Instruction {
-                address: addr,
-                bytes: vec![0x90, 0x90, 0x90, 0x90], // NOP instructions
-                mnemonic: "nop".to_string(),
-                operands: String::new(),
-                category: InstructionCategory::Unknown,
-                flow: if i == 9 {
-                    FlowType::Return
-                } else {
-                    FlowType::Sequential
-                },
-                size: 4,
-            });
+            if function.start_address >= start && function.start_address < end {
+                let data = section.data.as_ref().ok_or_else(|| {
+                    BinaryError::invalid_data("Section data not available for disassembly")
+                })?;
+
+                let offset = (function.start_address - start) as usize;
+                if offset >= data.len() {
+                    return Ok(Vec::new());
+                }
+
+                let available = data.len() - offset;
+                let length = cmp::min(function.size as usize, available);
+                if length == 0 {
+                    return Ok(Vec::new());
+                }
+
+                let slice = &data[offset..offset + length];
+                let disassembler = Disassembler::new(self.architecture)?;
+                return disassembler.disassemble_at(slice, function.start_address, length);
+            }
         }
 
-        Ok(instructions)
+        Err(BinaryError::invalid_data(
+            "Function bytes not found in any executable section",
+        ))
     }
 
     /// Build basic blocks from instructions
