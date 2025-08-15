@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Integration tests for the entire binary analysis pipeline
 
 use std::io::Write;

@@ -78,7 +78,7 @@ threatflux-binary-analysis = {
 | `elf` | ELF format support | ✅ |
 | `pe` | PE format support | ✅ |
 | `macho` | Mach-O format support | ✅ |
-| `java` | JAR/class file support | ❌ |
+| `java` | JAR/class file support | ✅ |
 | `wasm` | WebAssembly support | ❌ |
 | `disasm-capstone` | Capstone disassembly | ✅ |
 | `disasm-iced` | iced-x86 disassembly | ❌ |
@@ -90,6 +90,10 @@ threatflux-binary-analysis = {
 | `serde-support` | JSON serialization | ✅ |
 
 *The `disasm-iced` feature enables the [iced-x86](https://github.com/icedland/iced) disassembly engine. Activate it with `--features "disasm-iced"` to use iced-x86 instead of Capstone.*
+
+*Enable WebAssembly module parsing with `--features "wasm"`.*
+
+*Generate control flow graphs with `--features "control-flow"`.*
 
 ## 🚀 Quick Start
 
