@@ -213,6 +213,20 @@ mod test_data {
             0x0b, // end
         ]
     }
+
+    pub fn create_java_jar() -> Vec<u8> {
+        use std::io::Write;
+        use zip::{write::FileOptions, ZipWriter};
+
+        let class_data = create_java_class();
+        let cursor = std::io::Cursor::new(Vec::new());
+        let mut zip = ZipWriter::new(cursor);
+        zip.start_file("Test.class", FileOptions::default())
+            .unwrap();
+        zip.write_all(&class_data).unwrap();
+        let cursor = zip.finish().unwrap();
+        cursor.into_inner()
+    }
 }
 
 #[test]
@@ -276,21 +290,23 @@ fn test_complete_java_analysis() {
     let data = test_data::create_java_class();
     let analyzer = BinaryAnalyzer::new();
 
-    let result = analyzer.analyze(&data);
+    let analysis = analyzer.analyze(&data).expect("Java class analysis failed");
+    assert_eq!(analysis.format, BinaryFormat::Java);
+    assert_eq!(analysis.architecture, Architecture::Jvm);
+    assert_eq!(analysis.metadata.format, BinaryFormat::Java);
+    assert_eq!(analysis.metadata.architecture, Architecture::Jvm);
+}
 
-    // Java format may not be fully supported, check if it fails with UnsupportedFormat
-    match result {
-        Ok(analysis) => {
-            assert_eq!(analysis.format, BinaryFormat::Java);
-            assert_eq!(analysis.architecture, Architecture::Jvm);
-            assert_eq!(analysis.metadata.format, BinaryFormat::Java);
-            assert_eq!(analysis.metadata.architecture, Architecture::Jvm);
-        }
-        Err(BinaryError::UnsupportedFormat(_)) => {
-            // This is acceptable - Java format may not be fully implemented
-        }
-        Err(e) => panic!("Unexpected error: {:?}", e),
-    }
+#[test]
+fn test_complete_java_jar_analysis() {
+    let data = test_data::create_java_jar();
+    let analyzer = BinaryAnalyzer::new();
+
+    let analysis = analyzer.analyze(&data).expect("Java JAR analysis failed");
+    assert_eq!(analysis.format, BinaryFormat::Java);
+    assert_eq!(analysis.architecture, Architecture::Jvm);
+    assert_eq!(analysis.metadata.format, BinaryFormat::Java);
+    assert_eq!(analysis.metadata.architecture, Architecture::Jvm);
 }
 
 #[test]
@@ -388,7 +404,7 @@ fn test_multiple_format_analysis() {
             test_data::create_java_class(),
             BinaryFormat::Java,
             Architecture::Jvm,
-            false, // may fail with UnsupportedFormat
+            true, // should succeed
         ),
         (
             test_data::create_wasm_module(),
@@ -471,7 +487,7 @@ fn test_concurrent_analysis_different_formats() {
         (
             Arc::new(test_data::create_java_class()),
             BinaryFormat::Java,
-            false,
+            true,
         ),
         (
             Arc::new(test_data::create_wasm_module()),

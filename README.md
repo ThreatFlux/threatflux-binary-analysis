@@ -14,7 +14,7 @@ A comprehensive Rust library for binary analysis with multi-format support, disa
 - **ELF (Executable and Linkable Format)**: Linux/Unix executables, shared libraries
 - **Mach-O**: macOS executables, dynamic libraries, kernel extensions
 - **WASM**: WebAssembly modules (optional)
-- **Java**: JAR files and class files (optional)
+- **Java**: JAR files and class files
 - **Raw Binary**: Generic binary file analysis
 
 ### Analysis Capabilities

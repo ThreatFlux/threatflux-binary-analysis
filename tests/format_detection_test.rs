@@ -69,6 +69,24 @@ fn test_detect_java_format() {
 }
 
 #[test]
+fn test_detect_java_jar_format() {
+    use std::io::Write;
+    use zip::{write::FileOptions, ZipWriter};
+
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = ZipWriter::new(&mut cursor);
+        zip.start_file("Test.class", FileOptions::default())
+            .unwrap();
+        zip.write_all(b"\xca\xfe\xba\xbe").unwrap();
+        zip.finish().unwrap();
+    }
+    let data = cursor.into_inner();
+    let format = formats::detect_format(&data).unwrap();
+    assert_eq!(format, BinaryFormat::Java);
+}
+
+#[test]
 fn test_detect_wasm_format() {
     let data = create_test_data(&WASM_MAGIC);
     let format = formats::detect_format(&data).unwrap();

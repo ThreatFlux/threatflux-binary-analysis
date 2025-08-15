@@ -13,13 +13,13 @@ keywords = ["binary", "analysis", "disassembly", "security", "reverse-engineerin
 categories = ["parsing", "development-tools", "cryptography"]
 readme = "README.md"
 
-[features]
-default = ["elf", "pe", "macho"]
 # Binary format support
+[features]
+default = ["elf", "pe", "macho", "java"]
 elf = ["goblin/elf32", "goblin/elf64"]
 pe = ["goblin/pe32", "goblin/pe64"]
 macho = ["goblin/mach32", "goblin/mach64"]
-java = ["goblin/archive"]
+java = ["goblin/archive", "zip"]
 wasm = ["wasmparser"]
 # Disassembly engines
 disasm-capstone = ["capstone"]
@@ -65,6 +65,7 @@ flate2 = { version = "1.0", optional = true }
 dot-generator = { version = "0.2", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
+zip = { version = "0.6", optional = true }
 
 [dev-dependencies]
 tempfile = "3.0"
