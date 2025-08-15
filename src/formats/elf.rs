@@ -270,7 +270,7 @@ fn parse_symbols(elf: &Elf) -> Result<Vec<Symbol>> {
     Ok(symbols)
 }
 
-fn parse_imports_exports(elf: &Elf) -> Result<(Vec<Import>, Vec<Export>)> {
+fn parse_imports_exports(elf: &Elf) -> crate::types::ImportExportResult {
     let mut imports = Vec::new();
     let mut exports = Vec::new();
 

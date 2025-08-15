@@ -47,23 +47,22 @@ pub fn create_temp_binary(data: &[u8]) -> NamedTempFile {
     file
 }
 
+pub type HelperResult<T> = Result<T, Box<dyn std::error::Error>>;
+
 /// Test analysis with default configuration
-pub fn analyze_with_default(data: &[u8]) -> Result<AnalysisResult, Box<dyn std::error::Error>> {
+pub fn analyze_with_default(data: &[u8]) -> HelperResult<AnalysisResult> {
     let analyzer = BinaryAnalyzer::new();
     Ok(analyzer.analyze(data)?)
 }
 
 /// Test analysis with custom configuration
-pub fn analyze_with_config(
-    data: &[u8],
-    config: AnalysisConfig,
-) -> Result<AnalysisResult, Box<dyn std::error::Error>> {
+pub fn analyze_with_config(data: &[u8], config: AnalysisConfig) -> HelperResult<AnalysisResult> {
     let analyzer = BinaryAnalyzer::with_config(config);
     Ok(analyzer.analyze(data)?)
 }
 
 /// Test analysis with minimal configuration (all features disabled)
-pub fn analyze_minimal(data: &[u8]) -> Result<AnalysisResult, Box<dyn std::error::Error>> {
+pub fn analyze_minimal(data: &[u8]) -> HelperResult<AnalysisResult> {
     let config = AnalysisConfig {
         enable_disassembly: false,
         enable_control_flow: false,
@@ -76,7 +75,7 @@ pub fn analyze_minimal(data: &[u8]) -> Result<AnalysisResult, Box<dyn std::error
 }
 
 /// Test analysis with maximum configuration (all features enabled)
-pub fn analyze_maximal(data: &[u8]) -> Result<AnalysisResult, Box<dyn std::error::Error>> {
+pub fn analyze_maximal(data: &[u8]) -> HelperResult<AnalysisResult> {
     let config = AnalysisConfig {
         enable_disassembly: true,
         enable_control_flow: true,

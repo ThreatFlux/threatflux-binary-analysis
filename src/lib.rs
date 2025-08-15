@@ -15,18 +15,22 @@
 //! ## Quick Start
 //!
 //! ```rust
-//! use threatflux_binary_analysis::{BinaryAnalyzer, BinaryFile};
+//! use threatflux_binary_analysis::BinaryAnalyzer;
 //!
-//! # fn main() -> anyhow::Result<()> {
-//! let data = std::fs::read("binary_file")?;
-//! let binary = BinaryFile::parse(&data)?;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Example with minimal data - analysis may fail for incomplete binaries
+//! let data = vec![0x7f, 0x45, 0x4c, 0x46]; // ELF magic
 //!
 //! let analyzer = BinaryAnalyzer::new();
-//! let analysis = analyzer.analyze(&binary)?;
-//!
-//! println!("Format: {:?}", analysis.format);
-//! println!("Architecture: {:?}", analysis.architecture);
-//! println!("Entry point: 0x{:x}", analysis.entry_point.unwrap_or(0));
+//! match analyzer.analyze(&data) {
+//!     Ok(analysis) => {
+//!         println!("Format: {:?}", analysis.format);
+//!         println!("Architecture: {:?}", analysis.architecture);
+//!     }
+//!     Err(e) => {
+//!         println!("Analysis failed: {}", e);
+//!     }
+//! }
 //! # Ok(())
 //! # }
 //! ```

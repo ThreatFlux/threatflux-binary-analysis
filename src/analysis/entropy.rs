@@ -118,6 +118,7 @@ fn classify_high_entropy_region(data: &[u8], entropy: f64) -> String {
 /// Check for cryptographic constants
 fn has_crypto_constants(data: &[u8]) -> bool {
     // Look for common crypto constants (simplified)
+    #[allow(clippy::type_complexity)]
     const CRYPTO_CONSTANTS: &[&[u8]] = &[
         b"\x67\x45\x23\x01", // MD5 constant
         b"\x01\x23\x45\x67", // Another common constant

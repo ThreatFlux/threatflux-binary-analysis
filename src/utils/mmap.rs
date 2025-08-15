@@ -60,7 +60,7 @@ impl MappedBinary {
     }
 
     /// Get a slice of the mapped data
-    pub fn slice(&self, range: Range<usize>) -> Result<&[u8]> {
+    pub fn slice(&self, range: Range<usize>) -> crate::types::ByteSliceResult {
         if range.end > self.size {
             return Err(BinaryError::memory_map(
                 "Range exceeds file size".to_string(),
@@ -71,7 +71,7 @@ impl MappedBinary {
     }
 
     /// Get data at a specific offset with a given length
-    pub fn read_at(&self, offset: usize, length: usize) -> Result<&[u8]> {
+    pub fn read_at(&self, offset: usize, length: usize) -> crate::types::ByteSliceResult {
         if offset + length > self.size {
             return Err(BinaryError::memory_map(
                 "Read exceeds file size".to_string(),

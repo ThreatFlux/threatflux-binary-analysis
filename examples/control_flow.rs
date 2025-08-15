@@ -10,7 +10,9 @@ use threatflux_binary_analysis::{
     analysis::control_flow::{AnalysisConfig, ControlFlowAnalyzer},
 };
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+fn main() -> Result<()> {
     // Get binary file path from command line arguments
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {

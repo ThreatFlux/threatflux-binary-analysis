@@ -1,6 +1,6 @@
 //! Binary format parsers and detection
 
-use crate::{BinaryError, BinaryFormat as Format, BinaryFormatParser, BinaryFormatTrait, Result};
+use crate::{BinaryError, BinaryFormat as Format, BinaryFormatParser, Result};
 
 #[cfg(feature = "elf")]
 pub mod elf;
@@ -65,7 +65,7 @@ pub fn detect_format(data: &[u8]) -> Result<Format> {
 }
 
 /// Parse binary data using the appropriate parser
-pub fn parse_binary(data: &[u8], format: Format) -> Result<Box<dyn BinaryFormatTrait>> {
+pub fn parse_binary(data: &[u8], format: Format) -> crate::types::ParseResult {
     match format {
         #[cfg(feature = "elf")]
         Format::Elf => elf::ElfParser::parse(data),

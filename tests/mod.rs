@@ -181,8 +181,11 @@ pub mod assertions {
 pub mod generators {
     use threatflux_binary_analysis::types::*;
 
+    pub type TestBinaryTuple = (Vec<u8>, BinaryFormat, Architecture);
+    pub type StressTestData = Vec<(Vec<u8>, usize)>;
+
     /// Generate comprehensive test suite data
-    pub fn generate_test_binaries() -> Vec<(Vec<u8>, BinaryFormat, Architecture)> {
+    pub fn generate_test_binaries() -> Vec<TestBinaryTuple> {
         vec![
             (
                 super::test_utils::create_test_binary(BinaryFormat::Elf, 1024),
@@ -226,7 +229,7 @@ pub mod generators {
     }
 
     /// Generate stress test data
-    pub fn generate_stress_test_data() -> Vec<(Vec<u8>, usize)> {
+    pub fn generate_stress_test_data() -> StressTestData {
         let sizes = vec![
             1024,             // 1KB
             64 * 1024,        // 64KB

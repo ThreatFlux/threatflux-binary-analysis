@@ -5,6 +5,17 @@ use std::collections::HashMap;
 #[cfg(feature = "serde-support")]
 use serde::{Deserialize, Serialize};
 
+// Type aliases to reduce complexity
+pub type BinaryResult<T> = crate::Result<T>;
+pub type ParsedBinary = Box<dyn BinaryFormatTrait>;
+pub type ParseResult = BinaryResult<ParsedBinary>;
+pub type ImportExportResult = BinaryResult<(Vec<Import>, Vec<Export>)>;
+pub type ByteSliceResult<'a> = BinaryResult<&'a [u8]>;
+pub type PatternMatchMap =
+    HashMap<crate::utils::patterns::PatternCategory, Vec<crate::utils::patterns::PatternMatch>>;
+pub type HexPatternResult = BinaryResult<Vec<Option<u8>>>;
+pub type HexPattern = Vec<Option<u8>>;
+
 /// Supported binary formats
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
@@ -559,7 +570,7 @@ impl Default for BinaryMetadata {
 /// Trait for binary format parsers
 pub trait BinaryFormatParser {
     /// Parse binary data
-    fn parse(data: &[u8]) -> crate::Result<Box<dyn BinaryFormatTrait>>;
+    fn parse(data: &[u8]) -> ParseResult;
 
     /// Check if this parser can handle the data
     fn can_parse(data: &[u8]) -> bool;

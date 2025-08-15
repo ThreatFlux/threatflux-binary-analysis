@@ -224,7 +224,7 @@ fn parse_symbols(_pe: &PE, _data: &[u8]) -> Result<Vec<Symbol>> {
     Ok(Vec::new())
 }
 
-fn parse_imports_exports(pe: &PE) -> Result<(Vec<Import>, Vec<Export>)> {
+fn parse_imports_exports(pe: &PE) -> crate::types::ImportExportResult {
     let mut imports = Vec::new();
     let mut exports = Vec::new();
 

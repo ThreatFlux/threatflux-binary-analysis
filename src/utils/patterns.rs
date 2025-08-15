@@ -127,7 +127,7 @@ pub struct SearchResults {
     /// All matches found
     pub matches: Vec<PatternMatch>,
     /// Matches grouped by category
-    pub by_category: HashMap<PatternCategory, Vec<PatternMatch>>,
+    pub by_category: crate::types::PatternMatchMap,
     /// Total bytes searched
     pub bytes_searched: usize,
     /// Search duration
@@ -179,7 +179,7 @@ impl PatternMatcher {
     pub fn search(&self, data: &[u8]) -> Result<SearchResults> {
         let start_time = std::time::Instant::now();
         let mut matches = Vec::new();
-        let mut by_category: HashMap<PatternCategory, Vec<PatternMatch>> = HashMap::new();
+        let mut by_category: crate::types::PatternMatchMap = HashMap::new();
 
         for pattern in &self.patterns {
             let pattern_matches = self.search_pattern(data, pattern)?;
@@ -378,7 +378,7 @@ impl PatternMatcher {
 }
 
 /// Compile hex wildcard pattern
-fn compile_hex_wildcard(pattern: &str) -> Result<Vec<Option<u8>>> {
+fn compile_hex_wildcard(pattern: &str) -> crate::types::HexPatternResult {
     let mut compiled = Vec::new();
     let clean_pattern = pattern.replace(" ", "").replace("\n", "");
 
@@ -405,7 +405,7 @@ fn compile_hex_wildcard(pattern: &str) -> Result<Vec<Option<u8>>> {
 }
 
 /// Check if data matches hex wildcard pattern
-fn hex_wildcard_matches(data: &[u8], pattern: &[Option<u8>]) -> bool {
+fn hex_wildcard_matches(data: &[u8], pattern: &crate::types::HexPattern) -> bool {
     if data.len() != pattern.len() {
         return false;
     }
