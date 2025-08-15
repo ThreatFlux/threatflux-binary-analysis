@@ -4,11 +4,13 @@ use crate::{BinaryError, BinaryFormat as Format, BinaryFormatParser, Result};
 
 #[cfg(feature = "elf")]
 pub mod elf;
+#[cfg(feature = "java")]
+pub mod java;
 #[cfg(feature = "macho")]
 pub mod macho;
 #[cfg(feature = "pe")]
 pub mod pe;
-// Note: Java and WebAssembly format parsers not yet implemented
+// Note: WebAssembly format parser not yet implemented
 // Format detection is supported but parsing returns UnsupportedFormat error
 
 pub mod raw;
@@ -55,6 +57,21 @@ pub fn detect_format(data: &[u8]) -> Result<Format> {
         return Ok(Format::Java);
     }
 
+    // Check for JAR/ZIP magic with Java class entries
+    #[cfg(feature = "java")]
+    if data.len() >= 4 && &data[0..4] == b"PK\x03\x04" {
+        use std::io::Cursor;
+        if let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(data)) {
+            for i in 0..archive.len() {
+                if let Ok(file) = archive.by_index(i) {
+                    if file.name().ends_with(".class") {
+                        return Ok(Format::Java);
+                    }
+                }
+            }
+        }
+    }
+
     // Check for WebAssembly magic
     if data.len() >= 4 && &data[0..4] == b"\x00asm" {
         return Ok(Format::Wasm);
@@ -76,6 +93,9 @@ pub fn parse_binary(data: &[u8], format: Format) -> crate::types::ParseResult {
         #[cfg(feature = "macho")]
         Format::MachO => macho::MachOParser::parse(data),
 
+        #[cfg(feature = "java")]
+        Format::Java => java::JavaParser::parse(data),
+        #[cfg(not(feature = "java"))]
         Format::Java => Err(BinaryError::unsupported_format("Java".to_string())),
         Format::Wasm => Err(BinaryError::unsupported_format("Wasm".to_string())),
         Format::Raw => raw::RawParser::parse(data),

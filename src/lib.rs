@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! # ThreatFlux Binary Analysis Library
 //!
 //! A comprehensive binary analysis framework for security research, reverse engineering,
