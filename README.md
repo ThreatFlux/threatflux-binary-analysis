@@ -13,7 +13,7 @@ A comprehensive Rust library for binary analysis with multi-format support, disa
 - **PE (Portable Executable)**: Windows executables, DLLs, drivers
 - **ELF (Executable and Linkable Format)**: Linux/Unix executables, shared libraries
 - **Mach-O**: macOS executables, dynamic libraries, kernel extensions
-- **WASM**: WebAssembly modules (optional)
+- **WASM**: WebAssembly modules (enable with `wasm` feature)
 - **Java**: JAR files and class files
 - **Raw Binary**: Generic binary file analysis
 
@@ -55,6 +55,7 @@ threatflux-binary-analysis = {
         "pe",              # Windows PE format support
         "elf",             # Linux ELF format support  
         "macho",           # macOS Mach-O format support
+        "wasm",            # WebAssembly module support
         "disasm-capstone", # Capstone disassembly engine
         "control-flow",    # Control flow analysis
         "entropy-analysis",# Statistical analysis
@@ -752,6 +753,7 @@ cargo test --test integration_tests
 
 # Test with different features
 cargo test --features "disasm-capstone,control-flow"
+cargo test --features "wasm"  # Enable WebAssembly support
 
 # Test documentation examples
 cargo test --doc
