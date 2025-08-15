@@ -97,6 +97,7 @@ fn test_analyzer_with_custom_config() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_analyze_elf_binary() {
     let data = create_mock_elf_data();
     let analyzer = BinaryAnalyzer::new();
@@ -111,6 +112,7 @@ fn test_analyze_elf_binary() {
 }
 
 #[test]
+#[cfg(feature = "pe")]
 fn test_analyze_pe_binary() {
     let data = create_mock_pe_data();
     let analyzer = BinaryAnalyzer::new();
@@ -149,6 +151,7 @@ fn test_analyze_empty_data() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_binary_file_parsing() {
     let data = create_mock_elf_data();
 
@@ -201,6 +204,7 @@ fn test_binary_file_exports() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_binary_file_metadata() {
     let data = create_mock_elf_data();
     let binary = BinaryFile::parse(&data).unwrap();
@@ -304,6 +308,7 @@ fn test_disabled_analysis_features() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_concurrent_analysis() {
     use std::sync::Arc;
     use std::thread;
@@ -330,6 +335,7 @@ fn test_concurrent_analysis() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_analysis_result_completeness() {
     let data = create_mock_elf_data();
     let analyzer = BinaryAnalyzer::new();

@@ -26,6 +26,7 @@ fn create_test_data(magic: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_detect_elf_format() {
     let data = create_test_data(&ELF_MAGIC);
     let format = formats::detect_format(&data).unwrap();
@@ -33,6 +34,7 @@ fn test_detect_elf_format() {
 }
 
 #[test]
+#[cfg(feature = "pe")]
 fn test_detect_pe_format() {
     let mut data = create_test_data(&PE_MAGIC);
     // Add PE signature at offset 0x3c
@@ -48,6 +50,7 @@ fn test_detect_pe_format() {
 }
 
 #[test]
+#[cfg(feature = "macho")]
 fn test_detect_macho_32_format() {
     let data = create_test_data(&MACHO_32_MAGIC);
     let format = formats::detect_format(&data).unwrap();
@@ -55,6 +58,7 @@ fn test_detect_macho_32_format() {
 }
 
 #[test]
+#[cfg(feature = "macho")]
 fn test_detect_macho_64_format() {
     let data = create_test_data(&MACHO_64_MAGIC);
     let format = formats::detect_format(&data).unwrap();
@@ -62,6 +66,7 @@ fn test_detect_macho_64_format() {
 }
 
 #[test]
+#[cfg(feature = "java")]
 fn test_detect_java_format() {
     let data = create_test_data(&JAVA_MAGIC);
     let format = formats::detect_format(&data).unwrap();
@@ -88,6 +93,7 @@ fn test_detect_java_jar_format() {
 }
 
 #[test]
+#[cfg(feature = "wasm")]
 fn test_detect_wasm_format() {
     let data = create_test_data(&WASM_MAGIC);
     let format = formats::detect_format(&data).unwrap();
@@ -116,6 +122,7 @@ fn test_detect_too_small_data() {
 }
 
 #[test]
+#[cfg(all(feature = "elf", feature = "pe"))]
 fn test_format_precedence() {
     // Test that PE is detected when MZ magic is at the beginning
     let mut data = create_test_data(&ELF_MAGIC);
@@ -136,6 +143,7 @@ fn test_partial_magic_bytes() {
 }
 
 #[test]
+#[cfg(feature = "pe")]
 fn test_pe_without_signature() {
     // PE header without proper PE signature
     let data = create_test_data(&PE_MAGIC);
@@ -145,6 +153,7 @@ fn test_pe_without_signature() {
 }
 
 #[test]
+#[cfg(feature = "pe")]
 fn test_corrupted_pe_header() {
     let mut data = create_test_data(&PE_MAGIC);
     data[0x3c] = 0xff; // Invalid PE header offset
@@ -185,6 +194,7 @@ fn test_wasm_version() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_format_confidence_scoring() {
     // Test that format detection considers multiple factors
     let mut elf_data = create_test_data(&ELF_MAGIC);
@@ -238,6 +248,7 @@ fn test_binary_data_patterns() {
 }
 
 #[test]
+#[cfg(any(feature = "elf", feature = "pe", feature = "macho"))]
 fn test_minimum_file_sizes() {
     // Test that format detection handles minimum file size requirements
 
@@ -253,6 +264,7 @@ fn test_minimum_file_sizes() {
 }
 
 #[test]
+#[cfg(feature = "macho")]
 fn test_endianness_detection() {
     // Test that endianness variants are properly handled
 
@@ -268,6 +280,7 @@ fn test_endianness_detection() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_format_detection_performance() {
     // Test that format detection is efficient for large files
     let mut large_data = create_test_data(&ELF_MAGIC);
@@ -282,6 +295,7 @@ fn test_format_detection_performance() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_concurrent_format_detection() {
     use std::sync::Arc;
     use std::thread;

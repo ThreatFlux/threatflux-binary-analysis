@@ -309,6 +309,7 @@ fn test_complete_java_analysis() {
 }
 
 #[test]
+#[cfg(feature = "java")]
 fn test_complete_java_jar_analysis() {
     let data = test_data::create_java_jar();
     let analyzer = BinaryAnalyzer::new();
@@ -344,6 +345,7 @@ fn test_complete_wasm_analysis() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_analysis_with_all_features_enabled() {
     let data = test_data::create_minimal_elf();
 
@@ -369,6 +371,7 @@ fn test_analysis_with_all_features_enabled() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_analysis_with_features_disabled() {
     let data = test_data::create_minimal_elf();
 
@@ -396,6 +399,7 @@ fn test_analysis_with_features_disabled() {
 }
 
 #[test]
+#[cfg(all(feature = "elf", feature = "pe", feature = "macho", feature = "java", feature = "wasm"))]
 fn test_multiple_format_analysis() {
     let test_cases = vec![
         (
@@ -463,6 +467,7 @@ fn test_multiple_format_analysis() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_file_based_analysis() {
     let data = test_data::create_minimal_elf();
 
@@ -480,6 +485,7 @@ fn test_file_based_analysis() {
 }
 
 #[test]
+#[cfg(all(feature = "elf", feature = "pe", feature = "macho"))]
 fn test_concurrent_analysis_different_formats() {
     use std::sync::Arc;
     use std::thread;
@@ -548,6 +554,7 @@ fn test_concurrent_analysis_different_formats() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_large_file_handling() {
     let mut data = test_data::create_minimal_elf();
     data.resize(10 * 1024 * 1024, 0); // 10MB file
