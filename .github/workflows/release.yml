@@ -58,7 +58,7 @@ jobs:
     
     - name: Create Release
       id: create_release
-      uses: actions/create-release@v1
+      uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e  # v1.1.4
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -86,7 +86,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
@@ -121,7 +121,7 @@ jobs:
     
     - name: Upload Release Asset
       if: matrix.os == 'ubuntu-latest'
-      uses: actions/upload-release-asset@v1
+      uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5  # v1.0.2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -145,7 +145,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -180,7 +180,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -191,7 +191,7 @@ jobs:
       run: cargo doc --all-features --no-deps
     
     - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
+      uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e  # v4.0.0
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./target/doc

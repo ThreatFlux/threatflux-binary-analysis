@@ -36,7 +36,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -100,7 +100,7 @@ jobs:
         cat doc-coverage.md
     
     - name: Upload documentation
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
       with:
         name: documentation
         path: |
@@ -120,7 +120,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -172,7 +172,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -203,7 +203,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -217,7 +217,7 @@ jobs:
         RUSTDOCFLAGS: "--cfg docsrs"
     
     - name: Setup Pages
-      uses: actions/configure-pages@v4
+      uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5.0.0
     
     - name: Prepare documentation site
       run: |
@@ -274,7 +274,7 @@ jobs:
         EOF
     
     - name: Upload Pages artifact
-      uses: actions/upload-pages-artifact@v2
+      uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b  # v4.0.0
       with:
         path: site
 
@@ -293,7 +293,7 @@ jobs:
     steps:
     - name: Deploy to GitHub Pages
       id: deployment
-      uses: actions/deploy-pages@v3
+      uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4.0.5
 
   readme-sync:
     name: Sync README with docs.rs

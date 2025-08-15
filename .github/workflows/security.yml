@@ -27,10 +27,10 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install cargo-audit
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
       with:
         tool: cargo-audit
     
@@ -54,7 +54,7 @@ jobs:
     
     - name: Upload audit results
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
       with:
         name: security-audit-results
         path: audit-results.json
@@ -73,7 +73,7 @@ jobs:
         components: clippy
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -125,7 +125,7 @@ jobs:
       uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
     
     - name: Dependency Review
-      uses: actions/dependency-review-action@v3
+      uses: actions/dependency-review-action@da24556b548a50705dd671f47852072ea4c105d9  # v4.7.1
       with:
         base-ref: ${{ github.event.pull_request.base.sha }}
         head-ref: ${{ github.event.pull_request.head.sha }}
@@ -139,7 +139,7 @@ jobs:
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
     
     - name: Install cargo-deny
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
       with:
         tool: cargo-deny
     
@@ -225,7 +225,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -233,7 +233,7 @@ jobs:
         sudo apt-get install -y libcapstone-dev pkg-config
     
     - name: Install cargo-semver-checks
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
       with:
         tool: cargo-semver-checks
     
@@ -265,7 +265,7 @@ jobs:
         components: rust-src
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -273,7 +273,7 @@ jobs:
         sudo apt-get install -y libcapstone-dev pkg-config
     
     - name: Install cargo-geiger
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
       with:
         tool: cargo-geiger
     
@@ -298,7 +298,7 @@ jobs:
     
     - name: Upload geiger report
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
       with:
         name: unsafe-code-report
         path: geiger-report.json
@@ -311,7 +311,7 @@ jobs:
     
     steps:
     - name: Download artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0  # v5.0.0
       with:
         path: security-reports
     
@@ -351,7 +351,7 @@ jobs:
         cat security-summary.md
     
     - name: Upload security summary
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
       with:
         name: security-summary
         path: security-summary.md
