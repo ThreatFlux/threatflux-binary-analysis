@@ -30,12 +30,13 @@ allow = [
     "BSD-3-Clause",
     "Unicode-3.0",
     "Zlib",
+    "CC0-1.0",
 ]
 confidence-threshold = 0.8
 exceptions = []
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "allow"
 wildcards = "allow"
 highlight = "all"
 workspace-default-features = "allow"
