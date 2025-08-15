@@ -338,6 +338,8 @@ fn test_analysis_with_all_features_enabled() {
 
     let config = AnalysisConfig {
         enable_disassembly: true,
+        #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+        disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
         enable_control_flow: true,
         enable_entropy: true,
         enable_symbols: true,
@@ -361,6 +363,8 @@ fn test_analysis_with_features_disabled() {
 
     let config = AnalysisConfig {
         enable_disassembly: false,
+        #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+        disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
         enable_control_flow: false,
         enable_entropy: false,
         enable_symbols: false,

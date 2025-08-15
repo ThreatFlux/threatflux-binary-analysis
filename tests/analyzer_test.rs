@@ -75,6 +75,8 @@ fn test_analyzer_creation() {
 fn test_analyzer_with_custom_config() {
     let config = AnalysisConfig {
         enable_disassembly: false,
+        #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+        disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
         enable_control_flow: true,
         enable_entropy: false,
         enable_symbols: true,

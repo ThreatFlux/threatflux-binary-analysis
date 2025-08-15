@@ -128,6 +128,8 @@ fn main() -> Result<()> {
     println!("\n=== Performing Analysis ===");
     let config = AnalysisConfig {
         enable_disassembly: false, // Disable for basic example
+        #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+        disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
         enable_control_flow: false,
         enable_entropy: false,
         enable_symbols: true,

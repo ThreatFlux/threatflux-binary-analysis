@@ -66,6 +66,8 @@ pub fn analyze_with_config(data: &[u8], config: AnalysisConfig) -> HelperResult<
 pub fn analyze_minimal(data: &[u8]) -> HelperResult<AnalysisResult> {
     let config = AnalysisConfig {
         enable_disassembly: false,
+        #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+        disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
         enable_control_flow: false,
         enable_entropy: false,
         enable_symbols: false,
@@ -79,6 +81,8 @@ pub fn analyze_minimal(data: &[u8]) -> HelperResult<AnalysisResult> {
 pub fn analyze_maximal(data: &[u8]) -> HelperResult<AnalysisResult> {
     let config = AnalysisConfig {
         enable_disassembly: true,
+        #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+        disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
         enable_control_flow: true,
         enable_entropy: true,
         enable_symbols: true,
@@ -390,6 +394,8 @@ where
 pub fn stress_test_config() -> AnalysisConfig {
     AnalysisConfig {
         enable_disassembly: true,
+        #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+        disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
         enable_control_flow: true,
         enable_entropy: true,
         enable_symbols: true,
@@ -402,6 +408,8 @@ pub fn stress_test_config() -> AnalysisConfig {
 pub fn performance_test_config() -> AnalysisConfig {
     AnalysisConfig {
         enable_disassembly: false, // Disable expensive operations
+        #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+        disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
         enable_control_flow: false,
         enable_entropy: false,
         enable_symbols: true,                // Keep basic symbol analysis

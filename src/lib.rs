@@ -268,6 +268,8 @@ mod tests {
     fn test_custom_config() {
         let config = AnalysisConfig {
             enable_disassembly: false,
+            #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+            disassembly_engine: DisassemblyEngine::Auto,
             enable_control_flow: true,
             enable_entropy: false,
             enable_symbols: true,
