@@ -132,6 +132,7 @@ fn main() -> Result<()> {
         enable_symbols: true,
         max_analysis_size: 1024 * 1024, // 1MB limit
         architecture_hint: None,
+        ..Default::default()
     };
 
     let analyzer = BinaryAnalyzer::with_config(config);

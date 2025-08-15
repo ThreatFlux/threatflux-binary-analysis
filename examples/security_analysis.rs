@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Security analysis example
 //!
 //! This example demonstrates how to perform security analysis on binary files,

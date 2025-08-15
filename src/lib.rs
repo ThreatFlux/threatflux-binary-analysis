@@ -47,6 +47,8 @@ pub mod disasm;
 pub mod utils;
 
 // Re-export main types
+#[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+pub use disasm::DisassemblyEngine;
 pub use error::{BinaryError, Result};
 pub use types::{
     AnalysisResult, Architecture, BasicBlock, BinaryFormat, BinaryFormatParser, BinaryFormatTrait,
@@ -64,7 +66,10 @@ pub struct BinaryAnalyzer {
 pub struct AnalysisConfig {
     /// Enable disassembly analysis
     pub enable_disassembly: bool,
-    /// Enable control flow analysis  
+    /// Preferred disassembly engine
+    #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+    pub disassembly_engine: DisassemblyEngine,
+    /// Enable control flow analysis
     pub enable_control_flow: bool,
     /// Enable entropy analysis
     pub enable_entropy: bool,
@@ -80,6 +85,8 @@ impl Default for AnalysisConfig {
     fn default() -> Self {
         Self {
             enable_disassembly: true,
+            #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+            disassembly_engine: DisassemblyEngine::Auto,
             enable_control_flow: true,
             enable_entropy: true,
             enable_symbols: true,
@@ -259,6 +266,7 @@ mod tests {
             enable_symbols: true,
             max_analysis_size: 1024,
             architecture_hint: Some(Architecture::X86_64),
+            ..Default::default()
         };
 
         let analyzer = BinaryAnalyzer::with_config(config);

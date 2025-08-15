@@ -80,6 +80,7 @@ fn test_analyzer_with_custom_config() {
         enable_symbols: true,
         max_analysis_size: 1024,
         architecture_hint: Some(Architecture::X86_64),
+        ..Default::default()
     };
 
     let analyzer = BinaryAnalyzer::with_config(config);
