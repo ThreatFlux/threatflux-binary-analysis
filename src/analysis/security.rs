@@ -4,8 +4,8 @@
 //! including vulnerability detection, malware indicators, and security feature analysis.
 
 use crate::{
-    types::{Architecture, Import, Section, SecurityFeatures, SecurityIndicators, Symbol},
     BinaryFile, Result,
+    types::{Architecture, Import, Section, SecurityFeatures, SecurityIndicators, Symbol},
 };
 use std::collections::HashSet;
 

@@ -4,8 +4,8 @@
 //! The choice of engine can be configured based on requirements and availability.
 
 use crate::{
-    types::{Architecture, ControlFlow as FlowType, Instruction, InstructionCategory},
     AnalysisConfig, BinaryError, BinaryFile, Result,
+    types::{Architecture, ControlFlow as FlowType, Instruction, InstructionCategory},
 };
 
 #[cfg(feature = "disasm-capstone")]
@@ -103,7 +103,7 @@ impl Disassembler {
                 #[cfg(not(any(feature = "disasm-capstone", feature = "disasm-iced")))]
                 {
                     Err(BinaryError::feature_not_available(
-                        "No disassembly engine available. Enable 'disasm-capstone' or 'disasm-iced' feature."
+                        "No disassembly engine available. Enable 'disasm-capstone' or 'disasm-iced' feature.",
                     ))
                 }
             }

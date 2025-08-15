@@ -6,9 +6,9 @@
 use std::env;
 use std::fs;
 use threatflux_binary_analysis::{
+    BinaryFile,
     disasm::{Disassembler, DisassemblyConfig, DisassemblyEngine},
     types::ControlFlow,
-    BinaryFile,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

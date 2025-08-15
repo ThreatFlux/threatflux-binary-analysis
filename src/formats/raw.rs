@@ -1,11 +1,11 @@
 //! Raw binary format parser
 
 use crate::{
+    BinaryFormatParser, BinaryFormatTrait, Result,
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
         SectionPermissions, SectionType, SecurityFeatures, Symbol,
     },
-    BinaryFormatParser, BinaryFormatTrait, Result,
 };
 
 /// Raw binary format parser
