@@ -49,7 +49,12 @@ all-docker: docker-build ## Run all checks and builds in Docker container
 		echo '$(BLUE)=== Dependency Check ===$(NC)' && \
 		cargo deny check && \
 		echo '$(BLUE)=== Tests ===$(NC)' && \
-		cargo test --all-features && \
+		echo '  With all features...' && \
+		cargo test --verbose --all-features && \
+		echo '  With no default features...' && \
+		cargo test --verbose --no-default-features && \
+		echo '  With default features...' && \
+		cargo test --verbose && \
 		echo '$(BLUE)=== Documentation ===$(NC)' && \
 		cargo doc --all-features --no-deps && \
 		echo '$(BLUE)=== Build ===$(NC)' && \
@@ -74,7 +79,12 @@ all-docker-coverage: docker-build ## Run all checks including coverage in Docker
 		echo '$(BLUE)=== Dependency Check ===$(NC)' && \
 		cargo deny check && \
 		echo '$(BLUE)=== Tests with Coverage ===$(NC)' && \
-		cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info && \
+		echo '  With all features...' && \
+		cargo llvm-cov --all-features --workspace --lcov --output-path lcov-all.info && \
+		echo '  With no default features...' && \
+		cargo llvm-cov --no-default-features --workspace --lcov --output-path lcov-no-default.info && \
+		echo '  With default features...' && \
+		cargo llvm-cov --workspace --lcov --output-path lcov.info && \
 		cargo llvm-cov --all-features --workspace --html && \
 		echo '$(BLUE)=== Documentation ===$(NC)' && \
 		cargo doc --all-features --no-deps && \
@@ -198,21 +208,57 @@ deny-docker: docker-build ## Run dependency validation in Docker
 
 test: ## Run all tests
 	@echo "$(CYAN)Running tests...$(NC)"
-	@cargo test --all-features
+	@echo "$(BLUE)  With all features...$(NC)"
+	@cargo test --verbose --all-features
+	@echo "$(BLUE)  With no default features...$(NC)"
+	@cargo test --verbose --no-default-features
+	@echo "$(BLUE)  With default features...$(NC)"
+	@cargo test --verbose
 
 test-docker: docker-build ## Run all tests in Docker
 	@echo "$(CYAN)Running tests in Docker...$(NC)"
-	@docker run --rm -v "$(PWD):/workspace" $(DOCKER_FULL_NAME) \
-		cargo test --all-features
+	@docker run --rm -v "$(PWD):/workspace" $(DOCKER_FULL_NAME) sh -c "\
+		echo '$(BLUE)  With all features...$(NC)' && \
+		cargo test --verbose --all-features && \
+		echo '$(BLUE)  With no default features...$(NC)' && \
+		cargo test --verbose --no-default-features && \
+		echo '$(BLUE)  With default features...$(NC)' && \
+		cargo test --verbose"
 
 test-doc: ## Run documentation tests
 	@echo "$(CYAN)Running documentation tests...$(NC)"
-	@cargo test --doc --all-features
+	@echo "$(BLUE)  With all features...$(NC)"
+	@cargo test --doc --verbose --all-features
+	@echo "$(BLUE)  With no default features...$(NC)"
+	@cargo test --doc --verbose --no-default-features
+	@echo "$(BLUE)  With default features...$(NC)"
+	@cargo test --doc --verbose
 
 test-doc-docker: docker-build ## Run documentation tests in Docker
 	@echo "$(CYAN)Running documentation tests in Docker...$(NC)"
-	@docker run --rm -v "$(PWD):/workspace" $(DOCKER_FULL_NAME) \
-		cargo test --doc --all-features
+	@docker run --rm -v "$(PWD):/workspace" $(DOCKER_FULL_NAME) sh -c "\
+		echo '$(BLUE)  With all features...$(NC)' && \
+		cargo test --doc --verbose --all-features && \
+		echo '$(BLUE)  With no default features...$(NC)' && \
+		cargo test --doc --verbose --no-default-features && \
+		echo '$(BLUE)  With default features...$(NC)' && \
+		cargo test --doc --verbose"
+
+test-features: ## Test with different feature combinations
+	@echo "$(CYAN)Testing different feature combinations...$(NC)"
+	@echo "$(BLUE)Testing with all features...$(NC)"
+	@cargo test --verbose --all-features
+	@echo "$(BLUE)Testing with no default features...$(NC)"
+	@cargo test --verbose --no-default-features  
+	@echo "$(BLUE)Testing with default features only...$(NC)"
+	@cargo test --verbose
+	@echo "$(BLUE)Testing with specific features...$(NC)"
+	@cargo test --verbose --no-default-features --features "elf"
+	@cargo test --verbose --no-default-features --features "pe"
+	@cargo test --verbose --no-default-features --features "macho"
+	@cargo test --verbose --no-default-features --features "java"
+	@cargo test --verbose --no-default-features --features "wasm"
+	@echo "$(GREEN)✅ All feature combinations tested!$(NC)"
 
 # =============================================================================
 # Build Commands
@@ -289,7 +335,12 @@ bench-docker: docker-build ## Run benchmarks in Docker
 
 coverage: ## Generate test coverage report (HTML + LCOV)
 	@echo "$(CYAN)Generating coverage report...$(NC)"
-	@cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+	@echo "$(BLUE)  With all features...$(NC)"
+	@cargo llvm-cov --all-features --workspace --lcov --output-path lcov-all.info
+	@echo "$(BLUE)  With no default features...$(NC)"
+	@cargo llvm-cov --no-default-features --workspace --lcov --output-path lcov-no-default.info
+	@echo "$(BLUE)  With default features...$(NC)"
+	@cargo llvm-cov --workspace --lcov --output-path lcov.info
 	@cargo llvm-cov --all-features --workspace --html
 	@echo "$(GREEN)✅ Coverage report generated in target/llvm-cov/html/index.html$(NC)"
 
