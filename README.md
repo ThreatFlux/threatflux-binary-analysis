@@ -28,6 +28,9 @@ A comprehensive Rust library for binary analysis with multi-format support, disa
 - **🏗️ Metadata Extraction**: Compiler detection, build information
 - **🔍 String Extraction**: ASCII and Unicode string discovery
 - **📱 Mobile Analysis**: Android APK and iOS app analysis
+- **🗜️ Compression Support**: Decompress common compressed sections
+- **🗺️ Visualization**: Export control flow graphs to DOT format
+- **📝 JSON Serialization**: Serialize analysis results to JSON
 
 ### Performance Features
 - **⚡ Memory-Mapped Files**: Efficient large file handling
@@ -59,8 +62,11 @@ threatflux-binary-analysis = {
         "disasm-capstone", # Capstone disassembly engine
         "control-flow",    # Control flow analysis
         "entropy-analysis",# Statistical analysis
+        "symbol-resolution",# Debug symbol support
+        "compression",     # Compressed section support
+        "visualization",   # Graph visualization
         "serde-support",   # JSON serialization support
-    ] 
+    ]
 }
 ```
 
@@ -76,11 +82,11 @@ threatflux-binary-analysis = {
 | `disasm-capstone` | Capstone disassembly | ✅ |
 | `disasm-iced` | iced-x86 disassembly | ❌ |
 | `control-flow` | Control flow analysis | ❌ |
-| `entropy-analysis` | Entropy calculation | ❌ |
-| `symbol-resolution` | Debug symbol support | ❌ |
-| `compression` | Compressed section support | ❌ |
-| `visualization` | Graph visualization | ❌ |
-| `serde-support` | JSON serialization | ❌ |
+| `entropy-analysis` | Entropy calculation | ✅ |
+| `symbol-resolution` | Debug symbol support | ✅ |
+| `compression` | Compressed section support | ✅ |
+| `visualization` | Graph visualization | ✅ |
+| `serde-support` | JSON serialization | ✅ |
 
 ## 🚀 Quick Start
 

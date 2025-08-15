@@ -148,6 +148,13 @@ impl BinaryAnalyzer {
             }
         }
 
+        #[cfg(feature = "symbol-resolution")]
+        {
+            if self.config.enable_symbols {
+                analysis::symbols::demangle_symbols(&mut result.symbols);
+            }
+        }
+
         Ok(result)
     }
 

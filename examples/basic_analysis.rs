@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Basic binary analysis example
 //!
 //! This example demonstrates how to use the threatflux-binary-analysis library

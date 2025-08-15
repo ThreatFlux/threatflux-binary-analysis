@@ -7,3 +7,9 @@ pub mod control_flow;
 pub mod entropy;
 
 pub mod security;
+
+#[cfg(feature = "symbol-resolution")]
+pub mod symbols;
+
+#[cfg(feature = "visualization")]
+pub mod visualization;
