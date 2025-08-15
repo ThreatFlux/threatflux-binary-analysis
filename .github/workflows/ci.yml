@@ -37,7 +37,7 @@ jobs:
         components: rustfmt, clippy
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
@@ -113,7 +113,7 @@ jobs:
         components: llvm-tools-preview
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -149,7 +149,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -176,7 +176,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -201,7 +201,7 @@ jobs:
         toolchain: stable
     
     - name: Setup Rust cache
-      uses: Swatinem/rust-cache@267a8a94c98a1d6542d1ea6c13b41d0fa1184dcb  # v2.8.1
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
     
     - name: Install system dependencies
       run: |
@@ -209,7 +209,7 @@ jobs:
         sudo apt-get install -y libcapstone-dev pkg-config
     
     - name: Install cargo-hack
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
       with:
         tool: cargo-hack
     
