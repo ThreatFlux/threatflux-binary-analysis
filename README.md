@@ -807,13 +807,39 @@ git clone https://github.com/ThreatFlux/threatflux-binary-analysis.git
 cd threatflux-binary-analysis
 
 # Install development dependencies
-cargo install cargo-watch cargo-tarpaulin
+cargo install cargo-watch cargo-tarpaulin cargo-hack cargo-deny
+
+# Install git hooks (runs make all before each commit)
+./scripts/install-hooks.sh
+
+# Run all checks (formatting, linting, tests, etc.)
+make all
 
 # Run tests in watch mode
 cargo watch -x test
 
 # Generate documentation
 cargo doc --open --all-features
+```
+
+### Pre-commit Hooks
+
+This project uses a pre-commit hook to ensure code quality. The hook automatically runs `make all` before each commit, which includes:
+- Code formatting check
+- Clippy linting with all feature combinations
+- Security audit
+- Dependency validation
+- Tests with all feature combinations
+- Feature combination checking
+
+To install the pre-commit hook:
+```bash
+./scripts/install-hooks.sh
+```
+
+To bypass the hook in special cases:
+```bash
+git commit --no-verify
 ```
 
 ## 📄 License
