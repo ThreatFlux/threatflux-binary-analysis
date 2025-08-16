@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Performance benchmarks and integration tests with real system binaries
 //!
 //! This test suite focuses on performance testing and integration with actual

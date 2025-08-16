@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Tests for Mach-O format parser
 #![cfg(feature = "macho")]
 

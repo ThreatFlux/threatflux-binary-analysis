@@ -9,11 +9,11 @@ pub fn read_binary_from_args() -> Result<Vec<u8>> {
     let file_path = args_iter.next();
 
     let data = if let Some(file_path) = file_path {
-        println!("Analyzing binary file: {}", file_path);
+        println!("Analyzing binary file: {file_path}");
         fs::read(&file_path)?
     } else {
         println!("No binary file provided, using minimal ELF test data for demonstration");
-        println!("Usage: {} <binary_file>", program_name);
+        println!("Usage: {program_name} <binary_file>");
         println!();
         create_minimal_elf()
     };

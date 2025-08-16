@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Common test utilities and fixtures for threatflux-binary-analysis tests
 
 pub mod fixtures;

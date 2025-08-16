@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Comprehensive unit tests for ELF binary parser
 //!
 //! This test suite achieves comprehensive coverage of the ELF parser functionality

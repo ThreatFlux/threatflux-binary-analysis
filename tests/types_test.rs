@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Tests for core types and data structures
 
 use threatflux_binary_analysis::types::*;

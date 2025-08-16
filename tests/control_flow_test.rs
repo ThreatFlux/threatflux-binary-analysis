@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 #![cfg(all(
     feature = "control-flow",
     any(feature = "disasm-capstone", feature = "disasm-iced")

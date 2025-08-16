@@ -1,4 +1,5 @@
 #![allow(clippy::uninlined_format_args)]
+#![allow(clippy::uninlined_format_args)]
 //! Integration tests for the entire binary analysis pipeline
 
 #[cfg(any(feature = "elf", feature = "java"))]

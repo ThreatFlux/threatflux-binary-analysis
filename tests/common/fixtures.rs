@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Test fixtures for binary analysis tests
 
 #![allow(dead_code)]

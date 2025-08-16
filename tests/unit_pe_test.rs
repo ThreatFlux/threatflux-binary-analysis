@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Comprehensive unit tests for PE binary parser
 //!
 //! This test suite achieves comprehensive coverage of the PE parser functionality

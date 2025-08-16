@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Comprehensive unit tests for Java binary parser
 //!
 //! This test suite achieves comprehensive coverage of the Java parser functionality

@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Property-based testing for robustness validation
 //!
 //! This test suite uses proptest to generate random inputs and test invariants
