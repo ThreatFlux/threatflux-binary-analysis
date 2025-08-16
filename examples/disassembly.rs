@@ -14,22 +14,26 @@ use threatflux_binary_analysis::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
-    // Get binary file path from command line arguments
-    let args: Vec<String> = env::args().collect();
+    // Get binary file path from command line arguments using iterator
+    let mut args_iter = env::args();
+    let program_name = args_iter
+        .next()
+        .unwrap_or_else(|| "disassembly".to_string());
+    let file_path = args_iter.next();
 
-    let data = if args.len() != 2 {
+    let data = if file_path.is_none() {
         println!("No binary file provided, using minimal ELF test data for demonstration");
-        println!("Usage: {} <binary_file>", args[0]);
+        println!("Usage: {} <binary_file>", program_name);
         println!();
 
         // Create a minimal valid ELF binary for testing
         create_minimal_elf()
     } else {
-        let file_path = &args[1];
+        let file_path = file_path.unwrap();
         println!("Disassembling binary file: {file_path}");
 
         // Read and parse the binary file
-        fs::read(file_path)?
+        fs::read(&file_path)?
     };
     let binary = BinaryFile::parse(&data)?;
 

@@ -15,18 +15,23 @@ use threatflux_binary_analysis::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
-    // Get binary file path from command line arguments
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
-        eprintln!("Usage: {} <binary_file>", args[0]);
+    // Get binary file path from command line arguments using iterator
+    let mut args_iter = env::args();
+    let program_name = args_iter
+        .next()
+        .unwrap_or_else(|| "security_analysis".to_string());
+    let file_path = args_iter.next();
+
+    if file_path.is_none() {
+        eprintln!("Usage: {} <binary_file>", program_name);
         std::process::exit(1);
     }
 
-    let file_path = &args[1];
+    let file_path = file_path.unwrap();
     println!("Performing security analysis on: {}", file_path);
 
     // Read and parse the binary file
-    let data = fs::read(file_path)?;
+    let data = fs::read(&file_path)?;
     let binary = BinaryFile::parse(&data)?;
 
     println!("Binary format: {:?}", binary.format());
