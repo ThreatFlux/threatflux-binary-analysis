@@ -1,9 +1,12 @@
 //! Tests for the main BinaryAnalyzer functionality
 
 use threatflux_binary_analysis::types::*;
-use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer, BinaryFile};
+use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer};
+#[cfg(feature = "elf")]
+use threatflux_binary_analysis::BinaryFile;
 
 // Helper function to create mock ELF data
+#[allow(dead_code)]
 fn create_mock_elf_data() -> Vec<u8> {
     let mut data = vec![
         0x7f, 0x45, 0x4c, 0x46, // ELF magic
@@ -36,6 +39,7 @@ fn create_mock_elf_data() -> Vec<u8> {
 }
 
 // Helper function to create mock PE data
+#[cfg(feature = "pe")]
 fn create_mock_pe_data() -> Vec<u8> {
     let mut data = vec![
         0x4d, 0x5a, // MZ magic
@@ -166,6 +170,7 @@ fn test_binary_file_parsing() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_binary_file_sections() {
     let data = create_mock_elf_data();
     let binary = BinaryFile::parse(&data).unwrap();
@@ -176,6 +181,7 @@ fn test_binary_file_sections() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_binary_file_symbols() {
     let data = create_mock_elf_data();
     let binary = BinaryFile::parse(&data).unwrap();
@@ -186,6 +192,7 @@ fn test_binary_file_symbols() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_binary_file_imports() {
     let data = create_mock_elf_data();
     let binary = BinaryFile::parse(&data).unwrap();
@@ -195,6 +202,7 @@ fn test_binary_file_imports() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_binary_file_exports() {
     let data = create_mock_elf_data();
     let binary = BinaryFile::parse(&data).unwrap();
@@ -251,6 +259,7 @@ fn test_analyzer_default() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_large_file_analysis() {
     let mut data = create_mock_elf_data();
     data.resize(5 * 1024 * 1024, 0); // 5MB file
@@ -268,6 +277,7 @@ fn test_large_file_analysis() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_architecture_hint() {
     let data = create_mock_elf_data();
 
@@ -284,6 +294,7 @@ fn test_architecture_hint() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_disabled_analysis_features() {
     let data = create_mock_elf_data();
 
@@ -371,6 +382,7 @@ fn test_error_handling() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_analysis_performance() {
     let data = create_mock_elf_data();
     let analyzer = BinaryAnalyzer::new();

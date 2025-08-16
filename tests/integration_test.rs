@@ -1,14 +1,18 @@
 #![allow(clippy::uninlined_format_args)]
 //! Integration tests for the entire binary analysis pipeline
 
+#[cfg(any(feature = "elf", feature = "java"))]
 use std::io::Write;
+#[cfg(feature = "elf")]
 use tempfile::NamedTempFile;
+#[allow(unused_imports)]
 use threatflux_binary_analysis::error::BinaryError;
 use threatflux_binary_analysis::types::*;
 use threatflux_binary_analysis::*;
 
 // Create comprehensive test binaries for different formats
 mod test_data {
+    #[cfg(feature = "elf")]
     pub fn create_minimal_elf() -> Vec<u8> {
         vec![
             // ELF Header
@@ -43,6 +47,13 @@ mod test_data {
         ]
     }
 
+    #[cfg(not(feature = "elf"))]
+    #[allow(dead_code)]
+    pub fn create_minimal_elf() -> Vec<u8> {
+        vec![]
+    }
+
+    #[cfg(feature = "pe")]
     pub fn create_minimal_pe() -> Vec<u8> {
         let mut data = vec![0; 1024];
 
@@ -102,6 +113,13 @@ mod test_data {
         data
     }
 
+    #[cfg(not(feature = "pe"))]
+    #[allow(dead_code)]
+    pub fn create_minimal_pe() -> Vec<u8> {
+        vec![]
+    }
+
+    #[cfg(feature = "macho")]
     pub fn create_minimal_macho() -> Vec<u8> {
         vec![
             // Mach-O Header (64-bit) - big endian
@@ -134,6 +152,13 @@ mod test_data {
         ]
     }
 
+    #[cfg(not(feature = "macho"))]
+    #[allow(dead_code)]
+    pub fn create_minimal_macho() -> Vec<u8> {
+        vec![]
+    }
+
+    #[cfg(feature = "java")]
     pub fn create_java_class() -> Vec<u8> {
         vec![
             0xca, 0xfe, 0xba, 0xbe, // magic
@@ -184,6 +209,13 @@ mod test_data {
         ]
     }
 
+    #[cfg(not(feature = "java"))]
+    #[allow(dead_code)]
+    pub fn create_java_class() -> Vec<u8> {
+        vec![]
+    }
+
+    #[cfg(feature = "wasm")]
     pub fn create_wasm_module() -> Vec<u8> {
         vec![
             0x00, 0x61, 0x73, 0x6d, // WASM magic
@@ -215,6 +247,12 @@ mod test_data {
         ]
     }
 
+    #[cfg(not(feature = "wasm"))]
+    #[allow(dead_code)]
+    pub fn create_wasm_module() -> Vec<u8> {
+        vec![]
+    }
+
     #[cfg(feature = "java")]
     pub fn create_java_jar() -> Vec<u8> {
         use std::io::Write;
@@ -231,6 +269,7 @@ mod test_data {
     }
 
     #[cfg(not(feature = "java"))]
+    #[allow(dead_code)]
     pub fn create_java_jar() -> Vec<u8> {
         vec![]
     }
@@ -485,7 +524,7 @@ fn test_file_based_analysis() {
 }
 
 #[test]
-#[cfg(all(feature = "elf", feature = "pe", feature = "macho"))]
+#[cfg(all(feature = "elf", feature = "pe", feature = "macho", feature = "java", feature = "wasm"))]
 fn test_concurrent_analysis_different_formats() {
     use std::sync::Arc;
     use std::thread;
@@ -611,6 +650,7 @@ fn test_malformed_binaries() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_security_features_detection() {
     let data = test_data::create_minimal_elf();
     let analyzer = BinaryAnalyzer::new();
@@ -642,6 +682,7 @@ fn test_error_propagation() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_analysis_determinism() {
     let data = test_data::create_minimal_elf();
     let analyzer = BinaryAnalyzer::new();
@@ -664,6 +705,7 @@ fn test_analysis_determinism() {
 }
 
 #[test]
+#[cfg(feature = "elf")]
 fn test_memory_usage() {
     let data = test_data::create_minimal_elf();
     let analyzer = BinaryAnalyzer::new();

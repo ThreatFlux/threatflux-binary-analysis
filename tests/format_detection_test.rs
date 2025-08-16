@@ -4,19 +4,25 @@ use threatflux_binary_analysis::formats;
 use threatflux_binary_analysis::types::*;
 
 // ELF magic bytes
+#[cfg(feature = "elf")]
 const ELF_MAGIC: [u8; 4] = [0x7f, 0x45, 0x4c, 0x46]; // "\x7fELF"
 
 // PE magic bytes (MZ header)
+#[cfg(feature = "pe")]
 const PE_MAGIC: [u8; 2] = [0x4d, 0x5a]; // "MZ"
 
 // Mach-O magic bytes
+#[cfg(feature = "macho")]
 const MACHO_32_MAGIC: [u8; 4] = [0xfe, 0xed, 0xfa, 0xce];
+#[cfg(feature = "macho")]
 const MACHO_64_MAGIC: [u8; 4] = [0xfe, 0xed, 0xfa, 0xcf];
 
 // Java class file magic
+#[cfg(feature = "java")]
 const JAVA_MAGIC: [u8; 4] = [0xca, 0xfe, 0xba, 0xbe];
 
 // WebAssembly magic
+#[cfg(feature = "wasm")]
 const WASM_MAGIC: [u8; 4] = [0x00, 0x61, 0x73, 0x6d]; // "\0asm"
 
 fn create_test_data(magic: &[u8]) -> Vec<u8> {
@@ -165,6 +171,7 @@ fn test_corrupted_pe_header() {
 }
 
 #[test]
+#[cfg(feature = "java")]
 fn test_java_version_variants() {
     // Test different Java class file versions
     let mut data = create_test_data(&JAVA_MAGIC);
@@ -180,6 +187,7 @@ fn test_java_version_variants() {
 }
 
 #[test]
+#[cfg(feature = "wasm")]
 fn test_wasm_version() {
     let mut data = create_test_data(&WASM_MAGIC);
 
@@ -252,15 +260,21 @@ fn test_binary_data_patterns() {
 fn test_minimum_file_sizes() {
     // Test that format detection handles minimum file size requirements
 
-    // ELF requires at least ELF header size
-    let small_elf = ELF_MAGIC.to_vec();
-    let format = formats::detect_format(&small_elf).unwrap();
-    assert_eq!(format, BinaryFormat::Elf); // Should still detect basic magic
+    #[cfg(feature = "elf")]
+    {
+        // ELF requires at least ELF header size
+        let small_elf = ELF_MAGIC.to_vec();
+        let format = formats::detect_format(&small_elf).unwrap();
+        assert_eq!(format, BinaryFormat::Elf); // Should still detect basic magic
+    }
 
-    // PE requires DOS header + PE header
-    let small_pe = PE_MAGIC.to_vec();
-    let format = formats::detect_format(&small_pe).unwrap();
-    assert_eq!(format, BinaryFormat::Pe); // Should detect basic MZ magic
+    #[cfg(feature = "pe")]
+    {
+        // PE requires DOS header + PE header
+        let small_pe = PE_MAGIC.to_vec();
+        let format = formats::detect_format(&small_pe).unwrap();
+        assert_eq!(format, BinaryFormat::Pe); // Should detect basic MZ magic
+    }
 }
 
 #[test]
