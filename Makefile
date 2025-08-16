@@ -23,13 +23,13 @@ NC = \033[0m # No Color
 
 .PHONY: help all all-coverage all-docker all-docker-coverage clean docker-build docker-clean
 .PHONY: fmt fmt-check fmt-docker lint lint-docker audit audit-docker deny deny-docker
-.PHONY: test test-docker test-doc test-doc-docker build build-docker build-all build-all-docker
+.PHONY: test test-docker test-doc test-doc-docker test-features feature-check build build-docker build-all build-all-docker
 .PHONY: docs docs-docker examples examples-docker bench bench-docker
 .PHONY: coverage coverage-open coverage-lcov coverage-html coverage-summary coverage-json coverage-docker
 .PHONY: install-tools ci-local ci-local-coverage setup-dev
 
 # Default target
-all: fmt-check lint audit deny test docs build examples ## Run all checks and builds locally
+all: fmt-check lint audit deny test feature-check docs build examples ## Run all checks and builds locally
 
 # Extended target with coverage
 all-coverage: fmt-check lint audit deny test coverage docs build examples ## Run all checks including coverage locally
@@ -259,6 +259,11 @@ test-features: ## Test with different feature combinations
 	@cargo test --verbose --no-default-features --features "java"
 	@cargo test --verbose --no-default-features --features "wasm"
 	@echo "$(GREEN)✅ All feature combinations tested!$(NC)"
+
+feature-check: ## Check all feature combinations with cargo-hack
+	@echo "$(CYAN)Checking feature combinations with cargo-hack...$(NC)"
+	@cargo hack check --feature-powerset --depth 2 --no-dev-deps
+	@echo "$(GREEN)✅ All feature combinations checked!$(NC)"
 
 # =============================================================================
 # Build Commands

@@ -16,16 +16,16 @@ readme = "README.md"
 # Binary format support
 [features]
 default = ["elf", "pe", "macho", "java"]
-elf = ["goblin/elf32", "goblin/elf64"]
-pe = ["goblin/pe32", "goblin/pe64"]
-macho = ["goblin/mach32", "goblin/mach64"]
-java = ["goblin/archive", "zip"]
+elf = ["goblin/elf32", "goblin/elf64", "goblin/std", "goblin/endian_fd"]
+pe = ["goblin/pe32", "goblin/pe64", "goblin/std", "goblin/endian_fd"]
+macho = ["goblin/mach32", "goblin/mach64", "goblin/std", "goblin/endian_fd"]
+java = ["goblin/archive", "goblin/std", "goblin/endian_fd", "zip"]
 wasm = ["wasmparser"]
 # Disassembly engines
 disasm-capstone = ["capstone"]
 disasm-iced = ["iced-x86"]
 # Analysis features
-control-flow = ["petgraph"]
+control-flow = ["petgraph", "disasm-capstone"]
 entropy-analysis = ["statrs"]
 symbol-resolution = ["gimli", "addr2line"]
 # Optional features
