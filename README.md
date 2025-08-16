@@ -85,10 +85,10 @@ threatflux-binary-analysis = {
 | `pe` | PE format support | ✅ |
 | `macho` | Mach-O format support | ✅ |
 | `java` | JAR/class file support | ✅ |
-| `wasm` | WebAssembly support | ❌ |
+| `wasm` | WebAssembly support | ✅ |
 | `disasm-capstone` | Capstone disassembly | ✅ |
-| `disasm-iced` | iced-x86 disassembly | ❌ |
-| `control-flow` | Control flow analysis | ❌ |
+| `disasm-iced` | iced-x86 disassembly | ✅ |
+| `control-flow` | Control flow analysis | ✅ |
 | `entropy-analysis` | Entropy calculation | ✅ |
 | `symbol-resolution` | Debug symbol support | ✅ |
 | `compression` | Compressed section support | ✅ |
