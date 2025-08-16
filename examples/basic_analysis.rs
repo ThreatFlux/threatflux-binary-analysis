@@ -18,19 +18,18 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| "basic_analysis".to_string());
     let file_path = args_iter.next();
 
-    let data = if file_path.is_none() {
+    let data = if let Some(file_path) = file_path {
+        println!("Analyzing binary file: {}", file_path);
+
+        // Read the binary file
+        fs::read(&file_path)?
+    } else {
         println!("No binary file provided, using minimal ELF test data for demonstration");
         println!("Usage: {} <binary_file>", program_name);
         println!();
 
         // Create a minimal valid ELF binary for testing
         create_minimal_elf()
-    } else {
-        let file_path = file_path.unwrap();
-        println!("Analyzing binary file: {}", file_path);
-
-        // Read the binary file
-        fs::read(&file_path)?
     };
     println!("File size: {} bytes", data.len());
 

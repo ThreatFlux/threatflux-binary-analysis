@@ -20,19 +20,18 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| "control_flow".to_string());
     let file_path = args_iter.next();
 
-    let data = if file_path.is_none() {
+    let data = if let Some(file_path) = file_path {
+        println!("Analyzing control flow in: {file_path}");
+
+        // Read and parse the binary file
+        fs::read(&file_path)?
+    } else {
         println!("No binary file provided, using minimal ELF test data for demonstration");
         println!("Usage: {} <binary_file>", program_name);
         println!();
 
         // Create a minimal valid ELF binary for testing
         create_minimal_elf()
-    } else {
-        let file_path = file_path.unwrap();
-        println!("Analyzing control flow in: {file_path}");
-
-        // Read and parse the binary file
-        fs::read(&file_path)?
     };
     let binary = BinaryFile::parse(&data)?;
 

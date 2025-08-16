@@ -22,12 +22,13 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| "security_analysis".to_string());
     let file_path = args_iter.next();
 
-    if file_path.is_none() {
-        eprintln!("Usage: {} <binary_file>", program_name);
-        std::process::exit(1);
-    }
-
-    let file_path = file_path.unwrap();
+    let file_path = match file_path {
+        Some(path) => path,
+        None => {
+            eprintln!("Usage: {} <binary_file>", program_name);
+            std::process::exit(1);
+        }
+    };
     println!("Performing security analysis on: {}", file_path);
 
     // Read and parse the binary file
