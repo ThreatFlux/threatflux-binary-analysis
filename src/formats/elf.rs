@@ -74,7 +74,7 @@ impl ElfBinary {
             },
             base_address: None, // ELF doesn't have a fixed base address
             timestamp: None,    // Not available in ELF headers
-            compiler_info: extract_compiler_info(&elf),
+            compiler_info: extract_compiler_info(&elf, &data),
             endian,
             security_features,
         };
@@ -150,7 +150,11 @@ fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
 
         let section_type = match section_header.sh_type {
             goblin::elf::section_header::SHT_PROGBITS => {
-                if section_header.sh_flags & (goblin::elf::section_header::SHF_EXECINSTR as u64)
+                // Check for debug sections by name first
+                if name.starts_with(".debug_") || name.starts_with(".zdebug_") {
+                    SectionType::Debug
+                } else if section_header.sh_flags
+                    & (goblin::elf::section_header::SHF_EXECINSTR as u64)
                     != 0
                 {
                     SectionType::Code
@@ -334,16 +338,47 @@ fn analyze_security_features(elf: &Elf, _data: &[u8]) -> SecurityFeatures {
     features
 }
 
-fn extract_compiler_info(elf: &Elf) -> Option<String> {
+fn extract_compiler_info(elf: &Elf, data: &[u8]) -> Option<String> {
     // Look for compiler information in .comment section
     for section in &elf.section_headers {
         if let Some(name) = elf.shdr_strtab.get_at(section.sh_name) {
             if name == ".comment" {
-                // This would need access to the raw section data
-                return Some("Unknown compiler".to_string());
+                let offset = section.sh_offset as usize;
+                let size = section.sh_size as usize;
+
+                if offset + size <= data.len() {
+                    let section_data = &data[offset..offset + size];
+
+                    // Parse null-terminated strings from the comment section
+                    let comment_str = String::from_utf8_lossy(section_data);
+                    let comment = comment_str.trim_end_matches('\0').trim();
+
+                    if !comment.is_empty() {
+                        return Some(comment.to_string());
+                    }
+                }
             }
         }
     }
+
+    // Also look for Go build info
+    for section in &elf.section_headers {
+        if let Some(name) = elf.shdr_strtab.get_at(section.sh_name) {
+            if name == ".go.buildinfo" || name.contains("go.") {
+                return Some("Go compiler".to_string());
+            }
+        }
+    }
+
+    // Look for Rust-specific sections
+    for section in &elf.section_headers {
+        if let Some(name) = elf.shdr_strtab.get_at(section.sh_name) {
+            if name.starts_with(".rustc") || name.contains("rust") {
+                return Some("Rust compiler".to_string());
+            }
+        }
+    }
+
     None
 }
 

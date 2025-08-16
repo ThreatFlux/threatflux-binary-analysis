@@ -50,6 +50,9 @@ mod tests {
                     instructions: vec![],
                     successors: vec![1],
                     predecessors: vec![],
+                    block_type: crate::types::BlockType::Entry,
+                    dominator: None,
+                    dominance_frontier: Vec::new(),
                 },
                 BasicBlock {
                     id: 1,
@@ -58,6 +61,9 @@ mod tests {
                     instructions: vec![],
                     successors: vec![],
                     predecessors: vec![0],
+                    block_type: crate::types::BlockType::Exit,
+                    dominator: None,
+                    dominance_frontier: Vec::new(),
                 },
             ],
             complexity: ComplexityMetrics {
@@ -66,7 +72,11 @@ mod tests {
                 edge_count: 1,
                 nesting_depth: 0,
                 loop_count: 0,
+                cognitive_complexity: 1,
+                halstead_metrics: None,
+                maintainability_index: None,
             },
+            loops: vec![],
         };
 
         let dot = cfg_to_dot(&cfg);

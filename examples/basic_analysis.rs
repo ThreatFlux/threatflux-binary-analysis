@@ -119,10 +119,14 @@ fn main() -> Result<()> {
         #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
         disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
         enable_control_flow: false,
+        enable_call_graph: false,
+        enable_cognitive_complexity: false,
+        enable_advanced_loops: false,
         enable_entropy: false,
         enable_symbols: true,
         max_analysis_size: 1024 * 1024, // 1MB limit
         architecture_hint: None,
+        call_graph_config: None,
     };
 
     let analyzer = BinaryAnalyzer::with_config(config);

@@ -358,6 +358,12 @@ pub struct BasicBlock {
     pub successors: Vec<usize>,
     /// Predecessor blocks
     pub predecessors: Vec<usize>,
+    /// Block type classification
+    pub block_type: BlockType,
+    /// Dominator block ID (if computed)
+    pub dominator: Option<usize>,
+    /// Dominance frontier block IDs
+    pub dominance_frontier: Vec<usize>,
 }
 
 /// Control flow graph
@@ -370,6 +376,8 @@ pub struct ControlFlowGraph {
     pub basic_blocks: Vec<BasicBlock>,
     /// Complexity metrics
     pub complexity: ComplexityMetrics,
+    /// Detected loops (enhanced analysis)
+    pub loops: Vec<Loop>,
 }
 
 /// Function information
@@ -445,6 +453,98 @@ pub struct ComplexityMetrics {
     pub nesting_depth: u32,
     /// Number of loops
     pub loop_count: u32,
+    /// Cognitive complexity (different from cyclomatic)
+    pub cognitive_complexity: u32,
+    /// Halstead metrics (if calculated)
+    pub halstead_metrics: Option<HalsteadMetrics>,
+    /// Maintainability index (if calculated)
+    pub maintainability_index: Option<f64>,
+}
+
+/// Halstead metrics for software complexity
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct HalsteadMetrics {
+    /// Number of distinct operators
+    pub n1: u32,
+    /// Number of distinct operands
+    pub n2: u32,
+    /// Total number of operators
+    pub capital_n1: u32,
+    /// Total number of operands
+    pub capital_n2: u32,
+    /// Program vocabulary
+    pub vocabulary: u32,
+    /// Program length
+    pub length: u32,
+    /// Calculated length
+    pub calculated_length: f64,
+    /// Volume
+    pub volume: f64,
+    /// Difficulty
+    pub difficulty: f64,
+    /// Effort
+    pub effort: f64,
+    /// Time required to program
+    pub time: f64,
+    /// Number of delivered bugs
+    pub bugs: f64,
+}
+
+/// Loop types for enhanced control flow analysis
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub enum LoopType {
+    /// Single entry point (reducible)
+    Natural,
+    /// Multiple entry points
+    Irreducible,
+    /// Test at end
+    DoWhile,
+    /// Test at beginning
+    While,
+    /// Counted loop with induction variable
+    For,
+    /// No clear exit condition
+    Infinite,
+    /// Unknown loop type
+    Unknown,
+}
+
+/// Loop information for control flow analysis
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct Loop {
+    /// Loop header block ID
+    pub header_block: usize,
+    /// Loop body block IDs
+    pub body_blocks: Vec<usize>,
+    /// Loop exit block IDs
+    pub exit_blocks: Vec<usize>,
+    /// Loop type classification
+    pub loop_type: LoopType,
+    /// Induction variables (if detected)
+    pub induction_variables: Vec<String>,
+    /// Whether this is a natural loop
+    pub is_natural: bool,
+    /// Nesting level
+    pub nesting_level: u32,
+}
+
+/// Basic block types for enhanced classification
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub enum BlockType {
+    Entry,
+    Exit,
+    Normal,
+    LoopHeader,
+    LoopBody,
+    LoopExit,
+    Conditional,
+    Call,
+    Return,
+    Exception,
 }
 
 /// Entropy analysis results
@@ -521,6 +621,177 @@ pub struct SecurityIndicators {
     pub registry_indicators: Vec<String>,
 }
 
+/// Call graph analysis results
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct CallGraph {
+    /// Call graph nodes (functions)
+    pub nodes: Vec<CallGraphNode>,
+    /// Call graph edges (calls)
+    pub edges: Vec<CallGraphEdge>,
+    /// Entry point function addresses
+    pub entry_points: Vec<u64>,
+    /// Unreachable function addresses
+    pub unreachable_functions: Vec<u64>,
+    /// Call graph statistics
+    pub statistics: CallGraphStatistics,
+}
+
+/// Call graph node representing a function
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct CallGraphNode {
+    /// Function address
+    pub function_address: u64,
+    /// Function name
+    pub function_name: String,
+    /// Node type classification
+    pub node_type: NodeType,
+    /// Function complexity
+    pub complexity: u32,
+    /// Number of callers
+    pub in_degree: u32,
+    /// Number of callees
+    pub out_degree: u32,
+    /// Whether function is recursive
+    pub is_recursive: bool,
+    /// Distance from entry point
+    pub call_depth: Option<u32>,
+}
+
+/// Call graph node types
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub enum NodeType {
+    /// Program entry point (main, _start, DllMain)
+    EntryPoint,
+    /// Standard library function
+    Library,
+    /// User-defined function
+    Internal,
+    /// Imported function
+    External,
+    /// Function pointer or indirect call
+    Indirect,
+    /// C++ virtual method
+    Virtual,
+    /// Unknown function type
+    Unknown,
+}
+
+/// Call graph edge representing a function call
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct CallGraphEdge {
+    /// Calling function address
+    pub caller: u64,
+    /// Called function address
+    pub callee: u64,
+    /// Type of call
+    pub call_type: CallType,
+    /// All call sites for this edge
+    pub call_sites: Vec<CallSite>,
+}
+
+/// Types of function calls
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub enum CallType {
+    /// Direct call (call 0x401000)
+    Direct,
+    /// Indirect call (call [eax], call rax)
+    Indirect,
+    /// Tail call optimization (jmp)
+    TailCall,
+    /// C++ virtual method call
+    Virtual,
+    /// Recursive call (self-calling)
+    Recursive,
+    /// Call inside conditional block
+    Conditional,
+}
+
+/// Individual call site information
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct CallSite {
+    /// Address of the call instruction
+    pub address: u64,
+    /// Raw instruction bytes
+    pub instruction_bytes: Vec<u8>,
+    /// Call context
+    pub context: CallContext,
+}
+
+/// Context in which a call occurs
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub enum CallContext {
+    Normal,
+    Exception,
+    Loop,
+    Conditional,
+}
+
+/// Call graph statistics
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct CallGraphStatistics {
+    /// Total number of functions
+    pub total_functions: usize,
+    /// Total number of calls
+    pub total_calls: usize,
+    /// Direct function calls
+    pub direct_calls: usize,
+    /// Indirect function calls
+    pub indirect_calls: usize,
+    /// Recursive functions
+    pub recursive_functions: usize,
+    /// Leaf functions (make no calls)
+    pub leaf_functions: usize,
+    /// Number of entry points
+    pub entry_points: usize,
+    /// Number of unreachable functions
+    pub unreachable_functions: usize,
+    /// Maximum call depth
+    pub max_call_depth: u32,
+    /// Average call depth
+    pub average_call_depth: f64,
+    /// Number of cyclic dependencies
+    pub cyclic_dependencies: usize,
+}
+
+/// Configuration for call graph analysis
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct CallGraphConfig {
+    /// Analyze indirect calls (function pointers)
+    pub analyze_indirect_calls: bool,
+    /// Detect tail call optimizations
+    pub detect_tail_calls: bool,
+    /// Resolve virtual calls (C++)
+    pub resolve_virtual_calls: bool,
+    /// Follow import thunks
+    pub follow_import_thunks: bool,
+    /// Maximum call depth to analyze
+    pub max_call_depth: Option<u32>,
+    /// Include library function calls
+    pub include_library_calls: bool,
+}
+
+impl Default for CallGraphConfig {
+    fn default() -> Self {
+        Self {
+            analyze_indirect_calls: true,
+            detect_tail_calls: true,
+            resolve_virtual_calls: false,
+            follow_import_thunks: true,
+            max_call_depth: Some(50),
+            include_library_calls: false,
+        }
+    }
+}
+
 /// Complete analysis result
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
@@ -549,6 +820,56 @@ pub struct AnalysisResult {
     pub entropy: Option<EntropyAnalysis>,
     /// Security indicators (optional)
     pub security: Option<SecurityIndicators>,
+    /// Call graph analysis (optional)
+    pub call_graph: Option<CallGraph>,
+    /// Enhanced control flow analysis (optional)
+    pub enhanced_control_flow: Option<EnhancedControlFlowAnalysis>,
+}
+
+/// Enhanced control flow analysis results
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct EnhancedControlFlowAnalysis {
+    /// Control flow graphs with enhanced features
+    pub control_flow_graphs: Vec<ControlFlowGraph>,
+    /// Cognitive complexity summary
+    pub cognitive_complexity_summary: CognitiveComplexityStats,
+    /// Loop analysis summary
+    pub loop_analysis_summary: LoopAnalysisStats,
+}
+
+/// Cognitive complexity statistics
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct CognitiveComplexityStats {
+    /// Total cognitive complexity across all functions
+    pub total_cognitive_complexity: u32,
+    /// Average cognitive complexity per function
+    pub average_cognitive_complexity: f64,
+    /// Maximum cognitive complexity in a single function
+    pub max_cognitive_complexity: u32,
+    /// Function with highest cognitive complexity
+    pub most_complex_function: Option<String>,
+    /// Number of functions analyzed
+    pub functions_analyzed: usize,
+}
+
+/// Loop analysis statistics
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct LoopAnalysisStats {
+    /// Total number of loops detected
+    pub total_loops: usize,
+    /// Natural loops count
+    pub natural_loops: usize,
+    /// Irreducible loops count
+    pub irreducible_loops: usize,
+    /// Nested loops count
+    pub nested_loops: usize,
+    /// Maximum nesting depth
+    pub max_nesting_depth: u32,
+    /// Loops by type
+    pub loops_by_type: HashMap<LoopType, usize>,
 }
 
 impl Default for BinaryMetadata {

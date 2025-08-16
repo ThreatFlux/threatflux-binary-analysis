@@ -1,5 +1,7 @@
 //! Test fixtures for binary analysis tests
 
+#![allow(dead_code)]
+
 use threatflux_binary_analysis::types::*;
 
 /// Complete ELF binary fixture with realistic headers and sections
@@ -564,4 +566,77 @@ pub fn create_sample_metadata(format: BinaryFormat, arch: Architecture) -> Binar
             signed: false,
         },
     }
+}
+
+/// Dummy binary implementation for testing
+pub struct DummyBinary;
+
+impl BinaryFormatTrait for DummyBinary {
+    fn format_type(&self) -> BinaryFormat {
+        BinaryFormat::Raw
+    }
+    fn architecture(&self) -> Architecture {
+        Architecture::Unknown
+    }
+    fn entry_point(&self) -> Option<u64> {
+        None
+    }
+    fn sections(&self) -> &[Section] {
+        &[]
+    }
+    fn symbols(&self) -> &[Symbol] {
+        &[]
+    }
+    fn imports(&self) -> &[Import] {
+        &[]
+    }
+    fn exports(&self) -> &[Export] {
+        &[]
+    }
+    fn metadata(&self) -> &BinaryMetadata {
+        static METADATA: BinaryMetadata = BinaryMetadata {
+            size: 0,
+            format: BinaryFormat::Raw,
+            architecture: Architecture::Unknown,
+            entry_point: None,
+            base_address: None,
+            timestamp: None,
+            compiler_info: None,
+            endian: Endianness::Little,
+            security_features: SecurityFeatures {
+                nx_bit: false,
+                aslr: false,
+                stack_canary: false,
+                cfi: false,
+                fortify: false,
+                pie: false,
+                relro: false,
+                signed: false,
+            },
+        };
+        &METADATA
+    }
+}
+
+// Additional test binary creation functions
+
+/// Create a large ELF binary for performance testing
+pub fn create_large_elf_binary(size: usize) -> Vec<u8> {
+    let mut data = create_realistic_elf_64();
+    data.resize(size, 0);
+    data
+}
+
+/// Create a large PE binary for performance testing
+pub fn create_large_pe_binary(size: usize) -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(size, 0);
+    data
+}
+
+/// Create a large Mach-O binary for performance testing
+pub fn create_large_macho_binary(size: usize) -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(size, 0);
+    data
 }

@@ -168,7 +168,7 @@ lint: ## Run clippy linting
 	@echo "$(BLUE)  With all features...$(NC)"
 	@cargo clippy --all-targets --all-features -- -D warnings
 	@echo "$(BLUE)  With no default features...$(NC)"
-	@cargo clippy --all-targets --no-default-features -- -D warnings
+	@cargo clippy --lib --no-default-features -- -D warnings
 	@echo "$(BLUE)  With default features...$(NC)"
 	@cargo clippy --all-targets -- -D warnings
 

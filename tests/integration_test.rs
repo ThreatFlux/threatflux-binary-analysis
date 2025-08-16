@@ -397,6 +397,7 @@ fn test_analysis_with_all_features_enabled() {
         enable_symbols: true,
         max_analysis_size: 100 * 1024 * 1024,
         architecture_hint: None,
+        ..Default::default()
     };
 
     let analyzer = BinaryAnalyzer::with_config(config);
@@ -423,6 +424,7 @@ fn test_analysis_with_features_disabled() {
         enable_symbols: false,
         max_analysis_size: 1024,
         architecture_hint: Some(Architecture::X86_64),
+        ..Default::default()
     };
 
     let analyzer = BinaryAnalyzer::with_config(config);

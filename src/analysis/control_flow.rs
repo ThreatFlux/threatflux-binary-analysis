@@ -7,8 +7,8 @@
 use crate::{
     disasm::Disassembler,
     types::{
-        Architecture, BasicBlock, ComplexityMetrics, ControlFlow as FlowType, ControlFlowGraph,
-        Function, Instruction,
+        Architecture, BasicBlock, CallGraphConfig, ComplexityMetrics, ControlFlow as FlowType,
+        ControlFlowGraph, Function, Instruction,
     },
     BinaryError, BinaryFile, Result,
 };
@@ -20,6 +20,7 @@ use std::collections::{HashMap, HashSet};
 // use petgraph::{Directed, Graph};
 
 /// Control flow analyzer
+#[derive(Clone)]
 pub struct ControlFlowAnalyzer {
     /// Architecture being analyzed
     #[allow(dead_code)]
@@ -39,6 +40,14 @@ pub struct AnalysisConfig {
     pub detect_loops: bool,
     /// Enable complexity metrics calculation
     pub calculate_metrics: bool,
+    /// Enable call graph construction
+    pub enable_call_graph: bool,
+    /// Enable cognitive complexity calculation
+    pub enable_cognitive_complexity: bool,
+    /// Enable advanced loop analysis
+    pub enable_advanced_loops: bool,
+    /// Call graph configuration
+    pub call_graph_config: Option<CallGraphConfig>,
 }
 
 impl Default for AnalysisConfig {
@@ -48,6 +57,10 @@ impl Default for AnalysisConfig {
             max_depth: 100,
             detect_loops: true,
             calculate_metrics: true,
+            enable_call_graph: false,
+            enable_cognitive_complexity: true,
+            enable_advanced_loops: true,
+            call_graph_config: None,
         }
     }
 }
@@ -95,7 +108,7 @@ impl ControlFlowAnalyzer {
         let instructions = self.get_function_instructions(binary, function)?;
 
         // Build basic blocks
-        let basic_blocks = self.build_basic_blocks(&instructions)?;
+        let mut basic_blocks = self.build_basic_blocks(&instructions)?;
 
         // Calculate complexity metrics
         let complexity = if self.config.calculate_metrics {
@@ -104,10 +117,33 @@ impl ControlFlowAnalyzer {
             ComplexityMetrics::default()
         };
 
+        // Create a mutable analyzer for enhanced analysis
+        let mut analyzer = self.clone();
+
+        // Perform enhanced analysis if enabled
+        let loops = if self.config.enable_advanced_loops {
+            analyzer
+                .analyze_loops(&mut basic_blocks)
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        // Build dominator tree
+        if self.config.enable_advanced_loops {
+            let _ = analyzer.build_dominator_tree(&mut basic_blocks);
+        }
+
+        // Classify block types
+        if self.config.enable_advanced_loops {
+            let _ = analyzer.classify_block_types(&mut basic_blocks);
+        }
+
         Ok(ControlFlowGraph {
             function: function.clone(),
             basic_blocks,
             complexity,
+            loops,
         })
     }
 
@@ -242,6 +278,9 @@ impl ControlFlowAnalyzer {
                     instructions: block_instructions,
                     successors: Vec::new(),   // Will be filled later
                     predecessors: Vec::new(), // Will be filled later
+                    block_type: crate::types::BlockType::Normal, // Will be classified later
+                    dominator: None,          // Will be computed later
+                    dominance_frontier: Vec::new(), // Will be computed later
                 });
 
                 current_block_id += 1;
@@ -263,6 +302,9 @@ impl ControlFlowAnalyzer {
                 instructions: block_instructions,
                 successors: Vec::new(),
                 predecessors: Vec::new(),
+                block_type: crate::types::BlockType::Normal, // Will be classified later
+                dominator: None,                             // Will be computed later
+                dominance_frontier: Vec::new(),              // Will be computed later
             });
         }
 
@@ -361,12 +403,28 @@ impl ControlFlowAnalyzer {
         // Calculate nesting depth (simplified)
         let nesting_depth = self.calculate_nesting_depth(basic_blocks);
 
+        // Calculate cognitive complexity
+        let cognitive_complexity = self.calculate_cognitive_complexity(basic_blocks);
+
+        // Calculate Halstead metrics if available
+        let halstead_metrics = self.calculate_halstead_metrics(basic_blocks);
+
+        // Calculate maintainability index if Halstead metrics are available
+        let maintainability_index = if let Some(ref halstead) = halstead_metrics {
+            self.calculate_maintainability_index(halstead, cyclomatic_complexity, basic_block_count)
+        } else {
+            None
+        };
+
         ComplexityMetrics {
             cyclomatic_complexity,
             basic_block_count,
             edge_count,
             nesting_depth,
             loop_count,
+            cognitive_complexity,
+            halstead_metrics,
+            maintainability_index,
         }
     }
 
@@ -427,6 +485,472 @@ impl ControlFlowAnalyzer {
         }
 
         max_depth
+    }
+
+    /// Calculate cognitive complexity (different from cyclomatic complexity)
+    /// Cognitive complexity measures how difficult the code is to understand
+    fn calculate_cognitive_complexity(&self, basic_blocks: &[BasicBlock]) -> u32 {
+        let mut cognitive_complexity = 0;
+        let mut nesting_level = 0;
+
+        for block in basic_blocks {
+            for instruction in &block.instructions {
+                // Increment for decision structures
+                match &instruction.flow {
+                    FlowType::ConditionalJump(_) => {
+                        cognitive_complexity += 1 + nesting_level;
+                    }
+                    FlowType::Jump(_) => {
+                        // Break/continue statements in loops add complexity
+                        if self.is_in_loop_context(block, basic_blocks) {
+                            cognitive_complexity += 1;
+                        }
+                    }
+                    _ => {}
+                }
+
+                // Analyze instruction patterns for complexity
+                match instruction.mnemonic.as_str() {
+                    // Conditional instructions
+                    "je" | "jne" | "jl" | "jle" | "jg" | "jge" | "jz" | "jnz" | "js" | "jns" => {
+                        cognitive_complexity += 1 + nesting_level;
+                    }
+                    // Loop instructions
+                    "loop" | "loope" | "loopne" | "loopz" | "loopnz" => {
+                        cognitive_complexity += 1 + nesting_level;
+                        nesting_level += 1; // Increase nesting for subsequent instructions
+                    }
+                    // Exception handling
+                    "int" | "syscall" | "sysenter" => {
+                        cognitive_complexity += 1;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Adjust nesting level based on block structure
+            if block.successors.len() > 1 {
+                nesting_level += 1;
+            }
+        }
+
+        cognitive_complexity
+    }
+
+    /// Check if a block is in a loop context
+    fn is_in_loop_context(&self, _block: &BasicBlock, _basic_blocks: &[BasicBlock]) -> bool {
+        // Simplified implementation - in real implementation, this would
+        // analyze the control flow to determine if we're inside a loop
+        false
+    }
+
+    /// Calculate Halstead metrics for software complexity
+    fn calculate_halstead_metrics(
+        &self,
+        basic_blocks: &[BasicBlock],
+    ) -> Option<crate::types::HalsteadMetrics> {
+        let mut operators = HashMap::new();
+        let mut operands = HashMap::new();
+        let mut total_operators = 0;
+        let mut total_operands = 0;
+
+        for block in basic_blocks {
+            for instruction in &block.instructions {
+                // Count operators (mnemonics)
+                *operators.entry(instruction.mnemonic.clone()).or_insert(0) += 1;
+                total_operators += 1;
+
+                // Count operands (simplified - split operands string)
+                if !instruction.operands.is_empty() {
+                    let ops: Vec<&str> = instruction.operands.split(',').collect();
+                    for op in ops {
+                        let trimmed = op.trim();
+                        if !trimmed.is_empty() {
+                            *operands.entry(trimmed.to_string()).or_insert(0) += 1;
+                            total_operands += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        let n1 = operators.len() as u32; // Distinct operators
+        let n2 = operands.len() as u32; // Distinct operands
+        let capital_n1 = total_operators; // Total operators
+        let capital_n2 = total_operands; // Total operands
+
+        if n1 == 0 && n2 == 0 {
+            return None;
+        }
+
+        let vocabulary = n1 + n2;
+        let length = capital_n1 + capital_n2;
+        let calculated_length = (n1 as f64) * (n1 as f64).log2() + (n2 as f64) * (n2 as f64).log2();
+        let volume = (length as f64) * (vocabulary as f64).log2();
+        let difficulty = if n2 > 0 {
+            ((n1 as f64) / 2.0) * ((capital_n2 as f64) / (n2 as f64))
+        } else {
+            0.0
+        };
+        let effort = difficulty * volume;
+        let time = effort / 18.0; // Assuming 18 mental discriminations per second
+        let bugs = volume / 3000.0; // Estimated bugs
+
+        Some(crate::types::HalsteadMetrics {
+            n1,
+            n2,
+            capital_n1,
+            capital_n2,
+            vocabulary,
+            length,
+            calculated_length,
+            volume,
+            difficulty,
+            effort,
+            time,
+            bugs,
+        })
+    }
+
+    /// Calculate maintainability index
+    fn calculate_maintainability_index(
+        &self,
+        halstead: &crate::types::HalsteadMetrics,
+        cyclomatic_complexity: u32,
+        lines_of_code: u32,
+    ) -> Option<f64> {
+        if halstead.volume <= 0.0 || lines_of_code == 0 {
+            return None;
+        }
+
+        // Maintainability Index = 171 - 5.2 * ln(HV) - 0.23 * CC - 16.2 * ln(LOC)
+        // Where HV = Halstead Volume, CC = Cyclomatic Complexity, LOC = Lines of Code
+        let mi = 171.0
+            - 5.2 * halstead.volume.ln()
+            - 0.23 * (cyclomatic_complexity as f64)
+            - 16.2 * (lines_of_code as f64).ln();
+
+        // Clamp to 0-100 range
+        Some(mi.clamp(0.0, 100.0))
+    }
+
+    /// Perform enhanced loop analysis
+    pub fn analyze_loops(
+        &mut self,
+        basic_blocks: &mut [BasicBlock],
+    ) -> Result<Vec<crate::types::Loop>> {
+        if !self.config.enable_advanced_loops {
+            return Ok(Vec::new());
+        }
+
+        let mut loops = Vec::new();
+        let mut visited = vec![false; basic_blocks.len()];
+        let mut in_stack = vec![false; basic_blocks.len()];
+        let mut back_edges = Vec::new();
+
+        // Find back edges using DFS
+        for i in 0..basic_blocks.len() {
+            if !visited[i] {
+                self.find_back_edges(
+                    i,
+                    basic_blocks,
+                    &mut visited,
+                    &mut in_stack,
+                    &mut back_edges,
+                );
+            }
+        }
+
+        // Analyze each back edge to identify loops
+        for (tail, head) in back_edges {
+            if let Some(loop_info) = self.analyze_natural_loop(head, tail, basic_blocks) {
+                loops.push(loop_info);
+            }
+        }
+
+        // Classify loop types and detect induction variables
+        for loop_info in &mut loops {
+            self.classify_loop_type(loop_info, basic_blocks);
+            self.detect_induction_variables(loop_info, basic_blocks);
+        }
+
+        Ok(loops)
+    }
+
+    /// Find back edges using DFS
+    #[allow(clippy::only_used_in_recursion)]
+    fn find_back_edges(
+        &self,
+        node: usize,
+        basic_blocks: &[BasicBlock],
+        visited: &mut [bool],
+        in_stack: &mut [bool],
+        back_edges: &mut Vec<(usize, usize)>,
+    ) {
+        visited[node] = true;
+        in_stack[node] = true;
+
+        for &successor in &basic_blocks[node].successors {
+            if !visited[successor] {
+                self.find_back_edges(successor, basic_blocks, visited, in_stack, back_edges);
+            } else if in_stack[successor] {
+                // Found back edge: node -> successor
+                back_edges.push((node, successor));
+            }
+        }
+
+        in_stack[node] = false;
+    }
+
+    /// Analyze a natural loop given a back edge
+    fn analyze_natural_loop(
+        &self,
+        header: usize,
+        tail: usize,
+        basic_blocks: &[BasicBlock],
+    ) -> Option<crate::types::Loop> {
+        let mut loop_blocks = HashSet::new();
+        let mut worklist = Vec::new();
+
+        // Start with the header and tail
+        loop_blocks.insert(header);
+        loop_blocks.insert(tail);
+        worklist.push(tail);
+
+        // Find all blocks in the loop using backwards traversal
+        while let Some(current) = worklist.pop() {
+            for &pred in &basic_blocks[current].predecessors {
+                if !loop_blocks.contains(&pred) {
+                    loop_blocks.insert(pred);
+                    worklist.push(pred);
+                }
+            }
+        }
+
+        // Find exit blocks
+        let mut exit_blocks = Vec::new();
+        for &block_id in &loop_blocks {
+            for &successor in &basic_blocks[block_id].successors {
+                if !loop_blocks.contains(&successor) {
+                    exit_blocks.push(successor);
+                }
+            }
+        }
+
+        let body_blocks: Vec<usize> = loop_blocks.into_iter().filter(|&id| id != header).collect();
+
+        Some(crate::types::Loop {
+            header_block: header,
+            body_blocks,
+            exit_blocks,
+            loop_type: crate::types::LoopType::Unknown, // Will be classified later
+            induction_variables: Vec::new(),            // Will be detected later
+            is_natural: true,                           // Natural loops by definition
+            nesting_level: 0,                           // Will be calculated later
+        })
+    }
+
+    /// Classify the type of loop
+    fn classify_loop_type(&self, loop_info: &mut crate::types::Loop, basic_blocks: &[BasicBlock]) {
+        let header_block = &basic_blocks[loop_info.header_block];
+
+        // Analyze the loop header to determine loop type
+        if let Some(last_instruction) = header_block.instructions.last() {
+            match last_instruction.mnemonic.as_str() {
+                // While loop pattern: test at beginning
+                "cmp" | "test" => {
+                    loop_info.loop_type = crate::types::LoopType::While;
+                }
+                // For loop pattern: has induction variable
+                "inc" | "dec" | "add" | "sub" => {
+                    loop_info.loop_type = crate::types::LoopType::For;
+                }
+                // Loop instruction
+                "loop" | "loope" | "loopne" => {
+                    loop_info.loop_type = crate::types::LoopType::For;
+                }
+                _ => {
+                    // Check if it's a do-while (test at end)
+                    if !loop_info.exit_blocks.is_empty() {
+                        let exit_block = &basic_blocks[loop_info.exit_blocks[0]];
+                        if let Some(exit_instruction) = exit_block.instructions.first() {
+                            if matches!(exit_instruction.mnemonic.as_str(), "cmp" | "test") {
+                                loop_info.loop_type = crate::types::LoopType::DoWhile;
+                            }
+                        }
+                    }
+
+                    // Check for infinite loop (no clear exit)
+                    if loop_info.exit_blocks.is_empty() {
+                        loop_info.loop_type = crate::types::LoopType::Infinite;
+                    }
+                }
+            }
+        }
+
+        // If still unknown, classify as natural or irreducible
+        if loop_info.loop_type == crate::types::LoopType::Unknown {
+            loop_info.loop_type = if loop_info.is_natural {
+                crate::types::LoopType::Natural
+            } else {
+                crate::types::LoopType::Irreducible
+            };
+        }
+    }
+
+    /// Detect induction variables in a loop
+    fn detect_induction_variables(
+        &self,
+        loop_info: &mut crate::types::Loop,
+        basic_blocks: &[BasicBlock],
+    ) {
+        let mut induction_vars = HashSet::new();
+
+        // Look for variables that are incremented/decremented in the loop
+        for &block_id in &loop_info.body_blocks {
+            let block = &basic_blocks[block_id];
+            for instruction in &block.instructions {
+                match instruction.mnemonic.as_str() {
+                    "inc" | "dec" | "add" | "sub" => {
+                        // Extract operand as potential induction variable
+                        if !instruction.operands.is_empty() {
+                            let operand =
+                                instruction.operands.split(',').next().unwrap_or("").trim();
+                            if !operand.is_empty()
+                                && !operand.starts_with('#')
+                                && !operand.starts_with('$')
+                            {
+                                induction_vars.insert(operand.to_string());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        loop_info.induction_variables = induction_vars.into_iter().collect();
+    }
+
+    /// Build dominator tree for enhanced block classification
+    pub fn build_dominator_tree(&mut self, basic_blocks: &mut [BasicBlock]) -> Result<()> {
+        if basic_blocks.is_empty() {
+            return Ok(());
+        }
+
+        let n = basic_blocks.len();
+        let mut dominators = vec![None; n];
+        dominators[0] = Some(0); // Entry block dominates itself
+
+        // Iterative algorithm to compute dominators
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for i in 1..n {
+                let mut new_dom = None;
+
+                // Find first processed predecessor
+                for &pred in &basic_blocks[i].predecessors {
+                    if dominators[pred].is_some() {
+                        new_dom = Some(pred);
+                        break;
+                    }
+                }
+
+                // Intersect with all other processed predecessors
+                if let Some(mut dom) = new_dom {
+                    for &pred in &basic_blocks[i].predecessors {
+                        if let Some(pred_dom) = dominators[pred] {
+                            dom = self.intersect_dominators(dom, pred_dom, &dominators);
+                        }
+                    }
+
+                    if dominators[i] != Some(dom) {
+                        dominators[i] = Some(dom);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // Set dominator information in basic blocks
+        for (i, &dom) in dominators.iter().enumerate() {
+            basic_blocks[i].dominator = dom;
+        }
+
+        Ok(())
+    }
+
+    /// Intersect two dominators to find common dominator
+    fn intersect_dominators(
+        &self,
+        mut b1: usize,
+        mut b2: usize,
+        dominators: &[Option<usize>],
+    ) -> usize {
+        while b1 != b2 {
+            while b1 > b2 {
+                if let Some(dom) = dominators[b1] {
+                    b1 = dom;
+                } else {
+                    break;
+                }
+            }
+            while b2 > b1 {
+                if let Some(dom) = dominators[b2] {
+                    b2 = dom;
+                } else {
+                    break;
+                }
+            }
+        }
+        b1
+    }
+
+    /// Classify basic block types based on their role in control flow
+    pub fn classify_block_types(&mut self, basic_blocks: &mut [BasicBlock]) -> Result<()> {
+        if basic_blocks.is_empty() {
+            return Ok(());
+        }
+
+        // Entry block
+        basic_blocks[0].block_type = crate::types::BlockType::Entry;
+
+        // Classify other blocks
+        #[allow(clippy::needless_range_loop)]
+        for i in 1..basic_blocks.len() {
+            let block = &basic_blocks[i];
+
+            // Exit blocks (no successors)
+            if block.successors.is_empty() {
+                basic_blocks[i].block_type = crate::types::BlockType::Exit;
+                continue;
+            }
+
+            // Return blocks
+            if let Some(last_instruction) = block.instructions.last() {
+                match last_instruction.flow {
+                    FlowType::Return => {
+                        basic_blocks[i].block_type = crate::types::BlockType::Return;
+                        continue;
+                    }
+                    FlowType::Call(_) => {
+                        basic_blocks[i].block_type = crate::types::BlockType::Call;
+                        continue;
+                    }
+                    FlowType::ConditionalJump(_) => {
+                        basic_blocks[i].block_type = crate::types::BlockType::Conditional;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Default to normal block
+            basic_blocks[i].block_type = crate::types::BlockType::Normal;
+        }
+
+        Ok(())
     }
 }
 

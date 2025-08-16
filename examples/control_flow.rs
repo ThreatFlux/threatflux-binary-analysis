@@ -24,6 +24,10 @@ fn main() -> Result<()> {
         max_depth: 50,
         detect_loops: true,
         calculate_metrics: true,
+        enable_call_graph: false,
+        enable_cognitive_complexity: true,
+        enable_advanced_loops: true,
+        call_graph_config: None,
     };
 
     let analyzer = ControlFlowAnalyzer::with_config(binary.architecture(), config);

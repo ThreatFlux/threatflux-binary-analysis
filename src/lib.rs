@@ -52,8 +52,10 @@ pub use disasm::DisassemblyEngine;
 pub use error::{BinaryError, Result};
 pub use types::{
     AnalysisResult, Architecture, BasicBlock, BinaryFormat, BinaryFormatParser, BinaryFormatTrait,
-    BinaryMetadata, ComplexityMetrics, ControlFlowGraph, EntropyAnalysis, Export, Function, Import,
-    Instruction, Section, SecurityIndicators, Symbol,
+    BinaryMetadata, CallGraph, CallGraphConfig, CallGraphEdge, CallGraphNode, CallGraphStatistics,
+    ComplexityMetrics, ControlFlowGraph, EnhancedControlFlowAnalysis, EntropyAnalysis, Export,
+    Function, HalsteadMetrics, Import, Instruction, Loop, LoopType, NodeType, Section,
+    SecurityIndicators, Symbol,
 };
 
 /// Main entry point for binary analysis
@@ -71,6 +73,12 @@ pub struct AnalysisConfig {
     pub disassembly_engine: DisassemblyEngine,
     /// Enable control flow analysis
     pub enable_control_flow: bool,
+    /// Enable call graph analysis
+    pub enable_call_graph: bool,
+    /// Enable cognitive complexity calculation
+    pub enable_cognitive_complexity: bool,
+    /// Enable advanced loop analysis
+    pub enable_advanced_loops: bool,
     /// Enable entropy analysis
     pub enable_entropy: bool,
     /// Enable symbol resolution
@@ -79,6 +87,8 @@ pub struct AnalysisConfig {
     pub max_analysis_size: usize,
     /// Architecture hint (None for auto-detection)
     pub architecture_hint: Option<Architecture>,
+    /// Call graph configuration
+    pub call_graph_config: Option<CallGraphConfig>,
 }
 
 impl Default for AnalysisConfig {
@@ -88,10 +98,14 @@ impl Default for AnalysisConfig {
             #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
             disassembly_engine: DisassemblyEngine::Auto,
             enable_control_flow: true,
+            enable_call_graph: false,
+            enable_cognitive_complexity: true,
+            enable_advanced_loops: true,
             enable_entropy: true,
             enable_symbols: true,
             max_analysis_size: 100 * 1024 * 1024, // 100MB
             architecture_hint: None,
+            call_graph_config: None,
         }
     }
 }
@@ -148,6 +162,21 @@ impl BinaryAnalyzer {
             }
         }
 
+        if self.config.enable_call_graph {
+            #[cfg(feature = "control-flow")]
+            {
+                result.call_graph = Some(self.perform_call_graph_analysis(binary)?);
+            }
+        }
+
+        if self.config.enable_cognitive_complexity || self.config.enable_advanced_loops {
+            #[cfg(feature = "control-flow")]
+            {
+                result.enhanced_control_flow =
+                    Some(self.perform_enhanced_control_flow_analysis(binary)?);
+            }
+        }
+
         if self.config.enable_entropy {
             #[cfg(feature = "entropy-analysis")]
             {
@@ -173,6 +202,112 @@ impl BinaryAnalyzer {
     #[cfg(feature = "control-flow")]
     fn perform_control_flow_analysis(&self, binary: &BinaryFile) -> Result<Vec<ControlFlowGraph>> {
         analysis::control_flow::analyze_binary(binary)
+    }
+
+    #[cfg(feature = "control-flow")]
+    fn perform_call_graph_analysis(&self, binary: &BinaryFile) -> Result<CallGraph> {
+        let config = self.config.call_graph_config.clone().unwrap_or_default();
+        analysis::call_graph::analyze_binary_with_config(binary, config)
+    }
+
+    #[cfg(feature = "control-flow")]
+    fn perform_enhanced_control_flow_analysis(
+        &self,
+        binary: &BinaryFile,
+    ) -> Result<EnhancedControlFlowAnalysis> {
+        // Build enhanced control flow graphs
+        let control_flow_config = analysis::control_flow::AnalysisConfig {
+            max_instructions: 10000,
+            max_depth: 100,
+            detect_loops: true,
+            calculate_metrics: true,
+            enable_call_graph: false,
+            enable_cognitive_complexity: self.config.enable_cognitive_complexity,
+            enable_advanced_loops: self.config.enable_advanced_loops,
+            call_graph_config: None,
+        };
+
+        let analyzer = analysis::control_flow::ControlFlowAnalyzer::with_config(
+            binary.architecture(),
+            control_flow_config,
+        );
+        let control_flow_graphs = analyzer.analyze_binary(binary)?;
+
+        // Compute summary statistics
+        let mut total_cognitive_complexity = 0;
+        let mut max_cognitive_complexity = 0;
+        let mut most_complex_function = None;
+        let mut functions_analyzed = 0;
+
+        let mut total_loops = 0;
+        let mut natural_loops = 0;
+        let mut irreducible_loops = 0;
+        let mut nested_loops = 0;
+        let mut max_nesting_depth = 0;
+        let mut loops_by_type = std::collections::HashMap::new();
+
+        for cfg in &control_flow_graphs {
+            functions_analyzed += 1;
+
+            // Cognitive complexity stats
+            let cognitive = cfg.complexity.cognitive_complexity;
+            total_cognitive_complexity += cognitive;
+            if cognitive > max_cognitive_complexity {
+                max_cognitive_complexity = cognitive;
+                most_complex_function = Some(cfg.function.name.clone());
+            }
+
+            // Loop stats
+            total_loops += cfg.loops.len();
+            for loop_info in &cfg.loops {
+                match loop_info.loop_type {
+                    LoopType::Natural => natural_loops += 1,
+                    LoopType::Irreducible => irreducible_loops += 1,
+                    _ => {}
+                }
+
+                if loop_info.nesting_level > 1 {
+                    nested_loops += 1;
+                }
+
+                if loop_info.nesting_level > max_nesting_depth {
+                    max_nesting_depth = loop_info.nesting_level;
+                }
+
+                *loops_by_type
+                    .entry(loop_info.loop_type.clone())
+                    .or_insert(0) += 1;
+            }
+        }
+
+        let average_cognitive_complexity = if functions_analyzed > 0 {
+            total_cognitive_complexity as f64 / functions_analyzed as f64
+        } else {
+            0.0
+        };
+
+        let cognitive_complexity_summary = types::CognitiveComplexityStats {
+            total_cognitive_complexity,
+            average_cognitive_complexity,
+            max_cognitive_complexity,
+            most_complex_function,
+            functions_analyzed,
+        };
+
+        let loop_analysis_summary = types::LoopAnalysisStats {
+            total_loops,
+            natural_loops,
+            irreducible_loops,
+            nested_loops,
+            max_nesting_depth,
+            loops_by_type,
+        };
+
+        Ok(EnhancedControlFlowAnalysis {
+            control_flow_graphs,
+            cognitive_complexity_summary,
+            loop_analysis_summary,
+        })
     }
 
     #[cfg(feature = "entropy-analysis")]
@@ -260,6 +395,9 @@ mod tests {
         let analyzer = BinaryAnalyzer::new();
         assert!(analyzer.config.enable_disassembly);
         assert!(analyzer.config.enable_control_flow);
+        assert!(!analyzer.config.enable_call_graph);
+        assert!(analyzer.config.enable_cognitive_complexity);
+        assert!(analyzer.config.enable_advanced_loops);
         assert!(analyzer.config.enable_entropy);
         assert!(analyzer.config.enable_symbols);
     }
@@ -271,17 +409,25 @@ mod tests {
             #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
             disassembly_engine: DisassemblyEngine::Auto,
             enable_control_flow: true,
+            enable_call_graph: true,
+            enable_cognitive_complexity: false,
+            enable_advanced_loops: true,
             enable_entropy: false,
             enable_symbols: true,
             max_analysis_size: 1024,
             architecture_hint: Some(Architecture::X86_64),
+            call_graph_config: Some(CallGraphConfig::default()),
         };
 
         let analyzer = BinaryAnalyzer::with_config(config);
         assert!(!analyzer.config.enable_disassembly);
         assert!(analyzer.config.enable_control_flow);
+        assert!(analyzer.config.enable_call_graph);
+        assert!(!analyzer.config.enable_cognitive_complexity);
+        assert!(analyzer.config.enable_advanced_loops);
         assert!(!analyzer.config.enable_entropy);
         assert!(analyzer.config.enable_symbols);
         assert_eq!(analyzer.config.max_analysis_size, 1024);
+        assert!(analyzer.config.call_graph_config.is_some());
     }
 }

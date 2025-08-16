@@ -3,7 +3,7 @@
 
 use threatflux_binary_analysis::formats::macho::MachOParser;
 use threatflux_binary_analysis::types::*;
-use threatflux_binary_analysis::{BinaryError, BinaryFormatParser};
+use threatflux_binary_analysis::BinaryError;
 
 /// Test data generators for various Mach-O formats
 mod macho_test_data {

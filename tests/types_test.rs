@@ -377,6 +377,9 @@ fn test_basic_block_construction() {
         instructions: vec![],
         successors: vec![1, 2],
         predecessors: vec![],
+        block_type: BlockType::Normal,
+        dominator: None,
+        dominance_frontier: vec![],
     };
 
     assert_eq!(bb.id, 0);

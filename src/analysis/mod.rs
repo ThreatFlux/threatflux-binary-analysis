@@ -3,6 +3,9 @@
 #[cfg(feature = "control-flow")]
 pub mod control_flow;
 
+#[cfg(feature = "control-flow")]
+pub mod call_graph;
+
 #[cfg(feature = "entropy-analysis")]
 pub mod entropy;
 
