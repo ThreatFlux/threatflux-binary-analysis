@@ -31,6 +31,8 @@ pids
 # Coverage directory used by tools like istanbul
 coverage/
 *.lcov
+lcov.info
+lcov-*.info
 
 # nyc test coverage
 .nyc_output
@@ -93,6 +95,8 @@ temp/
 
 # Performance and profiling files
 *.prof
+*.profraw
+default_*.profraw
 flamegraph.svg
 perf.data*
 
