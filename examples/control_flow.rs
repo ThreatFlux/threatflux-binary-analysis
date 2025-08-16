@@ -3,36 +3,16 @@
 //! This example demonstrates how to analyze control flow in binary files,
 //! including basic block identification and complexity metrics.
 
-use std::env;
-use std::fs;
 use threatflux_binary_analysis::{
     analysis::control_flow::{AnalysisConfig, ControlFlowAnalyzer},
     BinaryFile,
 };
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+mod util;
+use util::{read_binary_from_args, Result};
 
 fn main() -> Result<()> {
-    // Get binary file path from command line arguments using iterator
-    let mut args_iter = env::args();
-    let program_name = args_iter
-        .next()
-        .unwrap_or_else(|| "control_flow".to_string());
-    let file_path = args_iter.next();
-
-    let data = if let Some(file_path) = file_path {
-        println!("Analyzing control flow in: {file_path}");
-
-        // Read and parse the binary file
-        fs::read(&file_path)?
-    } else {
-        println!("No binary file provided, using minimal ELF test data for demonstration");
-        println!("Usage: {} <binary_file>", program_name);
-        println!();
-
-        // Create a minimal valid ELF binary for testing
-        create_minimal_elf()
-    };
+    let data = read_binary_from_args()?;
     let binary = BinaryFile::parse(&data)?;
 
     println!("Binary format: {:?}", binary.format());
@@ -175,43 +155,4 @@ fn assess_complexity(complexity: u32) -> &'static str {
         21..=50 => "High",
         _ => "Very High",
     }
-}
-
-/// Create a minimal valid ELF binary for testing
-fn create_minimal_elf() -> Vec<u8> {
-    vec![
-        // ELF Header
-        0x7f, 0x45, 0x4c, 0x46, // Magic number
-        0x02, // 64-bit
-        0x01, // Little endian
-        0x01, // Current version
-        0x00, // Generic ABI
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Padding
-        0x02, 0x00, // Executable file
-        0x3e, 0x00, // x86-64
-        0x01, 0x00, 0x00, 0x00, // Version 1
-        0x80, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, // Entry point
-        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Program header offset
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Section header offset
-        0x00, 0x00, 0x00, 0x00, // Flags
-        0x40, 0x00, // ELF header size
-        0x38, 0x00, // Program header size
-        0x01, 0x00, // Program header count
-        0x40, 0x00, // Section header size
-        0x00, 0x00, // Section header count
-        0x00, 0x00, // Section name index
-        // Program Header
-        0x01, 0x00, 0x00, 0x00, // Type: LOAD
-        0x05, 0x00, 0x00, 0x00, // Flags: R+X
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Offset
-        0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, // Virtual address
-        0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, // Physical address
-        0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // File size
-        0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Memory size
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Alignment
-        // Code section with simple x86-64 instructions
-        0xb8, 0x3c, 0x00, 0x00, 0x00, // mov eax, 60 (sys_exit)
-        0xbf, 0x00, 0x00, 0x00, 0x00, // mov edi, 0 (exit code)
-        0x0f, 0x05, // syscall
-    ]
 }

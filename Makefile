@@ -22,17 +22,17 @@ WHITE = \033[0;37m
 NC = \033[0m # No Color
 
 .PHONY: help all all-coverage all-docker all-docker-coverage clean docker-build docker-clean
-.PHONY: fmt fmt-check fmt-docker lint lint-docker audit audit-docker deny deny-docker
+.PHONY: fmt fmt-check fmt-docker lint lint-docker audit audit-docker deny deny-docker codedup
 .PHONY: test test-docker test-doc test-doc-docker test-features feature-check build build-docker build-all build-all-docker
 .PHONY: docs docs-docker examples examples-docker bench bench-docker
 .PHONY: coverage coverage-open coverage-lcov coverage-html coverage-summary coverage-json coverage-docker
 .PHONY: install-tools ci-local ci-local-coverage setup-dev
 
 # Default target
-all: fmt-check lint audit deny test feature-check docs build examples ## Run all checks and builds locally
+all: fmt-check lint audit deny codedup test feature-check docs build examples ## Run all checks and builds locally
 
 # Extended target with coverage
-all-coverage: fmt-check lint audit deny test coverage docs build examples ## Run all checks including coverage locally
+all-coverage: fmt-check lint audit deny codedup test coverage docs build examples ## Run all checks including coverage locally
 
 # Docker all-in-one target
 all-docker: docker-build ## Run all checks and builds in Docker container
@@ -201,6 +201,10 @@ deny: ## Run dependency validation
 deny-docker: docker-build ## Run dependency validation in Docker
 	@echo "$(CYAN)Running dependency validation in Docker...$(NC)"
 	@docker run --rm -v "$(PWD):/workspace" $(DOCKER_FULL_NAME) cargo deny check
+
+codedup: ## Check for code duplication
+	@echo "$(CYAN)Checking code duplication...$(NC)"
+	@npx -y jscpd --threshold 5 --format rust --reporters console src examples tests
 
 # =============================================================================
 # Testing Commands

@@ -12,7 +12,8 @@ use threatflux_binary_analysis::{
     BinaryFile,
 };
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+mod util;
+use util::Result;
 
 fn main() -> Result<()> {
     // Get binary file path from command line arguments using iterator
