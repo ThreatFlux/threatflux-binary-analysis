@@ -26,7 +26,7 @@ NC = \033[0m # No Color
 .PHONY: test test-docker test-doc test-doc-docker test-features feature-check build build-docker build-all build-all-docker
 .PHONY: docs docs-docker examples examples-docker bench bench-docker
 .PHONY: coverage coverage-open coverage-lcov coverage-html coverage-summary coverage-json coverage-docker
-.PHONY: install-tools ci-local ci-local-coverage setup-dev
+.PHONY: dev-setup setup-dev ci-local ci-local-coverage
 
 # Default target
 all: fmt-check lint audit deny codedup test feature-check docs build examples ## Run all checks and builds locally
@@ -111,17 +111,13 @@ help: ## Show this help message
 # Setup and Installation
 # =============================================================================
 
-setup-dev: install-tools ## Set up development environment
-	@echo "$(CYAN)Setting up development environment...$(NC)"
-	@rustup component add rustfmt clippy
-	@echo "$(GREEN)✅ Development environment ready!$(NC)"
-
-install-tools: ## Install required development tools
+dev-setup: ## Install development tools required for `make all`
 	@echo "$(CYAN)Installing development tools...$(NC)"
-	@command -v cargo-audit > /dev/null || cargo install cargo-audit
-	@command -v cargo-deny > /dev/null || cargo install cargo-deny
-	@command -v cargo-llvm-cov > /dev/null || cargo install cargo-llvm-cov
-	@echo "$(GREEN)✅ Tools installed!$(NC)"
+	@./setup-dev-tools.sh --skip-system-deps
+	@echo "$(GREEN)✅ Development tools installed!$(NC)"
+
+setup-dev: dev-setup ## (Deprecated) Use `make dev-setup` instead
+	@echo "$(YELLOW)⚠️  'setup-dev' is deprecated; use 'make dev-setup'.$(NC)"
 
 # =============================================================================
 # Docker Commands

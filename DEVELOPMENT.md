@@ -4,12 +4,12 @@ This document explains how to set up your development environment to run the sam
 
 ## Quick Setup
 
-1. **Run the setup script:**
+1. **Install all developer tooling:**
    ```bash
-   ./setup-dev-tools.sh
+   make dev-setup
    ```
 
-2. **That's it!** The script will install all necessary tools and set up pre-commit hooks.
+2. **That's it!** This will install all necessary tools and set up pre-commit hooks.
 
 ## What Gets Installed
 

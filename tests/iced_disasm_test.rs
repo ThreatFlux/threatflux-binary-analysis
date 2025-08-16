@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 #![cfg(feature = "disasm-iced")]
 
 use threatflux_binary_analysis::disasm::DisassemblyEngine;

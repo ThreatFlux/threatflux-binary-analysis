@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Tests for binary format detection
 
 use threatflux_binary_analysis::formats;

@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Integration tests for enhanced control flow and call graph analysis
 
 #[cfg(feature = "control-flow")]

@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Tests for the main BinaryAnalyzer functionality
 
 use threatflux_binary_analysis::types::*;

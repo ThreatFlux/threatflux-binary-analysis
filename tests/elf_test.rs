@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Tests for ELF format parser
 #![cfg(feature = "elf")]
 

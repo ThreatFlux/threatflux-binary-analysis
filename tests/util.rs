@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 pub fn create_test_elf() -> Vec<u8> {
     let mut data = vec![0u8; 2048];
 

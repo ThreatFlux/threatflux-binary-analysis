@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Comprehensive unit tests for enhanced binary information structures
 //!
 //! This test suite achieves comprehensive coverage of enhanced binary metadata,

@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! Comprehensive unit tests for Mach-O binary parser
 //!
 //! This test suite achieves comprehensive coverage of the Mach-O parser functionality
@@ -74,15 +75,13 @@ fn test_macho_magic_detection(
     assert_eq!(
         result.architecture(),
         expected_arch,
-        "Failed: {}",
-        description
+        "Failed: {description}"
     );
 
     let metadata = result.metadata();
     assert_eq!(
         metadata.endian, expected_endian,
-        "Wrong endianness for: {}",
-        description
+        "Wrong endianness for: {description}"
     );
 }
 
@@ -120,8 +119,7 @@ fn test_macho_cpu_types(
     assert_eq!(
         result.architecture(),
         expected_arch,
-        "Failed: {}",
-        description
+        "Failed: {description}"
     );
 }
 
@@ -250,7 +248,7 @@ fn test_macho_load_commands() {
         if section_names.iter().any(|&name| name.contains(expected)) {
             // Found expected segment
             let section = sections.iter().find(|s| s.name.contains(expected)).unwrap();
-            assert!(section.size > 0, "Segment {} should have size", expected);
+            assert!(section.size > 0, "Segment {expected} should have size");
         }
     }
 }
@@ -539,8 +537,7 @@ fn test_macho_section_types(
     if let Some(section) = sections.first() {
         assert_eq!(
             section.section_type, expected_type,
-            "Wrong section type for {}",
-            _type_name
+            "Wrong section type for {_type_name}"
         );
     }
 }
@@ -570,8 +567,7 @@ fn test_macho_section_attributes(#[case] attribute: u32, #[case] description: &s
     let sections = result.sections();
     assert!(
         !sections.is_empty(),
-        "Should have sections for: {}",
-        description
+        "Should have sections for: {description}"
     );
 
     // Verify that attributes affect section properties
@@ -628,11 +624,10 @@ fn test_macho_error_handling(
 
     // Should either error gracefully or parse with degraded functionality
     if let Err(error) = result {
-        let error_msg = format!("{}", error);
+        let error_msg = format!("{error}");
         assert!(
             !error_msg.is_empty(),
-            "Error message should not be empty for: {}",
-            description
+            "Error message should not be empty for: {description}"
         );
     } else {
         // If it parsed, verify basic validity
@@ -654,7 +649,7 @@ fn test_macho_fat_binary_parsing() {
     } else {
         // If not supported, should error gracefully
         let error = result.err().unwrap();
-        let error_msg = format!("{}", error);
+        let error_msg = format!("{error}");
         assert!(!error_msg.is_empty());
     }
 }
