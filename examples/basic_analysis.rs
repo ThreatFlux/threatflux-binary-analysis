@@ -13,18 +13,18 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 fn main() -> Result<()> {
     // Get binary file path from command line arguments
     let args: Vec<String> = env::args().collect();
-    
+
     let data = if args.len() != 2 {
         println!("No binary file provided, using minimal ELF test data for demonstration");
         println!("Usage: {} <binary_file>", args[0]);
         println!();
-        
+
         // Create a minimal valid ELF binary for testing
         create_minimal_elf()
     } else {
         let file_path = &args[1];
         println!("Analyzing binary file: {}", file_path);
-        
+
         // Read the binary file
         fs::read(file_path)?
     };
@@ -169,7 +169,7 @@ fn create_minimal_elf() -> Vec<u8> {
         // ELF Header
         0x7f, 0x45, 0x4c, 0x46, // Magic number
         0x02, // 64-bit
-        0x01, // Little endian  
+        0x01, // Little endian
         0x01, // Current version
         0x00, // Generic ABI
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Padding
@@ -196,8 +196,8 @@ fn create_minimal_elf() -> Vec<u8> {
         0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Memory size
         0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Alignment
         // Code section with simple x86-64 instructions
-        0xb8, 0x3c, 0x00, 0x00, 0x00,  // mov eax, 60 (sys_exit)
-        0xbf, 0x00, 0x00, 0x00, 0x00,  // mov edi, 0 (exit code)
-        0x0f, 0x05,                    // syscall
+        0xb8, 0x3c, 0x00, 0x00, 0x00, // mov eax, 60 (sys_exit)
+        0xbf, 0x00, 0x00, 0x00, 0x00, // mov edi, 0 (exit code)
+        0x0f, 0x05, // syscall
     ]
 }
