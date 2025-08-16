@@ -1,9 +1,9 @@
 //! Tests for the main BinaryAnalyzer functionality
 
 use threatflux_binary_analysis::types::*;
-use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer};
 #[cfg(feature = "elf")]
 use threatflux_binary_analysis::BinaryFile;
+use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer};
 
 // Helper function to create mock ELF data
 #[allow(dead_code)]

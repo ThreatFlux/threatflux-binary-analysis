@@ -438,7 +438,13 @@ fn test_analysis_with_features_disabled() {
 }
 
 #[test]
-#[cfg(all(feature = "elf", feature = "pe", feature = "macho", feature = "java", feature = "wasm"))]
+#[cfg(all(
+    feature = "elf",
+    feature = "pe",
+    feature = "macho",
+    feature = "java",
+    feature = "wasm"
+))]
 fn test_multiple_format_analysis() {
     let test_cases = vec![
         (
@@ -524,7 +530,13 @@ fn test_file_based_analysis() {
 }
 
 #[test]
-#[cfg(all(feature = "elf", feature = "pe", feature = "macho", feature = "java", feature = "wasm"))]
+#[cfg(all(
+    feature = "elf",
+    feature = "pe",
+    feature = "macho",
+    feature = "java",
+    feature = "wasm"
+))]
 fn test_concurrent_analysis_different_formats() {
     use std::sync::Arc;
     use std::thread;
