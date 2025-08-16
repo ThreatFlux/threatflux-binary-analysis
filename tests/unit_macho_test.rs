@@ -45,17 +45,23 @@ fn test_macho_magic_detection(
     let mut data = vec![0; 1024];
     data[0..4].copy_from_slice(magic);
 
-    // Add minimal header fields
-    if expected_arch == Architecture::X86_64 {
-        // 64-bit header
-        data[4..8].copy_from_slice(&0x01000007u32.to_le_bytes()); // CPU_TYPE_X86_64
-        data[8..12].copy_from_slice(&0x00000003u32.to_le_bytes()); // CPU_SUBTYPE_X86_64_ALL
-        data[12..16].copy_from_slice(&0x00000002u32.to_le_bytes()); // MH_EXECUTE
+    // Add minimal header fields based on endianness
+    let cpu_type = if expected_arch == Architecture::X86_64 {
+        0x01000007u32
     } else {
-        // 32-bit header
-        data[4..8].copy_from_slice(&0x00000007u32.to_le_bytes()); // CPU_TYPE_X86
-        data[8..12].copy_from_slice(&0x00000003u32.to_le_bytes()); // CPU_SUBTYPE_X86_ALL
-        data[12..16].copy_from_slice(&0x00000002u32.to_le_bytes()); // MH_EXECUTE
+        0x00000007u32
+    };
+    let cpu_subtype = 0x00000003u32;
+    let filetype = 0x00000002u32;
+
+    if expected_endian == Endianness::Big {
+        data[4..8].copy_from_slice(&cpu_type.to_be_bytes());
+        data[8..12].copy_from_slice(&cpu_subtype.to_be_bytes());
+        data[12..16].copy_from_slice(&filetype.to_be_bytes());
+    } else {
+        data[4..8].copy_from_slice(&cpu_type.to_le_bytes());
+        data[8..12].copy_from_slice(&cpu_subtype.to_le_bytes());
+        data[12..16].copy_from_slice(&filetype.to_le_bytes());
     }
 
     let result = match MachOParser::parse(&data) {
@@ -132,7 +138,7 @@ fn test_macho_cpu_types(
 #[case(0x00000009, "MH_DYLIB_STUB - Shared library stub")]
 #[case(0x0000000a, "MH_DSYM - Debug symbols")]
 #[case(0x0000000b, "MH_KEXT_BUNDLE - Kernel extension")]
-fn test_macho_file_types(#[case] filetype: u32, #[case] description: &str) {
+fn test_macho_file_types(#[case] filetype: u32, #[case] _description: &str) {
     let mut data = create_realistic_macho_64();
 
     // Update file type in header

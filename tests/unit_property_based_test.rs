@@ -108,7 +108,7 @@ fn arb_pe_like_data() -> impl Strategy<Value = Vec<u8>> {
     )
         .prop_map(
             |(machine, num_sections, timestamp, opt_hdr_size, characteristics, mut rest)| {
-                let mut data = vec![0; 128]; // DOS header + PE header
+                let mut data = vec![0; 160]; // DOS header + PE header (need space up to 0x98)
 
                 // DOS header
                 data[0..2].copy_from_slice(b"MZ");

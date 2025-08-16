@@ -69,13 +69,22 @@ impl MachOBinary {
             _ => Architecture::Unknown,
         };
 
-        // Determine endianness from magic
-        let endian = match macho.header.magic {
-            goblin::mach::header::MH_MAGIC | goblin::mach::header::MH_MAGIC_64 => {
+        // Determine endianness from the original data parsing
+        // Goblin normalizes magic numbers, so we need to check the raw bytes
+        let endian = if data.len() >= 4 {
+            let raw_magic_be = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+
+            // Check for big endian magic (raw bytes match canonical form)
+            if raw_magic_be == goblin::mach::header::MH_MAGIC
+                || raw_magic_be == goblin::mach::header::MH_MAGIC_64
+            {
+                Endianness::Big
+            } else {
+                // All other cases (including CIGAM variants) are little endian
                 Endianness::Little
             }
-            goblin::mach::header::MH_CIGAM | goblin::mach::header::MH_CIGAM_64 => Endianness::Big,
-            _ => Endianness::Little, // Default
+        } else {
+            Endianness::Little // Default for malformed data
         };
 
         // Analyze security features

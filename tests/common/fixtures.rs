@@ -180,6 +180,113 @@ pub fn create_realistic_pe_64() -> Vec<u8> {
     data
 }
 
+/// Complete PE 32-bit binary fixture with DOS header, PE header, and sections
+pub fn create_realistic_pe_32() -> Vec<u8> {
+    let mut data = vec![0; 4096]; // 4KB binary
+
+    // DOS Header
+    data[0] = 0x4d; // 'M'
+    data[1] = 0x5a; // 'Z'
+    data[2] = 0x90; // e_cblp
+    data[3] = 0x00;
+    data[4] = 0x03; // e_cp
+    data[5] = 0x00;
+    // ... (fill in more DOS header fields as needed)
+    data[60] = 0x80; // e_lfanew (PE header offset)
+    data[61] = 0x00;
+    data[62] = 0x00;
+    data[63] = 0x00;
+
+    // PE Signature at offset 0x80
+    data[0x80] = 0x50; // 'P'
+    data[0x81] = 0x45; // 'E'
+    data[0x82] = 0x00;
+    data[0x83] = 0x00;
+
+    // COFF Header
+    data[0x84] = 0x4c; // Machine (IMAGE_FILE_MACHINE_I386)
+    data[0x85] = 0x01;
+    data[0x86] = 0x02; // NumberOfSections
+    data[0x87] = 0x00;
+
+    // Timestamp
+    let timestamp: u32 = 0x60000000;
+    data[0x88..0x8c].copy_from_slice(&timestamp.to_le_bytes());
+
+    // PointerToSymbolTable
+    data[0x8c] = 0x00;
+    data[0x8d] = 0x00;
+    data[0x8e] = 0x00;
+    data[0x8f] = 0x00;
+
+    // NumberOfSymbols
+    data[0x90] = 0x00;
+    data[0x91] = 0x00;
+    data[0x92] = 0x00;
+    data[0x93] = 0x00;
+
+    // SizeOfOptionalHeader
+    data[0x94] = 0xe0; // 224 bytes (smaller for PE32)
+    data[0x95] = 0x00;
+
+    // Characteristics
+    data[0x96] = 0x02; // IMAGE_FILE_EXECUTABLE_IMAGE
+    data[0x97] = 0x01;
+
+    // Optional Header
+    data[0x98] = 0x0b; // Magic (IMAGE_NT_OPTIONAL_HDR32_MAGIC)
+    data[0x99] = 0x01;
+    data[0x9a] = 0x0e; // MajorLinkerVersion
+    data[0x9b] = 0x00; // MinorLinkerVersion
+
+    // SizeOfCode
+    let size_of_code: u32 = 0x1000;
+    data[0x9c..0xa0].copy_from_slice(&size_of_code.to_le_bytes());
+
+    // SizeOfInitializedData
+    let size_of_init_data: u32 = 0x1000;
+    data[0xa0..0xa4].copy_from_slice(&size_of_init_data.to_le_bytes());
+
+    // SizeOfUninitializedData
+    data[0xa4] = 0x00;
+    data[0xa5] = 0x00;
+    data[0xa6] = 0x00;
+    data[0xa7] = 0x00;
+
+    // AddressOfEntryPoint
+    let entry_point: u32 = 0x1000;
+    data[0xa8..0xac].copy_from_slice(&entry_point.to_le_bytes());
+
+    // BaseOfCode
+    let base_of_code: u32 = 0x1000;
+    data[0xac..0xb0].copy_from_slice(&base_of_code.to_le_bytes());
+
+    // BaseOfData (only in PE32, not PE32+)
+    let base_of_data: u32 = 0x2000;
+    data[0xb0..0xb4].copy_from_slice(&base_of_data.to_le_bytes());
+
+    // ImageBase (4 bytes for 32-bit)
+    let image_base: u32 = 0x400000;
+    data[0xb4..0xb8].copy_from_slice(&image_base.to_le_bytes());
+
+    // Add some x86 instructions at entry point
+    let instructions = [
+        0x55, // push ebp
+        0x89, 0xe5, // mov ebp, esp
+        0x83, 0xec, 0x10, // sub esp, 16
+        0xb8, 0x00, 0x00, 0x00, 0x00, // mov eax, 0
+        0x83, 0xc4, 0x10, // add esp, 16
+        0x5d, // pop ebp
+        0xc3, // ret
+    ];
+
+    if data.len() > 0x1000 + instructions.len() {
+        data[0x1000..0x1000 + instructions.len()].copy_from_slice(&instructions);
+    }
+
+    data
+}
+
 /// Complete Mach-O binary fixture
 pub fn create_realistic_macho_64() -> Vec<u8> {
     let mut data = vec![0; 4096];
