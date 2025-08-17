@@ -1,5 +1,4 @@
 #![allow(clippy::uninlined_format_args)]
-#![allow(clippy::uninlined_format_args)]
 //! Test module organization and common utilities for threatflux-binary-analysis
 
 pub mod common;
