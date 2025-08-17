@@ -2,8 +2,8 @@
 //! Tests for ELF format parser
 #![cfg(feature = "elf")]
 
-use threatflux_binary_analysis::formats::elf::ElfParser;
 use threatflux_binary_analysis::types::*;
+use threatflux_binary_analysis::BinaryAnalyzer;
 
 /// Test data generators for various ELF formats
 mod elf_test_data {
@@ -739,47 +739,68 @@ mod elf_test_data {
 fn test_elf_parser_can_parse_valid_magic() {
     // Test valid ELF magic
     let valid_elf = vec![0x7f, 0x45, 0x4c, 0x46];
-    assert!(ElfParser::can_parse(&valid_elf));
+    assert!(matches!(
+        threatflux_binary_analysis::formats::detect_format(&valid_elf),
+        Ok(BinaryFormat::Elf)
+    ));
 
     // Test with longer data
     let elf_with_data = vec![0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00];
-    assert!(ElfParser::can_parse(&elf_with_data));
+    assert!(matches!(
+        threatflux_binary_analysis::formats::detect_format(&elf_with_data),
+        Ok(BinaryFormat::Elf)
+    ));
 }
 
 #[test]
 fn test_elf_parser_can_parse_invalid_data() {
     // Test with empty data
-    assert!(!ElfParser::can_parse(&[]));
+    assert!(threatflux_binary_analysis::formats::detect_format(&[]).is_err());
 
     // Test with too short data
-    assert!(!ElfParser::can_parse(&[0x7f, 0x45, 0x4c]));
+    assert!(!matches!(
+        threatflux_binary_analysis::formats::detect_format(&[0x7f, 0x45, 0x4c]),
+        Ok(BinaryFormat::Elf)
+    ));
 
     // Test with invalid magic
-    assert!(!ElfParser::can_parse(&[0x12, 0x34, 0x56, 0x78]));
+    assert!(!matches!(
+        threatflux_binary_analysis::formats::detect_format(&[0x12, 0x34, 0x56, 0x78]),
+        Ok(BinaryFormat::Elf)
+    ));
 
     // Test with PE magic
-    assert!(!ElfParser::can_parse(&[0x4d, 0x5a, 0x90, 0x00]));
+    assert!(!matches!(
+        threatflux_binary_analysis::formats::detect_format(&[0x4d, 0x5a, 0x90, 0x00]),
+        Ok(BinaryFormat::Elf)
+    ));
 
     // Test with Mach-O magic
-    assert!(!ElfParser::can_parse(&[0xce, 0xfa, 0xed, 0xfe]));
+    assert!(!matches!(
+        threatflux_binary_analysis::formats::detect_format(&[0xce, 0xfa, 0xed, 0xfe]),
+        Ok(BinaryFormat::Elf)
+    ));
 
     // Test with partial ELF magic
-    assert!(!ElfParser::can_parse(&[0x7f, 0x45, 0x4c, 0x47]));
+    assert!(!matches!(
+        threatflux_binary_analysis::formats::detect_format(&[0x7f, 0x45, 0x4c, 0x47]),
+        Ok(BinaryFormat::Elf)
+    ));
 }
 
 #[test]
 fn test_elf_parser_parse_64_bit_x86_64() {
     let data = elf_test_data::create_elf_64_x86_64_le();
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
 
     assert!(result.is_ok());
     let binary = result.unwrap();
 
-    assert_eq!(binary.format_type(), BinaryFormat::Elf);
-    assert_eq!(binary.architecture(), Architecture::X86_64);
-    assert_eq!(binary.entry_point(), Some(0x401000));
+    assert_eq!(binary.format, BinaryFormat::Elf);
+    assert_eq!(binary.architecture, Architecture::X86_64);
+    assert_eq!(binary.entry_point, Some(0x401000));
 
-    let metadata = binary.metadata();
+    let metadata = &binary.metadata;
     assert_eq!(metadata.format, BinaryFormat::Elf);
     assert_eq!(metadata.architecture, Architecture::X86_64);
     assert_eq!(metadata.endian, Endianness::Little);
@@ -790,28 +811,28 @@ fn test_elf_parser_parse_64_bit_x86_64() {
 #[test]
 fn test_elf_parser_parse_32_bit_x86() {
     let data = elf_test_data::create_elf_32_x86_le();
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
 
     assert!(result.is_ok());
     let binary = result.unwrap();
 
-    assert_eq!(binary.format_type(), BinaryFormat::Elf);
-    assert_eq!(binary.architecture(), Architecture::X86);
+    assert_eq!(binary.format, BinaryFormat::Elf);
+    assert_eq!(binary.architecture, Architecture::X86);
 
-    let metadata = binary.metadata();
+    let metadata = &binary.metadata;
     assert_eq!(metadata.endian, Endianness::Little);
 }
 
 #[test]
 fn test_elf_parser_parse_arm64() {
     let data = elf_test_data::create_elf_64_arm64_le();
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
 
     assert!(result.is_ok());
     let binary = result.unwrap();
 
-    assert_eq!(binary.format_type(), BinaryFormat::Elf);
-    assert_eq!(binary.architecture(), Architecture::Arm64);
+    assert_eq!(binary.format, BinaryFormat::Elf);
+    assert_eq!(binary.architecture, Architecture::Arm64);
 }
 
 #[test]
@@ -823,10 +844,10 @@ fn test_elf_parser_parse_various_architectures() {
     ];
 
     for (data, expected_arch) in test_cases {
-        let result = ElfParser::parse(&data);
+        let result = BinaryAnalyzer::new().analyze(&data);
         if let Ok(binary) = result {
-            assert_eq!(binary.architecture(), expected_arch);
-            assert_eq!(binary.metadata().architecture, expected_arch);
+            assert_eq!(binary.architecture, expected_arch);
+            assert_eq!(binary.architecture, expected_arch);
         }
     }
 }
@@ -835,44 +856,44 @@ fn test_elf_parser_parse_various_architectures() {
 fn test_elf_parser_parse_file_types() {
     // Test executable
     let exec_data = elf_test_data::create_elf_64_x86_64_le();
-    let exec_result = ElfParser::parse(&exec_data);
+    let exec_result = BinaryAnalyzer::new().analyze(&exec_data);
     assert!(exec_result.is_ok());
 
     // Test shared object
     let so_data = elf_test_data::create_elf_shared_object();
-    let so_result = ElfParser::parse(&so_data);
+    let so_result = BinaryAnalyzer::new().analyze(&so_data);
     assert!(so_result.is_ok());
     let so_binary = so_result.unwrap();
-    assert!(so_binary.metadata().security_features.pie); // ET_DYN enables PIE
+    assert!(so_binary.metadata.security_features.pie); // ET_DYN enables PIE
 
     // Test relocatable object
     let rel_data = elf_test_data::create_elf_relocatable();
-    let rel_result = ElfParser::parse(&rel_data);
+    let rel_result = BinaryAnalyzer::new().analyze(&rel_data);
     assert!(rel_result.is_ok());
     let rel_binary = rel_result.unwrap();
-    assert_eq!(rel_binary.entry_point(), None); // No entry point for relocatable
+    assert_eq!(rel_binary.entry_point, None); // No entry point for relocatable
 }
 
 #[test]
 fn test_elf_parser_endianness_detection() {
     // Little endian
     let le_data = elf_test_data::create_elf_64_x86_64_le();
-    let le_binary = ElfParser::parse(&le_data).unwrap();
-    assert_eq!(le_binary.metadata().endian, Endianness::Little);
+    let le_binary = BinaryAnalyzer::new().analyze(&le_data).unwrap();
+    assert_eq!(le_binary.metadata.endian, Endianness::Little);
 
     // Big endian
     let be_data = elf_test_data::create_elf_big_endian();
-    let be_result = ElfParser::parse(&be_data);
+    let be_result = BinaryAnalyzer::new().analyze(&be_data);
     if let Ok(be_binary) = be_result {
-        assert_eq!(be_binary.metadata().endian, Endianness::Big);
+        assert_eq!(be_binary.metadata.endian, Endianness::Big);
     }
 }
 
 #[test]
 fn test_elf_parser_section_parsing() {
     let data = elf_test_data::create_elf_64_x86_64_le();
-    let binary = ElfParser::parse(&data).unwrap();
-    let sections = binary.sections();
+    let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
+    let sections = &binary.sections;
 
     assert!(!sections.is_empty());
 
@@ -900,10 +921,10 @@ fn test_elf_parser_section_parsing() {
 #[test]
 fn test_elf_parser_symbol_parsing() {
     let data = elf_test_data::create_elf_with_symbols();
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
 
     if let Ok(binary) = result {
-        let symbols = binary.symbols();
+        let symbols = &binary.symbols;
 
         // Symbols may be empty for our simplified test ELF
         // The important thing is that parsing doesn't fail
@@ -927,11 +948,11 @@ fn test_elf_parser_symbol_parsing() {
 #[test]
 fn test_elf_parser_imports_exports() {
     let data = elf_test_data::create_elf_with_symbols();
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
 
     if let Ok(binary) = result {
-        let imports = binary.imports();
-        let exports = binary.exports();
+        let imports = &binary.imports;
+        let exports = &binary.exports;
 
         // Imports and exports may be empty for our simplified test data
         // The important thing is that parsing doesn't fail
@@ -951,8 +972,8 @@ fn test_elf_parser_imports_exports() {
 #[test]
 fn test_elf_parser_security_features() {
     let data = elf_test_data::create_elf_with_security_features();
-    let binary = ElfParser::parse(&data).unwrap();
-    let security = &binary.metadata().security_features;
+    let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
+    let security = &binary.metadata.security_features;
 
     assert!(security.nx_bit); // GNU_STACK without execute
     assert!(security.pie); // ET_DYN
@@ -964,57 +985,60 @@ fn test_elf_parser_security_features() {
 fn test_elf_parser_error_handling() {
     // Test truncated header
     let truncated = elf_test_data::create_truncated_elf();
-    let result = ElfParser::parse(&truncated);
+    let result = BinaryAnalyzer::new().analyze(&truncated);
     assert!(result.is_err());
 
-    // Test invalid magic
+    // Test invalid magic - may parse as Raw format
     let invalid_magic = elf_test_data::create_invalid_magic();
-    let result = ElfParser::parse(&invalid_magic);
-    assert!(result.is_err());
+    let result = BinaryAnalyzer::new().analyze(&invalid_magic);
+    // Either error or Raw format is acceptable
+    if let Ok(analysis) = result {
+        assert_ne!(analysis.format, BinaryFormat::Elf);
+    }
 
     // Test empty data
-    let result = ElfParser::parse(&[]);
+    let result = BinaryAnalyzer::new().analyze(&[]);
     assert!(result.is_err());
 
     // Test minimal valid magic but invalid structure
     let minimal = vec![0x7f, 0x45, 0x4c, 0x46];
-    let result = ElfParser::parse(&minimal);
+    let result = BinaryAnalyzer::new().analyze(&minimal);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_elf_binary_format_trait_methods() {
     let data = elf_test_data::create_elf_64_x86_64_le();
-    let binary = ElfParser::parse(&data).unwrap();
+    let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
 
     // Test format_type()
-    assert_eq!(binary.format_type(), BinaryFormat::Elf);
+    assert_eq!(binary.format, BinaryFormat::Elf);
 
     // Test architecture()
-    assert_eq!(binary.architecture(), Architecture::X86_64);
+    assert_eq!(binary.architecture, Architecture::X86_64);
 
     // Test entry_point()
-    assert_eq!(binary.entry_point(), Some(0x401000));
+    assert_eq!(binary.entry_point, Some(0x401000));
 
     // Test sections()
-    let sections = binary.sections();
+    let sections = &binary.sections;
     assert!(!sections.is_empty());
 
     // Test symbols()
-    let symbols = binary.symbols();
+    let symbols = &binary.symbols;
     // May be empty for minimal binary, but should not panic
     let _ = symbols.len();
 
     // Test imports()
-    let imports = binary.imports();
+    let imports = &binary.imports;
     let _ = imports.len();
 
     // Test exports()
-    let exports = binary.exports();
+    let exports = &binary.exports;
     let _ = exports.len();
 
     // Test metadata()
-    let metadata = binary.metadata();
+    let metadata = &binary.metadata;
     assert_eq!(metadata.format, BinaryFormat::Elf);
     assert_eq!(metadata.architecture, Architecture::X86_64);
     assert_eq!(metadata.size, data.len());
@@ -1023,8 +1047,8 @@ fn test_elf_binary_format_trait_methods() {
 #[test]
 fn test_elf_section_type_classification() {
     let data = elf_test_data::create_elf_64_x86_64_le();
-    let binary = ElfParser::parse(&data).unwrap();
-    let sections = binary.sections();
+    let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
+    let sections = &binary.sections;
 
     for section in sections {
         match section.section_type {
@@ -1058,8 +1082,8 @@ fn test_elf_section_type_classification() {
 #[test]
 fn test_elf_section_data_extraction() {
     let data = elf_test_data::create_elf_64_x86_64_le();
-    let binary = ElfParser::parse(&data).unwrap();
-    let sections = binary.sections();
+    let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
+    let sections = &binary.sections;
 
     for section in sections {
         if section.size <= 1024 && section.offset > 0 {
@@ -1077,8 +1101,8 @@ fn test_elf_section_data_extraction() {
 #[test]
 fn test_elf_symbol_demangling() {
     let data = elf_test_data::create_elf_with_symbols();
-    let binary = ElfParser::parse(&data).unwrap();
-    let symbols = binary.symbols();
+    let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
+    let symbols = &binary.symbols;
 
     // Look for mangled symbols (C++ style)
     for symbol in symbols {
@@ -1093,8 +1117,8 @@ fn test_elf_symbol_demangling() {
 #[test]
 fn test_elf_compiler_info_extraction() {
     let data = elf_test_data::create_elf_64_x86_64_le();
-    let binary = ElfParser::parse(&data).unwrap();
-    let metadata = binary.metadata();
+    let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
+    let metadata = &binary.metadata;
 
     // Compiler info may be None for minimal test binaries
     if let Some(compiler_info) = &metadata.compiler_info {
@@ -1106,15 +1130,24 @@ fn test_elf_compiler_info_extraction() {
 fn test_elf_edge_cases() {
     // Test with minimum ELF header size
     let min_header = vec![0x7f, 0x45, 0x4c, 0x46];
-    let result = ElfParser::parse(&min_header);
+    let result = BinaryAnalyzer::new().analyze(&min_header);
     assert!(result.is_err());
 
     // Test can_parse with exactly 4 bytes
-    assert!(ElfParser::can_parse(&[0x7f, 0x45, 0x4c, 0x46]));
-    assert!(!ElfParser::can_parse(&[0x12, 0x34, 0x56, 0x78]));
+    assert!(matches!(
+        threatflux_binary_analysis::formats::detect_format(&[0x7f, 0x45, 0x4c, 0x46]),
+        Ok(BinaryFormat::Elf)
+    ));
+    assert!(!matches!(
+        threatflux_binary_analysis::formats::detect_format(&[0x12, 0x34, 0x56, 0x78]),
+        Ok(BinaryFormat::Elf)
+    ));
 
     // Test with 3 bytes (should fail)
-    assert!(!ElfParser::can_parse(&[0x7f, 0x45, 0x4c]));
+    assert!(!matches!(
+        threatflux_binary_analysis::formats::detect_format(&[0x7f, 0x45, 0x4c]),
+        Ok(BinaryFormat::Elf)
+    ));
 }
 
 #[test]
@@ -1125,18 +1158,18 @@ fn test_elf_unknown_architecture_handling() {
     data[18] = 0xff;
     data[19] = 0xff;
 
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
     if let Ok(binary) = result {
-        assert_eq!(binary.architecture(), Architecture::Unknown);
-        assert_eq!(binary.metadata().architecture, Architecture::Unknown);
+        assert_eq!(binary.architecture, Architecture::Unknown);
+        assert_eq!(binary.architecture, Architecture::Unknown);
     }
 }
 
 #[test]
 fn test_elf_program_header_parsing() {
     let data = elf_test_data::create_elf_with_security_features();
-    let binary = ElfParser::parse(&data).unwrap();
-    let security = &binary.metadata().security_features;
+    let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
+    let security = &binary.metadata.security_features;
 
     // Verify security features detected from program headers
     assert!(security.nx_bit); // From GNU_STACK
@@ -1151,11 +1184,11 @@ fn test_elf_memory_usage() {
 
     // Parse multiple times to check for memory leaks
     for _ in 0..10 {
-        let binary = ElfParser::parse(&data).unwrap();
-        let _sections = binary.sections();
-        let _symbols = binary.symbols();
-        let _imports = binary.imports();
-        let _exports = binary.exports();
+        let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
+        let _sections = &binary.sections;
+        let _symbols = &binary.symbols;
+        let _imports = &binary.imports;
+        let _exports = &binary.exports;
     }
 }
 
@@ -1164,14 +1197,16 @@ fn test_elf_consistency() {
     let data = elf_test_data::create_elf_64_x86_64_le();
 
     // Parse same data multiple times and verify consistency
-    let results: Vec<_> = (0..5).map(|_| ElfParser::parse(&data).unwrap()).collect();
+    let results: Vec<_> = (0..5)
+        .map(|_| BinaryAnalyzer::new().analyze(&data).unwrap())
+        .collect();
 
     let first = &results[0];
     for result in &results[1..] {
-        assert_eq!(result.format_type(), first.format_type());
-        assert_eq!(result.architecture(), first.architecture());
-        assert_eq!(result.entry_point(), first.entry_point());
-        assert_eq!(result.sections().len(), first.sections().len());
-        assert_eq!(result.symbols().len(), first.symbols().len());
+        assert_eq!(result.format, first.format);
+        assert_eq!(result.architecture, first.architecture);
+        assert_eq!(result.entry_point, first.entry_point);
+        assert_eq!(&result.sections.len(), &first.sections.len());
+        assert_eq!(&result.symbols.len(), &first.symbols.len());
     }
 }

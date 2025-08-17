@@ -55,7 +55,6 @@ fn arb_binary_with_magic() -> impl Strategy<Value = Vec<u8>> {
 }
 
 /// Generate ELF-like data with random fields
-#[allow(dead_code)]
 fn arb_elf_like_data() -> impl Strategy<Value = Vec<u8>> {
     (
         any::<u8>(),                                  // EI_CLASS
@@ -90,7 +89,6 @@ fn arb_elf_like_data() -> impl Strategy<Value = Vec<u8>> {
 }
 
 /// Generate PE-like data with random fields
-#[allow(dead_code)]
 fn arb_pe_like_data() -> impl Strategy<Value = Vec<u8>> {
     (
         any::<u16>(),                                  // Machine type
@@ -125,7 +123,6 @@ fn arb_pe_like_data() -> impl Strategy<Value = Vec<u8>> {
 }
 
 /// Generate Mach-O-like data with random fields
-#[allow(dead_code)]
 fn arb_macho_like_data() -> impl Strategy<Value = Vec<u8>> {
     (
         any::<u32>(),                                 // CPU type
@@ -233,12 +230,11 @@ proptest! {
     }
 
     /// Test ELF parser invariants
-    #[cfg(feature = "elf")]
     #[test]
     fn prop_elf_parser_invariants(data in arb_elf_like_data()) {
         if let Ok(parsed) = BinaryAnalyzer::new().analyze(&data) {
             // Basic invariants
-            assert_eq!(parsed.format, BinaryFormat::Elf);
+            assert_eq!(parsed.format_type(), BinaryFormat::Elf);
 
             // Architecture should be valid
             let arch = parsed.architecture;
@@ -249,7 +245,7 @@ proptest! {
             ));
 
             // Sections should have valid properties
-            for section in parsed.sections {
+            for section in &parsed.sections {
                 assert!(!section.name.is_empty() || section.name == "");
                 assert!(section.size >= 0);
                 assert!(section.address >= 0);
@@ -257,13 +253,13 @@ proptest! {
             }
 
             // Symbols should have valid properties
-            for symbol in parsed.symbols {
+            for symbol in parsed.symbols() {
                 assert!(symbol.address >= 0);
                 assert!(symbol.size >= 0);
             }
 
             // Metadata should be consistent
-            let metadata = parsed.metadata;
+            let metadata = parsed.metadata();
             assert_eq!(metadata.format, BinaryFormat::Elf);
             assert_eq!(metadata.architecture, arch);
             assert!(metadata.size > 0);
@@ -271,12 +267,11 @@ proptest! {
     }
 
     /// Test PE parser invariants
-    #[cfg(feature = "pe")]
     #[test]
     fn prop_pe_parser_invariants(data in arb_pe_like_data()) {
         if let Ok(parsed) = BinaryAnalyzer::new().analyze(&data) {
             // Basic invariants
-            assert_eq!(parsed.format, BinaryFormat::Pe);
+            assert_eq!(parsed.format_type(), BinaryFormat::Pe);
 
             // Architecture should be valid
             let arch = parsed.architecture;
@@ -286,25 +281,25 @@ proptest! {
             ));
 
             // Sections should have valid properties
-            for section in parsed.sections {
+            for section in &parsed.sections {
                 assert!(section.size >= 0);
                 assert!(section.address >= 0);
                 assert!(section.offset >= 0);
             }
 
             // Imports should have valid names
-            for import in parsed.imports {
+            for import in parsed.imports() {
                 assert!(!import.name.is_empty());
             }
 
             // Exports should have valid names and addresses
-            for export in parsed.exports {
+            for export in parsed.exports() {
                 assert!(!export.name.is_empty());
                 assert!(export.address > 0);
             }
 
             // Metadata should be consistent
-            let metadata = parsed.metadata;
+            let metadata = parsed.metadata();
             assert_eq!(metadata.format, BinaryFormat::Pe);
             assert_eq!(metadata.architecture, arch);
             assert!(metadata.size > 0);
@@ -312,12 +307,11 @@ proptest! {
     }
 
     /// Test Mach-O parser invariants
-    #[cfg(feature = "macho")]
     #[test]
     fn prop_macho_parser_invariants(data in arb_macho_like_data()) {
         if let Ok(parsed) = BinaryAnalyzer::new().analyze(&data) {
             // Basic invariants
-            assert_eq!(parsed.format, BinaryFormat::MachO);
+            assert_eq!(parsed.format_type(), BinaryFormat::MachO);
 
             // Architecture should be valid
             let arch = parsed.architecture;
@@ -328,14 +322,14 @@ proptest! {
             ));
 
             // Sections should have valid properties
-            for section in parsed.sections {
+            for section in &parsed.sections {
                 assert!(section.size >= 0);
                 assert!(section.address >= 0);
                 assert!(section.offset >= 0);
             }
 
             // Metadata should be consistent
-            let metadata = parsed.metadata;
+            let metadata = parsed.metadata();
             assert_eq!(metadata.format, BinaryFormat::MachO);
             assert_eq!(metadata.architecture, arch);
             assert!(metadata.size > 0);
@@ -347,17 +341,17 @@ proptest! {
     fn prop_java_parser_invariants(data in arb_java_like_data()) {
         if let Ok(parsed) = BinaryAnalyzer::new().analyze(&data) {
             // Basic invariants
-            assert_eq!(parsed.format, BinaryFormat::Java);
+            assert_eq!(parsed.format_type(), BinaryFormat::Java);
             assert_eq!(parsed.architecture, Architecture::Jvm);
 
             // Java classes don't have entry points
-            assert!(parsed.entry_point.is_none());
+            assert!(parsed.entry_point().is_none());
 
             // Should have at least one section (the class itself)
-            assert!(!parsed.sections.is_empty());
+            assert!(!&parsed.sections.is_empty());
 
             // Metadata should be consistent
-            let metadata = parsed.metadata;
+            let metadata = parsed.metadata();
             assert_eq!(metadata.format, BinaryFormat::Java);
             assert_eq!(metadata.architecture, Architecture::Jvm);
             assert!(metadata.size > 0);
@@ -432,10 +426,10 @@ proptest! {
         assert_eq!(elf_result1.is_ok(), elf_result2.is_ok());
 
         if let (Ok(parsed1), Ok(parsed2)) = (elf_result1, elf_result2) {
-            assert_eq!(parsed1.format, parsed2.format);
-            assert_eq!(parsed1.architecture, parsed2.architecture);
-            assert_eq!(parsed1.entry_point, parsed2.entry_point);
-            assert_eq!(parsed1.sections.len(), parsed2.sections.len());
+            assert_eq!(parsed1.format_type(), parsed2.format_type());
+            assert_eq!(parsed1.architecture(), parsed2.architecture());
+            assert_eq!(parsed1.entry_point(), parsed2.entry_point());
+            assert_eq!(&parsed1.sections.len(), &parsed2.sections.len());
         }
     }
 
@@ -570,7 +564,6 @@ fn test_property_test_edge_cases() {
 }
 
 /// Test property testing with specific binary patterns
-#[cfg(all(feature = "elf", feature = "pe", feature = "macho"))]
 #[test]
 fn test_binary_pattern_properties() {
     // Test that certain patterns always produce consistent results

@@ -7,28 +7,25 @@
 #![allow(unused_variables)]
 
 use pretty_assertions::assert_eq;
+#[cfg(any(feature = "elf", feature = "pe", feature = "macho", feature = "java"))]
 use rstest::*;
 use threatflux_binary_analysis::types::*;
 
-#[cfg(feature = "elf")]
-use threatflux_binary_analysis::formats::elf::ElfParser;
-#[cfg(feature = "java")]
-use threatflux_binary_analysis::formats::java::JavaParser;
-#[cfg(feature = "macho")]
-use threatflux_binary_analysis::formats::macho::MachOParser;
-#[cfg(feature = "pe")]
-use threatflux_binary_analysis::formats::pe::PeParser;
+use threatflux_binary_analysis::BinaryAnalyzer;
 
 mod common;
 use common::fixtures::*;
 
 /// Test ELF compiler detection from .comment section
+#[cfg(feature = "elf")]
 #[test]
 fn test_elf_gcc_detection() {
     let data = create_elf_with_gcc_comment();
-    let result = ElfParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let metadata = result.metadata();
+    let metadata = &result.metadata;
+    println!("Format detected: {:?}", result.format);
+    println!("Compiler info: {:?}", metadata.compiler_info);
     assert!(
         metadata.compiler_info.is_some(),
         "Should detect compiler info"
@@ -43,6 +40,7 @@ fn test_elf_gcc_detection() {
 }
 
 /// Test ELF compiler detection from various sources
+#[cfg(feature = "elf")]
 #[rstest]
 #[case(
     create_elf_with_clang_comment(),
@@ -62,8 +60,13 @@ fn test_elf_compiler_variants(
     #[case] expected_compiler: &str,
     #[case] description: &str,
 ) {
-    let result = ElfParser::parse(&data).unwrap();
-    let metadata = result.metadata();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
+    let metadata = &result.metadata;
+    println!("Test case: {}", description);
+    println!(
+        "Format: {:?}, Compiler info: {:?}",
+        result.format, metadata.compiler_info
+    );
 
     if expected_compiler == "Unknown" {
         // For unclear cases, any reasonable detection is acceptable
@@ -90,25 +93,27 @@ fn test_elf_compiler_variants(
 }
 
 /// Test ELF note section analysis for compiler info
+#[cfg(feature = "elf")]
 #[test]
 fn test_elf_note_section_compiler_detection() {
     let data = create_elf_with_build_id_note();
-    let result = ElfParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
     // Build-ID notes can indicate compiler/linker
-    let metadata = result.metadata();
+    let metadata = &result.metadata;
 
     // Even if we can't determine specific compiler, should not crash
-    assert_eq!(result.format_type(), BinaryFormat::Elf);
+    assert_eq!(result.format, BinaryFormat::Elf);
 }
 
 /// Test PE Rich Header compiler detection
+#[cfg(feature = "pe")]
 #[test]
 fn test_pe_rich_header_msvc_detection() {
     let data = create_pe_with_rich_header();
-    let result = PeParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let metadata = result.metadata();
+    let metadata = &result.metadata;
     if let Some(ref compiler_info) = metadata.compiler_info {
         // Rich header should indicate MSVC version
         assert!(
@@ -119,6 +124,7 @@ fn test_pe_rich_header_msvc_detection() {
 }
 
 /// Test PE compiler detection from various sources
+#[cfg(feature = "pe")]
 #[rstest]
 #[case(create_pe_with_msvc_2022(), "MSVC", "2022", "Visual Studio 2022")]
 #[case(create_pe_with_msvc_2019(), "MSVC", "2019", "Visual Studio 2019")]
@@ -134,11 +140,11 @@ fn test_pe_compiler_variants(
     #[case] expected_version: &str,
     #[case] description: &str,
 ) {
-    let result = PeParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
 
     // Some variants might not parse if we don't have complete implementation
     if let Ok(parsed) = result {
-        let metadata = parsed.metadata();
+        let metadata = &parsed.metadata;
 
         if let Some(ref compiler_info) = metadata.compiler_info {
             assert!(
@@ -165,12 +171,13 @@ fn test_pe_compiler_variants(
 }
 
 /// Test PE debug directory compiler detection
+#[cfg(feature = "pe")]
 #[test]
 fn test_pe_debug_directory_compiler_detection() {
     let data = create_pe_with_pdb_debug_info();
-    let result = PeParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let metadata = result.metadata();
+    let metadata = &result.metadata;
     if let Some(ref compiler_info) = metadata.compiler_info {
         // PDB debug info usually indicates MSVC
         assert!(
@@ -181,13 +188,14 @@ fn test_pe_debug_directory_compiler_detection() {
 }
 
 /// Test PE import table analysis for compiler hints
+#[cfg(feature = "pe")]
 #[test]
 fn test_pe_import_table_compiler_hints() {
     let data = create_pe_with_msvc_runtime_imports();
-    let result = PeParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let imports = result.imports();
-    let metadata = result.metadata();
+    let imports = &result.imports;
+    let metadata = &result.metadata;
 
     // Look for MSVC runtime imports
     let msvc_runtime_imports: Vec<_> = imports
@@ -213,12 +221,13 @@ fn test_pe_import_table_compiler_hints() {
 }
 
 /// Test Mach-O LC_BUILD_VERSION compiler detection
+#[cfg(feature = "macho")]
 #[test]
 fn test_macho_build_version_detection() {
     let data = create_macho_with_build_version();
-    let result = MachOParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let metadata = result.metadata();
+    let metadata = &result.metadata;
     if let Some(ref compiler_info) = metadata.compiler_info {
         // Should contain platform and SDK information
         assert!(
@@ -232,6 +241,7 @@ fn test_macho_build_version_detection() {
 }
 
 /// Test Mach-O compiler detection from various sources
+#[cfg(feature = "macho")]
 #[rstest]
 #[case(create_macho_with_xcode_15(), "Xcode", "15", "Xcode 15")]
 #[case(create_macho_with_xcode_14(), "Xcode", "14", "Xcode 14")]
@@ -254,10 +264,10 @@ fn test_macho_compiler_variants(
     #[case] expected_version: &str,
     #[case] description: &str,
 ) {
-    let result = MachOParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
 
     if let Ok(parsed) = result {
-        let metadata = parsed.metadata();
+        let metadata = &parsed.metadata;
 
         if let Some(ref compiler_info) = metadata.compiler_info {
             assert!(
@@ -284,6 +294,7 @@ fn test_macho_compiler_variants(
 }
 
 /// Test Mach-O platform detection
+#[cfg(feature = "macho")]
 #[rstest]
 #[case(create_macho_for_macos(), "macOS", "Should detect macOS platform")]
 #[case(create_macho_for_ios(), "iOS", "Should detect iOS platform")]
@@ -299,10 +310,10 @@ fn test_macho_platform_detection(
     #[case] expected_platform: &str,
     #[case] description: &str,
 ) {
-    let result = MachOParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
 
     if let Ok(parsed) = result {
-        let metadata = parsed.metadata();
+        let metadata = &parsed.metadata;
 
         if let Some(ref compiler_info) = metadata.compiler_info {
             assert!(
@@ -317,6 +328,7 @@ fn test_macho_platform_detection(
 }
 
 /// Test Java version detection
+#[cfg(feature = "java")]
 #[rstest]
 #[case(52, 0, "Java 8", "Should detect Java 8")]
 #[case(55, 0, "Java 11", "Should detect Java 11")]
@@ -329,9 +341,9 @@ fn test_java_version_detection(
     #[case] description: &str,
 ) {
     let data = create_java_class_with_version(major, minor);
-    let result = JavaParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let metadata = result.metadata();
+    let metadata = &result.metadata;
     assert!(
         metadata.compiler_info.is_some(),
         "Should have compiler info for: {}",
@@ -349,14 +361,15 @@ fn test_java_version_detection(
 }
 
 /// Test Java compiler detection from class file attributes
+#[cfg(feature = "java")]
 #[test]
 fn test_java_compiler_attributes() {
     let data = create_java_class_with_source_file_attribute();
-    let result = JavaParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
     // SourceFile attribute can provide hints about the compiler/build system
-    let metadata = result.metadata();
-    assert_eq!(result.format_type(), BinaryFormat::Java);
+    let metadata = &result.metadata;
+    assert_eq!(result.format, BinaryFormat::Java);
 }
 
 /// Test cross-platform compiler detection
@@ -375,20 +388,17 @@ fn test_cross_compiler_detection() {
 
         let format_type = format.unwrap();
         let result = match format_type {
-            BinaryFormat::Elf => ElfParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>),
-            BinaryFormat::Pe => PeParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>),
-            BinaryFormat::MachO => {
-                MachOParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>)
-            }
+            BinaryFormat::Elf => BinaryAnalyzer::new().analyze(&data),
+            BinaryFormat::Pe => BinaryAnalyzer::new().analyze(&data),
+            BinaryFormat::MachO => BinaryAnalyzer::new().analyze(&data),
             _ => continue,
         };
 
         if let Ok(parsed) = result {
-            let metadata = parsed.metadata();
+            let metadata = &parsed.metadata;
             // Cross-compilation should be detectable or at least not cause errors
             assert_eq!(
-                parsed.format_type(),
-                format_type,
+                parsed.format, format_type,
                 "Format should match for: {}",
                 description
             );
@@ -414,16 +424,14 @@ fn test_compiler_confidence_scoring() {
     for (data, description) in test_cases {
         let format = threatflux_binary_analysis::formats::detect_format(&data).unwrap();
         let result = match format {
-            BinaryFormat::Elf => ElfParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>),
-            BinaryFormat::Pe => PeParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>),
-            BinaryFormat::MachO => {
-                MachOParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>)
-            }
+            BinaryFormat::Elf => BinaryAnalyzer::new().analyze(&data),
+            BinaryFormat::Pe => BinaryAnalyzer::new().analyze(&data),
+            BinaryFormat::MachO => BinaryAnalyzer::new().analyze(&data),
             _ => continue,
         };
 
         if let Ok(parsed) = result {
-            let metadata = parsed.metadata();
+            let metadata = &parsed.metadata;
             // Confidence should be reflected in how definitive the compiler_info is
             if let Some(ref compiler_info) = metadata.compiler_info {
                 // High confidence: specific version numbers
@@ -454,24 +462,19 @@ fn test_compiler_detection_edge_cases() {
 
         if let Ok(format_type) = format {
             let result = match format_type {
-                BinaryFormat::Elf => {
-                    ElfParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>)
-                }
-                BinaryFormat::Pe => PeParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>),
-                BinaryFormat::MachO => {
-                    MachOParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>)
-                }
+                BinaryFormat::Elf => BinaryAnalyzer::new().analyze(&data),
+                BinaryFormat::Pe => BinaryAnalyzer::new().analyze(&data),
+                BinaryFormat::MachO => BinaryAnalyzer::new().analyze(&data),
                 _ => continue,
             };
 
             match result {
                 Ok(parsed) => {
                     // Should handle gracefully even if no compiler info available
-                    let metadata = parsed.metadata();
+                    let metadata = &parsed.metadata;
                     // compiler_info can be None for edge cases
                     assert_eq!(
-                        parsed.format_type(),
-                        format_type,
+                        parsed.format, format_type,
                         "Should maintain format correctness for: {}",
                         description
                     );
@@ -490,7 +493,7 @@ fn test_compiler_detection_performance() {
     let large_elf = create_large_elf_with_debug_info(50 * 1024 * 1024); // 50MB
 
     let start = std::time::Instant::now();
-    let result = ElfParser::parse(&large_elf);
+    let result = BinaryAnalyzer::new().analyze(&large_elf);
     let duration = start.elapsed();
 
     assert!(result.is_ok(), "Should parse large binary with debug info");
@@ -500,7 +503,7 @@ fn test_compiler_detection_performance() {
     );
 
     if let Ok(parsed) = result {
-        let metadata = parsed.metadata();
+        let metadata = &parsed.metadata;
         // Even large binaries should have compiler detection
         if metadata.compiler_info.is_some() {
             // Good, compiler was detected
@@ -510,6 +513,7 @@ fn test_compiler_detection_performance() {
 
 // Helper functions to create test binaries with specific compiler signatures
 
+#[allow(dead_code)]
 fn create_elf_with_comment(comment: &[u8]) -> Vec<u8> {
     // Create a simple ELF with a proper .comment section
     let mut data = vec![0u8; 8192];
@@ -743,6 +747,7 @@ fn create_elf_with_comment(comment: &[u8]) -> Vec<u8> {
     data
 }
 
+#[allow(dead_code)]
 fn create_elf_with_custom_section(section_name: &str, content: &[u8]) -> Vec<u8> {
     // Create a simple ELF with a custom section
     let mut data = vec![0u8; 8192];
@@ -1033,429 +1038,42 @@ fn create_elf_with_custom_section(section_name: &str, content: &[u8]) -> Vec<u8>
     data
 }
 
+#[allow(dead_code)]
 fn create_elf_with_gcc_comment() -> Vec<u8> {
     create_elf_with_comment(b"GCC: (GNU) 11.2.0\0")
 }
 
+#[allow(dead_code)]
 fn create_elf_with_clang_comment() -> Vec<u8> {
     create_elf_with_comment(b"clang version 14.0.0\0")
 }
 
+#[allow(dead_code)]
 fn create_elf_with_gcc_version() -> Vec<u8> {
     create_elf_with_comment(b"GCC: (Ubuntu 9.4.0-1ubuntu1~20.04.2) 9.4.0\0")
 }
 
+#[allow(dead_code)]
 fn create_elf_with_rust_metadata() -> Vec<u8> {
     create_elf_with_custom_section(".rustc", b"rustc metadata\0")
 }
 
+#[allow(dead_code)]
 fn create_elf_with_go_buildinfo() -> Vec<u8> {
     create_elf_with_custom_section(".go.buildinfo", b"go1.19.3\0")
 }
 
+#[allow(dead_code)]
 fn create_elf_with_mixed_sections() -> Vec<u8> {
     create_elf_with_comment(b"Mixed compiler info: GCC and Clang\0")
 }
 
+#[allow(dead_code)]
 fn create_elf_with_build_id_note() -> Vec<u8> {
     let mut data = create_realistic_elf_64();
 
     // Add .note.gnu.build-id section
     data.resize(6144, 0);
 
-    data
-}
-
-fn create_pe_with_rich_header() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // Insert Rich header between DOS header and PE header
-    // Rich header contains compiler/linker version info
-    data.resize(4096, 0);
-
-    data
-}
-
-fn create_pe_with_msvc_2022() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // Add MSVC 2022 specific signatures
-    // Rich header with MSVC 19.3x toolchain IDs
-    data.resize(8192, 0);
-
-    data
-}
-
-fn create_pe_with_msvc_2019() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // MSVC 2019 (19.2x)
-    data.resize(8192, 0);
-
-    data
-}
-
-fn create_pe_with_msvc_2017() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // MSVC 2017 (19.1x)
-    data.resize(8192, 0);
-
-    data
-}
-
-fn create_pe_with_msvc_2015() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // MSVC 2015 (19.0x)
-    data.resize(8192, 0);
-
-    data
-}
-
-fn create_pe_with_msvc_2013() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // MSVC 2013 (18.x)
-    data.resize(8192, 0);
-
-    data
-}
-
-fn create_pe_with_mingw() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // MinGW/GCC characteristics: different section layout, runtime imports
-    data.resize(12288, 0);
-
-    data
-}
-
-fn create_pe_with_clang() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // Clang-specific PE characteristics
-    data.resize(10240, 0);
-
-    data
-}
-
-fn create_pe_with_intel_compiler() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // Intel C++ Compiler signatures
-    data.resize(9216, 0);
-
-    data
-}
-
-fn create_pe_with_pdb_debug_info() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // Add debug directory with PDB reference
-    data.resize(16384, 0);
-
-    data
-}
-
-fn create_pe_with_msvc_runtime_imports() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // Add import table with MSVC runtime DLLs
-    data.resize(32768, 0);
-
-    data
-}
-
-fn create_macho_with_build_version() -> Vec<u8> {
-    // Create a proper Mach-O with LC_BUILD_VERSION command
-    let mut data = vec![0; 8192];
-
-    // Mach-O Header (32 bytes for 64-bit) - using consistent little endian
-    let header = [
-        0xcf, 0xfa, 0xed, 0xfe, // magic (MH_CIGAM_64 = little endian magic)
-        0x07, 0x00, 0x00, 0x01, // cputype (CPU_TYPE_X86_64) - little endian
-        0x03, 0x00, 0x00, 0x00, // cpusubtype (CPU_SUBTYPE_X86_64_ALL) - little endian
-        0x02, 0x00, 0x00, 0x00, // filetype (MH_EXECUTE) - little endian
-        0x03, 0x00, 0x00, 0x00, // ncmds (3) - little endian
-        0x88, 0x00, 0x00, 0x00, // sizeofcmds (136) - little endian: 72 + 24 + 40 = 136
-        0x00, 0x20, 0x00, 0x00, // flags (MH_NOUNDEFS | MH_DYLDLINK) - little endian
-        0x00, 0x00, 0x00, 0x00, // reserved
-    ];
-
-    data[..32].copy_from_slice(&header);
-
-    // LC_SEGMENT_64 for __TEXT (72 bytes)
-    let text_segment = [
-        0x19, 0x00, 0x00, 0x00, // cmd (LC_SEGMENT_64) - little endian
-        0x48, 0x00, 0x00, 0x00, // cmdsize (72) - little endian
-        // segname "__TEXT" (16 bytes)
-        0x5f, 0x5f, 0x54, 0x45, 0x58, 0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, // vmaddr (0x100000000) - little endian
-        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-        // vmsize (0x1000) - little endian
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // fileoff (0) - little endian
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        // filesize (0x1000) - little endian
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        // maxprot (VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE) - little endian
-        0x00, 0x00, 0x00, 0x07,
-        // initprot (VM_PROT_READ | VM_PROT_EXECUTE) - little endian
-        0x00, 0x00, 0x00, 0x05, // nsects (0) - little endian
-        0x00, 0x00, 0x00, 0x00, // flags (0) - little endian
-        0x00, 0x00, 0x00, 0x00,
-    ];
-
-    data[32..104].copy_from_slice(&text_segment);
-
-    // LC_MAIN command (24 bytes)
-    let main_cmd = [
-        0x28, 0x00, 0x00, 0x80, // cmd (LC_MAIN = 0x80000028) - little endian
-        0x18, 0x00, 0x00, 0x00, // cmdsize (24) - little endian
-        // entryoff (0x1000) - little endian
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // stacksize (0) - little endian
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
-
-    data[104..128].copy_from_slice(&main_cmd);
-
-    // LC_BUILD_VERSION command (40 bytes)
-    let build_version_cmd = [
-        0x32, 0x00, 0x00, 0x00, // cmd (LC_BUILD_VERSION = 0x32) - little endian
-        0x28, 0x00, 0x00, 0x00, // cmdsize (40) - little endian
-        0x01, 0x00, 0x00, 0x00, // platform (PLATFORM_MACOS = 1) - little endian
-        0x00, 0x0E, 0x00, 0x00, // minos (macOS 14.0) - little endian
-        0x02, 0x0E, 0x00, 0x00, // sdk (macOS 14.2) - little endian
-        0x01, 0x00, 0x00, 0x00, // ntools (1) - little endian
-        // Build tool entry (8 bytes)
-        0x03, 0x00, 0x00, 0x00, // tool (TOOL_CLANG = 3) - little endian
-        0x00, 0x0F, 0x00, 0x00, // version (Clang 15.0) - little endian
-        // Padding to make it 40 bytes total
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
-
-    data[128..168].copy_from_slice(&build_version_cmd);
-
-    data
-}
-
-fn create_macho_with_xcode_15() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // Xcode 15.x specific build version
-    data.resize(6144, 0);
-
-    data
-}
-
-fn create_macho_with_xcode_14() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // Xcode 14.x specific build version
-    data.resize(6144, 0);
-
-    data
-}
-
-fn create_macho_with_command_line_tools() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // Command Line Tools instead of full Xcode
-    data.resize(5120, 0);
-
-    data
-}
-
-fn create_macho_with_swift_metadata() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // Swift-specific sections and metadata
-    data.resize(24576, 0);
-
-    data
-}
-
-fn create_macho_with_objective_c() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // Objective-C runtime sections
-    data.resize(18432, 0);
-
-    data
-}
-
-fn create_macho_for_macos() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // macOS platform (1)
-    data.resize(7168, 0);
-
-    data
-}
-
-fn create_macho_for_ios() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // iOS platform (2)
-    data.resize(7168, 0);
-
-    data
-}
-
-fn create_macho_for_watchos() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // watchOS platform (4)
-    data.resize(7168, 0);
-
-    data
-}
-
-fn create_macho_for_tvos() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // tvOS platform (3)
-    data.resize(7168, 0);
-
-    data
-}
-
-fn create_macho_for_catalyst() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // Mac Catalyst platform (6)
-    data.resize(7168, 0);
-
-    data
-}
-
-fn create_java_class_with_version(major: u16, minor: u16) -> Vec<u8> {
-    let mut data = create_realistic_java_class();
-
-    // Update version bytes
-    data[4] = (minor >> 8) as u8;
-    data[5] = (minor & 0xff) as u8;
-    data[6] = (major >> 8) as u8;
-    data[7] = (major & 0xff) as u8;
-
-    data
-}
-
-fn create_java_class_with_source_file_attribute() -> Vec<u8> {
-    let mut data = create_realistic_java_class();
-
-    // Add SourceFile attribute with filename
-    data.resize(1024, 0);
-
-    data
-}
-
-fn create_elf_arm_cross_compiled() -> Vec<u8> {
-    let mut data = create_realistic_elf_64();
-
-    // Change machine type to ARM
-    data[18] = 0x28; // EM_ARM
-    data[19] = 0x00;
-
-    data
-}
-
-fn create_pe_cross_compiled_mingw() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // MinGW cross-compilation signatures
-    data.resize(16384, 0);
-
-    data
-}
-
-fn create_macho_universal_binary() -> Vec<u8> {
-    // Create fat binary with multiple architectures
-    let mut data = vec![
-        0xca, 0xfe, 0xba, 0xbe, // FAT_MAGIC
-        0x00, 0x00, 0x00, 0x02, // nfat_arch
-    ];
-
-    data.resize(8192, 0);
-    data
-}
-
-fn create_elf_with_strong_gcc_indicators() -> Vec<u8> {
-    let mut data = create_realistic_elf_64();
-
-    // Multiple strong GCC indicators: .comment, symbol names, etc.
-    data.resize(32768, 0);
-
-    data
-}
-
-fn create_pe_with_weak_msvc_hints() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // Weak indicators: timestamp, some imports, but no Rich header
-    data.resize(16384, 0);
-
-    data
-}
-
-fn create_macho_with_mixed_toolchain_signs() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // Mixed indicators from different toolchain versions
-    data.resize(20480, 0);
-
-    data
-}
-
-fn create_completely_stripped_elf() -> Vec<u8> {
-    let mut data = create_realistic_elf_64();
-
-    // Remove all non-essential sections
-    data.resize(2048, 0);
-
-    data
-}
-
-fn create_packed_pe_upx() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // UPX packed PE characteristics
-    data.resize(4096, 0);
-
-    data
-}
-
-fn create_obfuscated_macho() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
-
-    // Obfuscated load commands and sections
-    data.resize(12288, 0);
-
-    data
-}
-
-fn create_elf_with_corrupted_debug() -> Vec<u8> {
-    let mut data = create_realistic_elf_64();
-
-    // Corrupted debug sections
-    data.resize(40960, 0);
-
-    data
-}
-
-fn create_pe_with_missing_sections() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-
-    // PE with minimal sections
-    data.resize(2048, 0);
-
-    data
-}
-
-fn create_large_elf_with_debug_info(size: usize) -> Vec<u8> {
-    let mut data = create_realistic_elf_64();
-    data.resize(size, 0);
-
-    // Add large debug sections throughout
     data
 }

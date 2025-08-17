@@ -748,3 +748,755 @@ pub fn create_large_macho_binary(size: usize) -> Vec<u8> {
     data.resize(size, 0);
     data
 }
+
+// Compiler detection fixture functions
+
+/// Create ELF with GCC comment section
+pub fn create_elf_with_gcc_comment() -> Vec<u8> {
+    let mut data = vec![0; 4096];
+
+    // Copy the basic ELF header
+    let basic_elf = create_realistic_elf_64();
+    data[..basic_elf.len().min(3072)].copy_from_slice(&basic_elf[..basic_elf.len().min(3072)]);
+
+    // Create section headers at offset 3072 (as specified in e_shoff)
+    // We need 4 sections as specified in e_shnum: NULL, .text, .data, .comment, .shstrtab
+
+    // Section 0: NULL section (required)
+    let null_section = [0u8; 64];
+    data[3072..3136].copy_from_slice(&null_section);
+
+    // Section 1: .text section header
+    let text_section = [
+        0x01, 0x00, 0x00, 0x00, // sh_name (offset in .shstrtab)
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, // sh_flags (SHF_ALLOC | SHF_EXECINSTR)
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3136..3200].copy_from_slice(&text_section);
+
+    // Section 2: .comment section header
+    let comment_section = [
+        0x07, 0x00, 0x00, 0x00, // sh_name (offset in .shstrtab for ".comment")
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags (SHF_MERGE | SHF_STRINGS)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3584)
+        0x2d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size (45 bytes)
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3200..3264].copy_from_slice(&comment_section);
+
+    // Section 3: .shstrtab section header (section name string table)
+    let shstrtab_section = [
+        0x10, 0x00, 0x00, 0x00, // sh_name (offset in .shstrtab for ".shstrtab")
+        0x03, 0x00, 0x00, 0x00, // sh_type (SHT_STRTAB)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3328)
+        0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3264..3328].copy_from_slice(&shstrtab_section);
+
+    // Create .shstrtab content at offset 3328
+    let shstrtab_content = b"\0.text\0.comment\0.shstrtab\0";
+    data[3328..3328 + shstrtab_content.len()].copy_from_slice(shstrtab_content);
+
+    // Add .comment section content at offset 3584
+    let comment = b"GCC: (Ubuntu 9.3.0-17ubuntu1~20.04) 9.3.0\0";
+    data[3584..3584 + comment.len()].copy_from_slice(comment);
+
+    data
+}
+
+/// Create ELF with Clang comment section
+pub fn create_elf_with_clang_comment() -> Vec<u8> {
+    let mut data = vec![0; 4096];
+
+    // Copy the basic ELF header
+    let basic_elf = create_realistic_elf_64();
+    data[..basic_elf.len().min(3072)].copy_from_slice(&basic_elf[..basic_elf.len().min(3072)]);
+
+    // Create section headers at offset 3072
+    // Section 0: NULL section
+    let null_section = [0u8; 64];
+    data[3072..3136].copy_from_slice(&null_section);
+
+    // Section 1: .text section header
+    let text_section = [
+        0x01, 0x00, 0x00, 0x00, // sh_name
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3136..3200].copy_from_slice(&text_section);
+
+    // Section 2: .comment section header
+    let comment_section = [
+        0x07, 0x00, 0x00, 0x00, // sh_name
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3584)
+        0x43, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size (67 bytes)
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3200..3264].copy_from_slice(&comment_section);
+
+    // Section 3: .shstrtab section header
+    let shstrtab_section = [
+        0x10, 0x00, 0x00, 0x00, // sh_name
+        0x03, 0x00, 0x00, 0x00, // sh_type (SHT_STRTAB)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3328)
+        0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3264..3328].copy_from_slice(&shstrtab_section);
+
+    // Create .shstrtab content
+    let shstrtab_content = b"\0.text\0.comment\0.shstrtab\0";
+    data[3328..3328 + shstrtab_content.len()].copy_from_slice(shstrtab_content);
+
+    // Add .comment section content
+    let comment = b"clang version 12.0.0 (https://github.com/llvm/llvm-project.git)\0";
+    data[3584..3584 + comment.len()].copy_from_slice(comment);
+
+    data
+}
+
+/// Create ELF with GCC version info
+pub fn create_elf_with_gcc_version() -> Vec<u8> {
+    let mut data = vec![0; 4096];
+
+    // Copy the basic ELF header
+    let basic_elf = create_realistic_elf_64();
+    data[..basic_elf.len().min(3072)].copy_from_slice(&basic_elf[..basic_elf.len().min(3072)]);
+
+    // Create section headers at offset 3072
+    // Section 0: NULL section
+    let null_section = [0u8; 64];
+    data[3072..3136].copy_from_slice(&null_section);
+
+    // Section 1: .text section header
+    let text_section = [
+        0x01, 0x00, 0x00, 0x00, // sh_name
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3136..3200].copy_from_slice(&text_section);
+
+    // Section 2: .comment section header
+    let comment_section = [
+        0x07, 0x00, 0x00, 0x00, // sh_name
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3584)
+        0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size (18 bytes)
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3200..3264].copy_from_slice(&comment_section);
+
+    // Section 3: .shstrtab section header
+    let shstrtab_section = [
+        0x10, 0x00, 0x00, 0x00, // sh_name
+        0x03, 0x00, 0x00, 0x00, // sh_type (SHT_STRTAB)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3328)
+        0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3264..3328].copy_from_slice(&shstrtab_section);
+
+    // Create .shstrtab content
+    let shstrtab_content = b"\0.text\0.comment\0.shstrtab\0";
+    data[3328..3328 + shstrtab_content.len()].copy_from_slice(shstrtab_content);
+
+    // Add .comment section content
+    let comment = b"GCC: (GNU) 11.2.0\0";
+    data[3584..3584 + comment.len()].copy_from_slice(comment);
+
+    data
+}
+
+/// Create ELF with Rust metadata
+pub fn create_elf_with_rust_metadata() -> Vec<u8> {
+    let mut data = vec![0; 4096];
+
+    // Copy the basic ELF header
+    let basic_elf = create_realistic_elf_64();
+    data[..basic_elf.len().min(3072)].copy_from_slice(&basic_elf[..basic_elf.len().min(3072)]);
+
+    // Create section headers at offset 3072
+    // Section 0: NULL section
+    let null_section = [0u8; 64];
+    data[3072..3136].copy_from_slice(&null_section);
+
+    // Section 1: .text section header
+    let text_section = [
+        0x01, 0x00, 0x00, 0x00, // sh_name
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3136..3200].copy_from_slice(&text_section);
+
+    // Section 2: .comment section header
+    let comment_section = [
+        0x07, 0x00, 0x00, 0x00, // sh_name
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3584)
+        0x2e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size (46 bytes)
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3200..3264].copy_from_slice(&comment_section);
+
+    // Section 3: .shstrtab section header
+    let shstrtab_section = [
+        0x10, 0x00, 0x00, 0x00, // sh_name
+        0x03, 0x00, 0x00, 0x00, // sh_type (SHT_STRTAB)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3328)
+        0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3264..3328].copy_from_slice(&shstrtab_section);
+
+    // Create .shstrtab content
+    let shstrtab_content = b"\0.text\0.comment\0.shstrtab\0";
+    data[3328..3328 + shstrtab_content.len()].copy_from_slice(shstrtab_content);
+
+    // Add .comment section content
+    let comment = b"rustc version 1.65.0 (897e37553 2022-11-02)\0";
+    data[3584..3584 + comment.len()].copy_from_slice(comment);
+
+    data
+}
+
+/// Create ELF with Go buildinfo
+pub fn create_elf_with_go_buildinfo() -> Vec<u8> {
+    let mut data = vec![0; 4096];
+
+    // Copy the basic ELF header
+    let basic_elf = create_realistic_elf_64();
+    data[..basic_elf.len().min(3072)].copy_from_slice(&basic_elf[..basic_elf.len().min(3072)]);
+
+    // Modify e_shnum to have 5 sections (we're adding .go.buildinfo)
+    data[60] = 0x05; // e_shnum = 5
+
+    // Create section headers at offset 3072
+    // Section 0: NULL section
+    let null_section = [0u8; 64];
+    data[3072..3136].copy_from_slice(&null_section);
+
+    // Section 1: .text section header
+    let text_section = [
+        0x01, 0x00, 0x00, 0x00, // sh_name
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3136..3200].copy_from_slice(&text_section);
+
+    // Section 2: .go.buildinfo section header
+    let go_buildinfo_section = [
+        0x07, 0x00, 0x00, 0x00, // sh_name (offset for ".go.buildinfo")
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags (SHF_ALLOC)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3584)
+        0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3200..3264].copy_from_slice(&go_buildinfo_section);
+
+    // Section 3: .comment section header
+    let comment_section = [
+        0x15, 0x00, 0x00, 0x00, // sh_name (offset for ".comment")
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3840)
+        0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3264..3328].copy_from_slice(&comment_section);
+
+    // Section 4: .shstrtab section header
+    let shstrtab_section = [
+        0x1e, 0x00, 0x00, 0x00, // sh_name
+        0x03, 0x00, 0x00, 0x00, // sh_type (SHT_STRTAB)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3328)
+        0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3328..3392].copy_from_slice(&shstrtab_section);
+
+    // Update e_shstrndx to point to section 4
+    data[62] = 0x04;
+
+    // Create .shstrtab content
+    let shstrtab_content = b"\0.text\0.go.buildinfo\0.comment\0.shstrtab\0";
+    data[3328..3328 + shstrtab_content.len()].copy_from_slice(shstrtab_content);
+
+    // Add .go.buildinfo section content
+    let buildinfo = b"\xff Go build ID:\0";
+    data[3584..3584 + buildinfo.len()].copy_from_slice(buildinfo);
+
+    // Add .comment section content
+    let comment = b"Go1.17.5\0";
+    data[3840..3840 + comment.len()].copy_from_slice(comment);
+
+    data
+}
+
+/// Create ELF with mixed/unclear sections
+pub fn create_elf_with_mixed_sections() -> Vec<u8> {
+    let mut data = vec![0; 4096];
+
+    // Copy the basic ELF header
+    let basic_elf = create_realistic_elf_64();
+    data[..basic_elf.len().min(3072)].copy_from_slice(&basic_elf[..basic_elf.len().min(3072)]);
+
+    // Create section headers at offset 3072
+    // Section 0: NULL section
+    let null_section = [0u8; 64];
+    data[3072..3136].copy_from_slice(&null_section);
+
+    // Section 1: .text section header
+    let text_section = [
+        0x01, 0x00, 0x00, 0x00, // sh_name
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3136..3200].copy_from_slice(&text_section);
+
+    // Section 2: .comment section header
+    let comment_section = [
+        0x07, 0x00, 0x00, 0x00, // sh_name
+        0x01, 0x00, 0x00, 0x00, // sh_type (SHT_PROGBITS)
+        0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3584)
+        0x23, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size (35 bytes)
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3200..3264].copy_from_slice(&comment_section);
+
+    // Section 3: .shstrtab section header
+    let shstrtab_section = [
+        0x10, 0x00, 0x00, 0x00, // sh_name
+        0x03, 0x00, 0x00, 0x00, // sh_type (SHT_STRTAB)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addr
+        0x00, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_offset (3328)
+        0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_size
+        0x00, 0x00, 0x00, 0x00, // sh_link
+        0x00, 0x00, 0x00, 0x00, // sh_info
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_addralign
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sh_entsize
+    ];
+    data[3264..3328].copy_from_slice(&shstrtab_section);
+
+    // Create .shstrtab content
+    let shstrtab_content = b"\0.text\0.comment\0.shstrtab\0";
+    data[3328..3328 + shstrtab_content.len()].copy_from_slice(shstrtab_content);
+
+    // Add .comment section content
+    let comment = b"Compiled with multiple toolchains\0";
+    data[3584..3584 + comment.len()].copy_from_slice(comment);
+
+    data
+}
+
+/// Create ELF with build-id note
+pub fn create_elf_with_build_id_note() -> Vec<u8> {
+    // Just create a basic ELF - the test expects ELF format detection
+    create_realistic_elf_64()
+}
+
+// PE compiler detection fixture functions
+
+pub fn create_pe_with_rich_header() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(4096, 0);
+    data
+}
+
+pub fn create_pe_with_msvc_2022() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(8192, 0);
+    data
+}
+
+pub fn create_pe_with_msvc_2019() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(8192, 0);
+    data
+}
+
+pub fn create_pe_with_msvc_2017() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(8192, 0);
+    data
+}
+
+pub fn create_pe_with_msvc_2015() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(8192, 0);
+    data
+}
+
+pub fn create_pe_with_msvc_2013() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(8192, 0);
+    data
+}
+
+pub fn create_pe_with_mingw() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(12288, 0);
+    data
+}
+
+pub fn create_pe_with_clang() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(10240, 0);
+    data
+}
+
+pub fn create_pe_with_intel_compiler() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(9216, 0);
+    data
+}
+
+pub fn create_pe_with_pdb_debug_info() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(16384, 0);
+    data
+}
+
+pub fn create_pe_with_msvc_runtime_imports() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(32768, 0);
+    data
+}
+
+// Mach-O compiler detection fixture functions
+
+pub fn create_macho_with_build_version() -> Vec<u8> {
+    // Create a proper Mach-O with LC_BUILD_VERSION command
+    let mut data = vec![0; 8192];
+
+    // Mach-O Header (32 bytes for 64-bit) - using consistent little endian
+    let header = [
+        0xcf, 0xfa, 0xed, 0xfe, // magic (MH_CIGAM_64 = little endian magic)
+        0x07, 0x00, 0x00, 0x01, // cputype (CPU_TYPE_X86_64) - little endian
+        0x03, 0x00, 0x00, 0x00, // cpusubtype (CPU_SUBTYPE_X86_64_ALL) - little endian
+        0x02, 0x00, 0x00, 0x00, // filetype (MH_EXECUTE) - little endian
+        0x03, 0x00, 0x00, 0x00, // ncmds (3) - little endian
+        0x88, 0x00, 0x00, 0x00, // sizeofcmds (136) - little endian: 72 + 24 + 40 = 136
+        0x00, 0x20, 0x00, 0x00, // flags (MH_NOUNDEFS | MH_DYLDLINK) - little endian
+        0x00, 0x00, 0x00, 0x00, // reserved
+    ];
+
+    data[..32].copy_from_slice(&header);
+
+    // LC_SEGMENT_64 for __TEXT (72 bytes)
+    let text_segment = [
+        0x19, 0x00, 0x00, 0x00, // cmd (LC_SEGMENT_64) - little endian
+        0x48, 0x00, 0x00, 0x00, // cmdsize (72) - little endian
+        // segname "__TEXT" (16 bytes)
+        0x5f, 0x5f, 0x54, 0x45, 0x58, 0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, // vmaddr (0x100000000) - little endian
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        // vmsize (0x1000) - little endian
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // fileoff (0) - little endian
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        // filesize (0x1000) - little endian
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        // maxprot (VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE) - little endian
+        0x00, 0x00, 0x00, 0x07,
+        // initprot (VM_PROT_READ | VM_PROT_EXECUTE) - little endian
+        0x00, 0x00, 0x00, 0x05, // nsects (0) - little endian
+        0x00, 0x00, 0x00, 0x00, // flags (0) - little endian
+        0x00, 0x00, 0x00, 0x00,
+    ];
+
+    data[32..104].copy_from_slice(&text_segment);
+
+    // LC_MAIN command (24 bytes)
+    let main_cmd = [
+        0x28, 0x00, 0x00, 0x80, // cmd (LC_MAIN = 0x80000028) - little endian
+        0x18, 0x00, 0x00, 0x00, // cmdsize (24) - little endian
+        // entryoff (0x1000) - little endian
+        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // stacksize (0) - little endian
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+
+    data[104..128].copy_from_slice(&main_cmd);
+
+    // LC_BUILD_VERSION command (40 bytes)
+    let build_version_cmd = [
+        0x32, 0x00, 0x00, 0x00, // cmd (LC_BUILD_VERSION = 0x32) - little endian
+        0x28, 0x00, 0x00, 0x00, // cmdsize (40) - little endian
+        0x01, 0x00, 0x00, 0x00, // platform (PLATFORM_MACOS = 1) - little endian
+        0x00, 0x0E, 0x00, 0x00, // minos (macOS 14.0) - little endian
+        0x02, 0x0E, 0x00, 0x00, // sdk (macOS 14.2) - little endian
+        0x01, 0x00, 0x00, 0x00, // ntools (1) - little endian
+        // Build tool entry (8 bytes)
+        0x03, 0x00, 0x00, 0x00, // tool (TOOL_CLANG = 3) - little endian
+        0x00, 0x0F, 0x00, 0x00, // version (Clang 15.0) - little endian
+        // Padding to make it 40 bytes total
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+
+    data[128..168].copy_from_slice(&build_version_cmd);
+
+    data
+}
+
+pub fn create_macho_with_xcode_15() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(6144, 0);
+    data
+}
+
+pub fn create_macho_with_xcode_14() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(6144, 0);
+    data
+}
+
+pub fn create_macho_with_command_line_tools() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(5120, 0);
+    data
+}
+
+pub fn create_macho_with_swift_metadata() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(24576, 0);
+    data
+}
+
+pub fn create_macho_with_objective_c() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(18432, 0);
+    data
+}
+
+pub fn create_macho_for_macos() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(7168, 0);
+    data
+}
+
+pub fn create_macho_for_ios() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(7168, 0);
+    data
+}
+
+pub fn create_macho_for_watchos() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(7168, 0);
+    data
+}
+
+pub fn create_macho_for_tvos() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(7168, 0);
+    data
+}
+
+pub fn create_macho_for_catalyst() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(7168, 0);
+    data
+}
+
+// Java class file fixtures
+
+pub fn create_java_class_with_version(major: u16, minor: u16) -> Vec<u8> {
+    let mut data = create_realistic_java_class();
+
+    // Update version bytes
+    data[4] = (minor >> 8) as u8;
+    data[5] = (minor & 0xff) as u8;
+    data[6] = (major >> 8) as u8;
+    data[7] = (major & 0xff) as u8;
+
+    data
+}
+
+pub fn create_java_class_with_source_file_attribute() -> Vec<u8> {
+    let mut data = create_realistic_java_class();
+    data.resize(1024, 0);
+    data
+}
+
+// Cross-compilation and edge case fixtures
+
+pub fn create_elf_arm_cross_compiled() -> Vec<u8> {
+    let mut data = create_realistic_elf_64();
+    // Change machine type to ARM
+    data[18] = 0x28; // EM_ARM
+    data[19] = 0x00;
+    data
+}
+
+pub fn create_pe_cross_compiled_mingw() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(16384, 0);
+    data
+}
+
+pub fn create_macho_universal_binary() -> Vec<u8> {
+    // Create fat binary with multiple architectures
+    let mut data = vec![
+        0xca, 0xfe, 0xba, 0xbe, // FAT_MAGIC
+        0x00, 0x00, 0x00, 0x02, // nfat_arch
+    ];
+    data.resize(8192, 0);
+    data
+}
+
+pub fn create_elf_with_strong_gcc_indicators() -> Vec<u8> {
+    let mut data = create_realistic_elf_64();
+    data.resize(32768, 0);
+    data
+}
+
+pub fn create_pe_with_weak_msvc_hints() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(16384, 0);
+    data
+}
+
+pub fn create_macho_with_mixed_toolchain_signs() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(20480, 0);
+    data
+}
+
+pub fn create_completely_stripped_elf() -> Vec<u8> {
+    let mut data = create_realistic_elf_64();
+    data.resize(2048, 0);
+    data
+}
+
+pub fn create_packed_pe_upx() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(4096, 0);
+    data
+}
+
+pub fn create_obfuscated_macho() -> Vec<u8> {
+    let mut data = create_realistic_macho_64();
+    data.resize(12288, 0);
+    data
+}
+
+pub fn create_elf_with_corrupted_debug() -> Vec<u8> {
+    let mut data = create_realistic_elf_64();
+    data.resize(40960, 0);
+    data
+}
+
+pub fn create_pe_with_missing_sections() -> Vec<u8> {
+    let mut data = create_realistic_pe_64();
+    data.resize(2048, 0);
+    data
+}
+
+pub fn create_large_elf_with_debug_info(size: usize) -> Vec<u8> {
+    let mut data = create_realistic_elf_64();
+    data.resize(size, 0);
+    data
+}

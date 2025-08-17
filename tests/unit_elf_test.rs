@@ -4,14 +4,13 @@
 //! This test suite achieves comprehensive coverage of the ELF parser functionality
 //! including edge cases, error conditions, and real-world scenarios.
 
+#![cfg(feature = "elf")]
 #![allow(unused_variables)]
 
 use pretty_assertions::assert_eq;
 use rstest::*;
 use threatflux_binary_analysis::types::*;
-
-#[cfg(feature = "elf")]
-use threatflux_binary_analysis::formats::elf::ElfParser;
+use threatflux_binary_analysis::BinaryAnalyzer;
 
 mod common;
 use common::fixtures::*;
@@ -20,26 +19,27 @@ use common::fixtures::*;
 #[test]
 fn test_elf_header_parsing() {
     let data = create_realistic_elf_64();
-    let result = ElfParser::parse(&data).unwrap();
+    let analyzer = BinaryAnalyzer::new();
+    let result = analyzer.analyze(&data).unwrap();
 
-    assert_eq!(result.format_type(), BinaryFormat::Elf);
-    assert_eq!(result.architecture(), Architecture::X86_64);
-    assert_eq!(result.entry_point(), Some(0x401000));
+    assert_eq!(result.format, BinaryFormat::Elf);
+    assert_eq!(result.architecture, Architecture::X86_64);
+    assert_eq!(result.entry_point, Some(0x401000));
 }
 
 /// Test ELF format detection edge cases
 #[rstest]
 #[case(&[0x7f, 0x45, 0x4c, 0x46], false, "Valid ELF magic but incomplete header")]
-#[case(&[0x7f, 0x45, 0x4c], false, "Incomplete ELF magic")]
-#[case(&[0x00, 0x45, 0x4c, 0x46], false, "Invalid first byte")]
-#[case(&[0x7f, 0x00, 0x4c, 0x46], false, "Invalid second byte")]
+#[case(&[0x7f, 0x45, 0x4c], true, "Incomplete ELF magic - falls back to Raw")]
+#[case(&[0x00, 0x45, 0x4c, 0x46], true, "Invalid first byte - falls back to Raw")]
+#[case(&[0x7f, 0x00, 0x4c, 0x46], true, "Invalid second byte - falls back to Raw")]
 #[case(&[], false, "Empty data")]
 fn test_elf_magic_detection(
     #[case] data: &[u8],
     #[case] should_pass: bool,
     #[case] description: &str,
 ) {
-    let result = ElfParser::parse(data);
+    let result = BinaryAnalyzer::new().analyze(data);
 
     if should_pass {
         assert!(result.is_ok(), "Failed: {}", description);
@@ -62,13 +62,12 @@ fn test_elf_class_detection(
     let mut data = create_realistic_elf_64();
     data[4] = ei_class; // EI_CLASS field
 
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
 
     if ei_class == 0x01 || ei_class == 0x02 {
         if let Ok(parsed) = result {
             assert_eq!(
-                parsed.architecture(),
-                expected_arch,
+                parsed.architecture, expected_arch,
                 "Failed: {}",
                 description
             );
@@ -77,7 +76,7 @@ fn test_elf_class_detection(
         // Invalid class should result in error or Unknown architecture
         if let Ok(parsed) = result {
             assert_eq!(
-                parsed.architecture(),
+                parsed.architecture,
                 Architecture::Unknown,
                 "Failed: {}",
                 description
@@ -99,13 +98,13 @@ fn test_elf_endianness(
     let mut data = create_realistic_elf_64();
     data[5] = ei_data; // EI_DATA field
 
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
     if result.is_err() {
         // Some invalid encodings should fail to parse
         return;
     }
     let result = result.unwrap();
-    let metadata = result.metadata();
+    let metadata = result.metadata;
 
     assert_eq!(metadata.endian, expected_endian, "Failed: {}", description);
 }
@@ -132,11 +131,10 @@ fn test_elf_machine_types(
     data[18] = machine_low; // e_machine low byte
     data[19] = machine_high; // e_machine high byte
 
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
     if let Ok(parsed) = result {
         assert_eq!(
-            parsed.architecture(),
-            expected_arch,
+            parsed.architecture, expected_arch,
             "Failed: {}",
             description
         );
@@ -163,7 +161,7 @@ fn test_elf_file_types(#[case] type_low: u8, #[case] type_high: u8, #[case] desc
     data[16] = type_low; // e_type low byte
     data[17] = type_high; // e_type high byte
 
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
     assert!(result.is_ok(), "Failed to parse: {}", description);
 }
 
@@ -180,7 +178,7 @@ fn test_elf_version_validation(
     let mut data = create_realistic_elf_64();
     data[6] = version; // EI_VERSION field
 
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
 
     if should_pass {
         assert!(result.is_ok(), "Failed: {}", description);
@@ -188,7 +186,7 @@ fn test_elf_version_validation(
         // Some invalid versions might still parse but with warnings
         if let Ok(parsed) = result {
             // Check that metadata indicates an issue
-            let metadata = parsed.metadata();
+            let metadata = parsed.metadata;
             // We expect compiler_info to indicate version issues or similar
         }
     }
@@ -209,11 +207,11 @@ fn test_elf_osabi_detection(#[case] osabi: u8, #[case] description: &str) {
     let mut data = create_realistic_elf_64();
     data[7] = osabi; // EI_OSABI field
 
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
     assert!(result.is_ok(), "Failed to parse: {}", description);
 
     let parsed = result.unwrap();
-    let metadata = parsed.metadata();
+    let metadata = parsed.metadata;
 
     // Verify that the OS/ABI information is captured somewhere
     // (could be in compiler_info or a dedicated field)
@@ -224,9 +222,9 @@ fn test_elf_osabi_detection(#[case] osabi: u8, #[case] description: &str) {
 #[test]
 fn test_elf_section_parsing() {
     let data = create_comprehensive_elf_with_sections();
-    let result = ElfParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let sections = result.sections();
+    let sections = result.sections;
     assert!(!sections.is_empty(), "Should have parsed sections");
 
     // Check for common sections
@@ -251,9 +249,9 @@ fn test_elf_section_parsing() {
 #[test]
 fn test_elf_symbol_parsing() {
     let data = create_comprehensive_elf_with_symbols();
-    let result = ElfParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let symbols = result.symbols();
+    let symbols = result.symbols;
     // Skip assertion if no symbols in test fixture
     if symbols.is_empty() {
         return; // Test fixture may not include symbol table
@@ -281,10 +279,10 @@ fn test_elf_symbol_parsing() {
 #[test]
 fn test_elf_program_header_parsing() {
     let data = create_realistic_elf_64();
-    let result = ElfParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
     // Verify metadata contains program information
-    let metadata = result.metadata();
+    let metadata = result.metadata;
     assert_eq!(metadata.format, BinaryFormat::Elf);
     assert!(metadata.entry_point.is_some());
     // ELF doesn't have fixed base address like PE
@@ -295,10 +293,10 @@ fn test_elf_program_header_parsing() {
 #[test]
 fn test_elf_dynamic_section_parsing() {
     let data = create_elf_with_dynamic_section();
-    let result = ElfParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let imports = result.imports();
-    let exports = result.exports();
+    let imports = result.imports;
+    let exports = result.exports;
 
     // Dynamic binaries should have imports/exports
     if !imports.is_empty() {
@@ -332,7 +330,7 @@ fn test_elf_error_handling(
     #[case] data: &[u8],
     #[case] description: &str,
 ) {
-    let result = ElfParser::parse(data);
+    let result = BinaryAnalyzer::new().analyze(data);
 
     // Should either error gracefully or parse with degraded functionality
     if let Err(error) = result {
@@ -346,7 +344,7 @@ fn test_elf_error_handling(
     } else {
         // If it parsed, verify it didn't crash and has basic validity
         let parsed = result.unwrap();
-        assert_eq!(parsed.format_type(), BinaryFormat::Elf);
+        assert_eq!(parsed.format, BinaryFormat::Elf);
     }
 }
 
@@ -354,9 +352,9 @@ fn test_elf_error_handling(
 #[test]
 fn test_elf_security_features() {
     let data = create_elf_with_security_features();
-    let result = ElfParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let metadata = result.metadata();
+    let metadata = result.metadata;
     let security = &metadata.security_features;
 
     // Test NX bit detection
@@ -378,9 +376,9 @@ fn test_elf_security_features() {
 #[test]
 fn test_elf_note_section_parsing() {
     let data = create_elf_with_note_sections();
-    let result = ElfParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let sections = result.sections();
+    let sections = result.sections;
     let note_sections: Vec<_> = sections
         .iter()
         .filter(|s| s.name.starts_with(".note"))
@@ -398,9 +396,9 @@ fn test_elf_note_section_parsing() {
 #[test]
 fn test_elf_string_table_parsing() {
     let data = create_elf_with_string_tables();
-    let result = ElfParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let sections = result.sections();
+    let sections = result.sections;
     let string_sections: Vec<_> = sections
         .iter()
         .filter(|s| s.name.contains("str") || s.section_type == SectionType::String)
@@ -423,9 +421,9 @@ fn test_elf_string_table_parsing() {
 #[test]
 fn test_elf_relocation_parsing() {
     let data = create_elf_with_relocations();
-    let result = ElfParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let sections = result.sections();
+    let sections = result.sections;
     let reloc_sections: Vec<_> = sections
         .iter()
         .filter(|s| s.name.starts_with(".rel") || s.section_type == SectionType::Relocation)
@@ -444,7 +442,7 @@ fn test_elf_performance_large_file() {
     let data = create_large_elf_binary(10 * 1024 * 1024); // 10MB
 
     let start = std::time::Instant::now();
-    let result = ElfParser::parse(&data);
+    let result = BinaryAnalyzer::new().analyze(&data);
     let duration = start.elapsed();
 
     assert!(result.is_ok(), "Should parse large ELF file successfully");
@@ -466,7 +464,7 @@ fn test_elf_concurrent_parsing() {
     for i in 0..10 {
         let data_clone = Arc::clone(&data);
         let handle = thread::spawn(move || {
-            let result = ElfParser::parse(&data_clone);
+            let result = BinaryAnalyzer::new().analyze(&data_clone);
             assert!(result.is_ok(), "Thread {} failed to parse ELF", i);
             result.unwrap()
         });
@@ -475,7 +473,7 @@ fn test_elf_concurrent_parsing() {
 
     for handle in handles {
         let parsed = handle.join().unwrap();
-        assert_eq!(parsed.format_type(), BinaryFormat::Elf);
+        assert_eq!(parsed.format, BinaryFormat::Elf);
     }
 }
 

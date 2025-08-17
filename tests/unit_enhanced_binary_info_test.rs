@@ -7,12 +7,7 @@
 use pretty_assertions::assert_eq;
 use threatflux_binary_analysis::{types::*, AnalysisConfig, BinaryAnalyzer};
 
-#[cfg(feature = "elf")]
-use threatflux_binary_analysis::formats::elf::ElfParser;
-#[cfg(feature = "macho")]
-use threatflux_binary_analysis::formats::macho::MachOParser;
-#[cfg(feature = "pe")]
-use threatflux_binary_analysis::formats::pe::PeParser;
+// Parser imports removed - using BinaryAnalyzer API
 
 mod common;
 use common::fixtures::*;
@@ -308,17 +303,14 @@ fn test_enhanced_security_features() {
     {
         let format = threatflux_binary_analysis::formats::detect_format(&data).unwrap();
         let result = match format {
-            BinaryFormat::Elf => ElfParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>),
-            BinaryFormat::Pe => PeParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>),
-            BinaryFormat::MachO => {
-                MachOParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>)
-            }
+            BinaryFormat::Elf => BinaryAnalyzer::new().analyze(&data),
+            BinaryFormat::Pe => BinaryAnalyzer::new().analyze(&data),
+            BinaryFormat::MachO => BinaryAnalyzer::new().analyze(&data),
             _ => continue,
         };
 
         if let Ok(parsed) = result {
-            let metadata = parsed.metadata();
-            let security = &metadata.security_features;
+            let security = &parsed.metadata.security_features;
 
             // Security feature detection requires proper binary structure
             // For basic test data, we only verify that the fields exist and are accessible
@@ -428,6 +420,7 @@ fn test_enhanced_instruction_structure() {
 }
 
 /// Test analysis result structure completeness
+#[cfg(feature = "elf")]
 #[test]
 fn test_analysis_result_structure() {
     let analyzer = BinaryAnalyzer::new();
@@ -483,30 +476,31 @@ fn test_analysis_result_structure() {
 }
 
 /// Test backward compatibility with existing structures
+#[cfg(feature = "pe")]
 #[test]
 fn test_backward_compatibility() {
     // Test that existing code still works with enhanced structures
     let data = create_realistic_pe_64();
-    let result = PeParser::parse(&data).unwrap();
+    let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
     // Legacy API should still work
-    assert_eq!(result.format_type(), BinaryFormat::Pe);
-    assert_eq!(result.architecture(), Architecture::X86_64);
-    assert!(result.entry_point().is_some());
+    assert_eq!(result.format, BinaryFormat::Pe);
+    assert_eq!(result.architecture, Architecture::X86_64);
+    assert!(result.entry_point.is_some());
 
-    let sections = result.sections();
+    let sections = &result.sections;
     assert!(!sections.is_empty());
 
-    let _symbols = result.symbols();
+    let _symbols = &result.symbols;
     // Symbols might be empty for minimal PE
 
-    let _imports = result.imports();
+    let _imports = &result.imports;
     // Imports might be empty for minimal PE
 
-    let _exports = result.exports();
+    let _exports = &result.exports;
     // Exports might be empty for minimal PE
 
-    let metadata = result.metadata();
+    let metadata = &result.metadata;
     assert_eq!(metadata.format, BinaryFormat::Pe);
 }
 
@@ -521,7 +515,7 @@ fn test_enhanced_error_handling() {
     ];
 
     for (description, data) in error_cases {
-        let result = ElfParser::parse(&data);
+        let result = BinaryAnalyzer::new().analyze(&data);
 
         if let Err(error) = result {
             // Test error message quality
@@ -592,16 +586,14 @@ fn test_enhanced_metadata_fields() {
     for (description, data) in test_cases {
         let format = threatflux_binary_analysis::formats::detect_format(&data).unwrap();
         let result = match format {
-            BinaryFormat::Elf => ElfParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>),
-            BinaryFormat::Pe => PeParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>),
-            BinaryFormat::MachO => {
-                MachOParser::parse(&data).map(|p| p as Box<dyn BinaryFormatTrait>)
-            }
+            BinaryFormat::Elf => BinaryAnalyzer::new().analyze(&data),
+            BinaryFormat::Pe => BinaryAnalyzer::new().analyze(&data),
+            BinaryFormat::MachO => BinaryAnalyzer::new().analyze(&data),
             _ => continue,
         };
 
         if let Ok(parsed) = result {
-            let metadata = parsed.metadata();
+            let metadata = &parsed.metadata;
 
             // Test timestamp handling
             if let Some(timestamp) = metadata.timestamp {
@@ -639,6 +631,7 @@ fn test_enhanced_metadata_fields() {
 }
 
 /// Test thread safety of enhanced structures
+#[cfg(feature = "elf")]
 #[test]
 fn test_thread_safety() {
     use std::sync::Arc;
@@ -650,15 +643,15 @@ fn test_thread_safety() {
     for i in 0..8 {
         let data_clone = Arc::clone(&data);
         let handle = thread::spawn(move || {
-            let result = ElfParser::parse(&data_clone).unwrap();
-            let metadata = result.metadata();
+            let result = BinaryAnalyzer::new().analyze(&data_clone).unwrap();
+            let metadata = &result.metadata;
 
             // Test that metadata can be accessed safely from multiple threads
             assert_eq!(metadata.format, BinaryFormat::Elf);
             assert_eq!(metadata.architecture, Architecture::X86_64);
 
             // Test sections access
-            let sections = result.sections();
+            let sections = &result.sections;
             assert!(!sections.is_empty());
 
             i // Return thread ID for verification
