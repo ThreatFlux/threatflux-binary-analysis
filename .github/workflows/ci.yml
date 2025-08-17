@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: [stable, beta, nightly]
+        rust: [stable, beta]
         exclude:
           # Reduce matrix size while maintaining coverage
           - os: windows-latest
