@@ -699,7 +699,7 @@ pub struct CallGraphEdge {
 pub enum CallType {
     /// Direct call (call 0x401000)
     Direct,
-    /// Indirect call (call [eax], call rax)
+    /// Indirect call (call \[eax\], call rax)
     Indirect,
     /// Tail call optimization (jmp)
     TailCall,
