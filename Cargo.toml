@@ -4,7 +4,7 @@
 name = "threatflux-binary-analysis"
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.75.0"
+rust-version = "1.95.0"
 authors = ["wyatt roersma, Claude Code"]
 description = "Comprehensive binary analysis library with multi-format support, disassembly, and security analysis"
 license = "MIT"
