@@ -382,7 +382,7 @@ fn compile_hex_wildcard(pattern: &str) -> crate::types::HexPatternResult {
     let mut compiled = Vec::new();
     let clean_pattern = pattern.replace(" ", "").replace("\n", "");
 
-    if clean_pattern.len() % 2 != 0 {
+    if !clean_pattern.len().is_multiple_of(2) {
         return Err(BinaryError::invalid_data(
             "Hex pattern must have even length",
         ));
