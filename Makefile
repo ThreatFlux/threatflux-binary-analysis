@@ -125,10 +125,10 @@ setup-dev: dev-setup ## (Deprecated) Use `make dev-setup` instead
 
 docker-build: ## Build Docker image for consistent environment
 	@echo "$(CYAN)Building Docker image...$(NC)"
-	@echo 'FROM docker.io/threatflux/rust-cicd-template:base-rust-latest\n\
+	@echo 'FROM rust:1.95.0-bookworm\n\
 RUN apt-get update && apt-get install -y pkg-config libcapstone-dev musl-dev build-essential\n\
 RUN rustup component add rustfmt clippy\n\
-RUN cargo install cargo-chef cargo-audit cargo-deny cargo-llvm-cov\n\
+RUN cargo install --locked cargo-chef@0.1.77 cargo-audit@0.22.2 cargo-deny@0.20.2 cargo-llvm-cov@0.8.7 cargo-hack@0.6.45\n\
 WORKDIR /workspace\n\
 ENV CARGO_TERM_COLOR=always\n\
 ENV RUST_BACKTRACE=1\n\
