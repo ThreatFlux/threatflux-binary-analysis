@@ -478,10 +478,10 @@ impl CallGraphAnalyzer {
         // Add other known entry points
         for function in functions {
             match function.function_type {
-                crate::types::FunctionType::Entrypoint | crate::types::FunctionType::Main => {
-                    if !entry_points.contains(&function.start_address) {
-                        entry_points.push(function.start_address);
-                    }
+                crate::types::FunctionType::Entrypoint | crate::types::FunctionType::Main
+                    if !entry_points.contains(&function.start_address) =>
+                {
+                    entry_points.push(function.start_address);
                 }
                 _ => {}
             }

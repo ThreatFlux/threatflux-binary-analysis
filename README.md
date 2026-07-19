@@ -5,7 +5,7 @@ A comprehensive Rust library for binary analysis with multi-format support, disa
 [![Crates.io](https://img.shields.io/crates/v/threatflux-binary-analysis.svg)](https://crates.io/crates/threatflux-binary-analysis)
 [![Documentation](https://docs.rs/threatflux-binary-analysis/badge.svg)](https://docs.rs/threatflux-binary-analysis)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/rust-1.95.0%2B-orange.svg)](https://www.rust-lang.org)
 [![CI](https://github.com/ThreatFlux/threatflux-binary-analysis/actions/workflows/ci.yml/badge.svg)](https://github.com/ThreatFlux/threatflux-binary-analysis/actions/workflows/ci.yml)
 [![Release](https://github.com/ThreatFlux/threatflux-binary-analysis/actions/workflows/release.yml/badge.svg)](https://github.com/ThreatFlux/threatflux-binary-analysis/actions/workflows/release.yml)
 [![Security](https://github.com/ThreatFlux/threatflux-binary-analysis/actions/workflows/security.yml/badge.svg)](https://github.com/ThreatFlux/threatflux-binary-analysis/actions/workflows/security.yml)

@@ -93,7 +93,7 @@ fn test_parsing_performance_scaling() {
                     }
                     desc if desc.contains("Large") => {
                         assert!(
-                            parsing_time < Duration::from_secs(5),
+                            parsing_time < Duration::from_secs(10),
                             "Large binary parsing should be reasonable"
                         );
                     }

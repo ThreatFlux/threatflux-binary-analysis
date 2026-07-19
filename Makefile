@@ -125,10 +125,10 @@ setup-dev: dev-setup ## (Deprecated) Use `make dev-setup` instead
 
 docker-build: ## Build Docker image for consistent environment
 	@echo "$(CYAN)Building Docker image...$(NC)"
-	@echo 'FROM rust:1.89-alpine\n\
-RUN apk add --no-cache pkgconfig capstone-dev musl-dev\n\
+	@echo 'FROM docker.io/threatflux/rust-cicd-template:base-rust-latest\n\
+RUN apt-get update && apt-get install -y pkg-config libcapstone-dev musl-dev build-essential\n\
 RUN rustup component add rustfmt clippy\n\
-RUN cargo install cargo-audit cargo-deny cargo-llvm-cov\n\
+RUN cargo install cargo-chef cargo-audit cargo-deny cargo-llvm-cov\n\
 WORKDIR /workspace\n\
 ENV CARGO_TERM_COLOR=always\n\
 ENV RUST_BACKTRACE=1\n\

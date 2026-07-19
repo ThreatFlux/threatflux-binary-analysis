@@ -250,11 +250,9 @@ impl ControlFlowAnalyzer {
                         block_starts.insert(instructions[i + 1].address);
                     }
                 }
-                FlowType::Return | FlowType::Interrupt => {
+                FlowType::Return | FlowType::Interrupt if i + 1 < instructions.len() => {
                     // Instruction after return/interrupt is a block start (if exists)
-                    if i + 1 < instructions.len() {
-                        block_starts.insert(instructions[i + 1].address);
-                    }
+                    block_starts.insert(instructions[i + 1].address);
                 }
                 _ => {}
             }
@@ -500,11 +498,9 @@ impl ControlFlowAnalyzer {
                     FlowType::ConditionalJump(_) => {
                         cognitive_complexity += 1 + nesting_level;
                     }
-                    FlowType::Jump(_) => {
+                    FlowType::Jump(_) if self.is_in_loop_context(block, basic_blocks) => {
                         // Break/continue statements in loops add complexity
-                        if self.is_in_loop_context(block, basic_blocks) {
-                            cognitive_complexity += 1;
-                        }
+                        cognitive_complexity += 1;
                     }
                     _ => {}
                 }
@@ -811,17 +807,14 @@ impl ControlFlowAnalyzer {
             let block = &basic_blocks[block_id];
             for instruction in &block.instructions {
                 match instruction.mnemonic.as_str() {
-                    "inc" | "dec" | "add" | "sub" => {
+                    "inc" | "dec" | "add" | "sub" if !instruction.operands.is_empty() => {
                         // Extract operand as potential induction variable
-                        if !instruction.operands.is_empty() {
-                            let operand =
-                                instruction.operands.split(',').next().unwrap_or("").trim();
-                            if !operand.is_empty()
-                                && !operand.starts_with('#')
-                                && !operand.starts_with('$')
-                            {
-                                induction_vars.insert(operand.to_string());
-                            }
+                        let operand = instruction.operands.split(',').next().unwrap_or("").trim();
+                        if !operand.is_empty()
+                            && !operand.starts_with('#')
+                            && !operand.starts_with('$')
+                        {
+                            induction_vars.insert(operand.to_string());
                         }
                     }
                     _ => {}

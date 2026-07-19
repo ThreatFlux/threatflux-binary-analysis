@@ -42,7 +42,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). We are committ
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust 1.95.0 or later
 - Cargo (comes with Rust)
 - Git
 - Make (optional but recommended)
