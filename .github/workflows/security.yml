@@ -141,7 +141,7 @@ jobs:
     - name: Install cargo-deny
       uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
       with:
-        tool: cargo-deny
+        tool: cargo-deny@0.20.2
     
     - name: Check deny.toml exists
       id: check_deny

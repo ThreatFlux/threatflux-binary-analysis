@@ -578,8 +578,8 @@ fn test_system_binary_integration() {
                 if let Ok(parsed) = parse_result {
                     println!("  Format: {:?}", parsed.format);
                     println!("  Architecture: {:?}", parsed.architecture);
-                    println!("  Sections: {}", &parsed.sections.len());
-                    println!("  Symbols: {}", &parsed.symbols.len());
+                    println!("  Sections: {}", parsed.sections.len());
+                    println!("  Symbols: {}", parsed.symbols.len());
 
                     // System binaries should parse successfully
                     assert_eq!(parsed.format, format);
