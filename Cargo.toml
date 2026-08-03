@@ -62,7 +62,7 @@ goblin = { version = "0.10", default-features = false, features = ["alloc"], opt
 memmap2 = "0.9"
 
 # Disassembly engines (optional)
-capstone = { version = "0.13", default-features = false, features = ["full", "std"], optional = true }
+capstone = { version = "0.14", default-features = false, features = ["full", "std"], optional = true }
 iced-x86 = { version = "1.21", default-features = false, features = ["decoder", "instr_info", "nasm", "std"], optional = true }
 
 # WASM support (optional)
