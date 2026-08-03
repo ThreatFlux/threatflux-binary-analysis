@@ -902,6 +902,7 @@ mod tests {
         assert_eq!(returned_config.lock_memory, config.lock_memory);
     }
 
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     #[test]
     fn test_advanced_mmap_with_populate() {
         let file = create_test_file();
@@ -914,6 +915,21 @@ mod tests {
 
         assert_eq!(advanced.data().len(), 34);
         assert!(advanced.config().populate);
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    #[test]
+    fn test_advanced_mmap_rejects_populate_when_unsupported() {
+        let file = create_test_file();
+        let config = MmapConfig {
+            use_huge_pages: false,
+            populate: true,
+            lock_memory: false,
+        };
+
+        let error = advanced_mmap(file.path(), config).unwrap_err();
+        assert!(matches!(error, BinaryError::ConfigError(_)));
+        assert!(error.to_string().contains("unsupported on this platform"));
     }
 
     #[test]
