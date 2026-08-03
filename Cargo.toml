@@ -69,7 +69,7 @@ iced-x86 = { version = "1.21", default-features = false, features = ["decoder", 
 wasmparser = { version = "0.236", default-features = false, features = ["std", "validate"], optional = true }
 
 # Control flow analysis (optional)
-petgraph = { version = "0.6", default-features = false, features = ["graphmap"], optional = true }
+petgraph = { version = "0.8", default-features = false, features = ["graphmap"], optional = true }
 
 # Symbol resolution (optional)
 gimli = { version = "0.31", optional = true }
