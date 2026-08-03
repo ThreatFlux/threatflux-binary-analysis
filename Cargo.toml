@@ -72,7 +72,7 @@ wasmparser = { version = "0.236", default-features = false, features = ["std", "
 petgraph = { version = "0.6", default-features = false, features = ["graphmap"], optional = true }
 
 # Symbol resolution (optional)
-gimli = { version = "0.31", optional = true }
+gimli = { version = "0.34", optional = true }
 addr2line = { version = "0.24", optional = true }
 
 # Utilities (optional)
