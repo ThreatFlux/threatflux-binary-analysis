@@ -5,7 +5,7 @@
 //! system binaries to ensure the library performs well in real-world scenarios.
 
 use std::time::{Duration, Instant};
-use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer, types::*};
+use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer, BinaryError, types::*};
 
 // Parser imports removed - using BinaryAnalyzer API
 
@@ -540,9 +540,17 @@ fn test_system_binary_integration() {
             }
 
             let start = Instant::now();
-            let parsed = BinaryAnalyzer::new()
-                .analyze(&data)
-                .unwrap_or_else(|error| panic!("{binary_path}: analysis failed: {error}"));
+            let parsed = match BinaryAnalyzer::new().analyze(&data) {
+                Ok(parsed) => parsed,
+                Err(BinaryError::UnsupportedFormat(reason))
+                    if format == BinaryFormat::MachO
+                        && reason == "Universal (fat) Mach-O binaries are not supported" =>
+                {
+                    println!("  Skipping documented unsupported universal Mach-O container");
+                    continue;
+                }
+                Err(error) => panic!("{binary_path}: analysis failed: {error}"),
+            };
             let parsing_time = start.elapsed();
 
             println!("  Parsing: {:?}", parsing_time);
