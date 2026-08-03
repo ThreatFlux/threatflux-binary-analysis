@@ -1,9 +1,9 @@
 #![allow(clippy::uninlined_format_args)]
 //! Tests for the main BinaryAnalyzer functionality
 
-use threatflux_binary_analysis::types::*;
 #[cfg(feature = "elf")]
 use threatflux_binary_analysis::BinaryFile;
+use threatflux_binary_analysis::types::*;
 use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer};
 
 // Helper function to create mock ELF data
@@ -68,10 +68,10 @@ fn create_mock_pe_data() -> Vec<u8> {
 #[test]
 fn test_analyzer_creation() {
     let analyzer = BinaryAnalyzer::new();
-    assert!(analyzer.config().enable_disassembly);
-    assert!(analyzer.config().enable_control_flow);
-    assert!(analyzer.config().enable_entropy);
-    assert!(analyzer.config().enable_symbols);
+    assert!(!analyzer.config().enable_disassembly);
+    assert!(!analyzer.config().enable_control_flow);
+    assert!(!analyzer.config().enable_entropy);
+    assert!(!analyzer.config().enable_symbols);
     assert_eq!(analyzer.config().max_analysis_size, 100 * 1024 * 1024);
     assert!(analyzer.config().architecture_hint.is_none());
 }
@@ -173,44 +173,15 @@ fn test_binary_file_parsing() {
 
 #[test]
 #[cfg(feature = "elf")]
-fn test_binary_file_sections() {
+fn test_minimal_elf_has_no_table_backed_records() {
     let data = create_mock_elf_data();
     let binary = BinaryFile::parse(&data).unwrap();
 
-    let _sections = binary.sections();
-    // Mock data might not have actual sections, but should not panic
-    // Sections are available (len >= 0 is always true)
-}
-
-#[test]
-#[cfg(feature = "elf")]
-fn test_binary_file_symbols() {
-    let data = create_mock_elf_data();
-    let binary = BinaryFile::parse(&data).unwrap();
-
-    let _symbols = binary.symbols();
-    // Mock data might not have actual symbols, but should not panic
-    // Symbols are available (len >= 0 is always true)
-}
-
-#[test]
-#[cfg(feature = "elf")]
-fn test_binary_file_imports() {
-    let data = create_mock_elf_data();
-    let binary = BinaryFile::parse(&data).unwrap();
-
-    let _imports = binary.imports();
-    // Imports are available (len >= 0 is always true)
-}
-
-#[test]
-#[cfg(feature = "elf")]
-fn test_binary_file_exports() {
-    let data = create_mock_elf_data();
-    let binary = BinaryFile::parse(&data).unwrap();
-
-    let _exports = binary.exports();
-    // Exports are available (len >= 0 is always true)
+    // The fixture declares no section or symbol tables and no dynamic records.
+    assert!(binary.sections().is_empty());
+    assert!(binary.symbols().is_empty());
+    assert!(binary.imports().is_empty());
+    assert!(binary.exports().is_empty());
 }
 
 #[test]
@@ -228,10 +199,10 @@ fn test_binary_file_metadata() {
 #[test]
 fn test_analysis_config_default() {
     let config = AnalysisConfig::default();
-    assert!(config.enable_disassembly);
-    assert!(config.enable_control_flow);
-    assert!(config.enable_entropy);
-    assert!(config.enable_symbols);
+    assert!(!config.enable_disassembly);
+    assert!(!config.enable_control_flow);
+    assert!(!config.enable_entropy);
+    assert!(!config.enable_symbols);
     assert_eq!(config.max_analysis_size, 100 * 1024 * 1024);
     assert!(config.architecture_hint.is_none());
 }
@@ -274,8 +245,13 @@ fn test_large_file_analysis() {
     let analyzer = BinaryAnalyzer::with_config(config);
     let result = analyzer.analyze(&data);
 
-    // Should still work but might be limited by max_analysis_size
-    assert!(result.is_ok());
+    assert!(matches!(
+        result,
+        Err(threatflux_binary_analysis::BinaryError::InputTooLarge {
+            actual: 5_242_880,
+            limit: 1_048_576
+        })
+    ));
 }
 
 #[test]

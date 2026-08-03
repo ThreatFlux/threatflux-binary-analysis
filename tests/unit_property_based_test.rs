@@ -4,12 +4,12 @@
 //! This test suite uses proptest to generate random inputs and test invariants
 //! across all binary parsers to ensure robustness and catch edge cases.
 
-#![allow(unused_comparisons)]
-#![allow(clippy::absurd_extreme_comparisons)]
-#![allow(clippy::comparison_to_empty)]
-
 use proptest::prelude::*;
-use threatflux_binary_analysis::{formats::detect_format, types::*, BinaryAnalyzer};
+use threatflux_binary_analysis::{
+    BinaryAnalyzer,
+    formats::{MAX_NAME_BYTES, detect_format},
+    types::*,
+};
 
 mod common;
 
@@ -183,6 +183,31 @@ fn arb_java_like_data() -> impl Strategy<Value = Vec<u8>> {
         })
 }
 
+fn assert_sections_match_input(sections: &[Section], input: &[u8]) {
+    for section in sections {
+        assert!(section.name.len() <= MAX_NAME_BYTES);
+
+        if section.file_size > 0 {
+            let offset = usize::try_from(section.offset).expect("file offset fits usize");
+            let file_size = usize::try_from(section.file_size).expect("file size fits usize");
+            let end = offset
+                .checked_add(file_size)
+                .expect("file-backed section range does not overflow");
+            assert!(end <= input.len());
+        }
+
+        if let Some(inline_data) = &section.data {
+            let offset = usize::try_from(section.offset).expect("inline-data offset fits usize");
+            let end = offset
+                .checked_add(inline_data.len())
+                .expect("inline-data range does not overflow");
+            assert!(inline_data.len() as u64 <= section.file_size);
+            assert!(end <= input.len());
+            assert_eq!(inline_data.as_slice(), &input[offset..end]);
+        }
+    }
+}
+
 // Property tests
 
 proptest! {
@@ -248,25 +273,18 @@ proptest! {
                 Architecture::PowerPC64 | Architecture::RiscV | Architecture::Unknown
             ));
 
-            // Sections should have valid properties
-            for section in parsed.sections {
-                assert!(!section.name.is_empty() || section.name == "");
-                assert!(section.size >= 0);
-                assert!(section.address >= 0);
-                assert!(section.offset >= 0);
-            }
+            assert_sections_match_input(&parsed.sections, &data);
 
-            // Symbols should have valid properties
-            for symbol in parsed.symbols {
-                assert!(symbol.address >= 0);
-                assert!(symbol.size >= 0);
+            // Copied symbol names obey the parser's public name budget.
+            for symbol in &parsed.symbols {
+                assert!(symbol.name.len() <= MAX_NAME_BYTES);
             }
 
             // Metadata should be consistent
             let metadata = parsed.metadata;
             assert_eq!(metadata.format, BinaryFormat::Elf);
             assert_eq!(metadata.architecture, arch);
-            assert!(metadata.size > 0);
+            assert_eq!(metadata.size, data.len());
         }
     }
 
@@ -285,12 +303,7 @@ proptest! {
                 Architecture::Arm64 | Architecture::Unknown
             ));
 
-            // Sections should have valid properties
-            for section in parsed.sections {
-                assert!(section.size >= 0);
-                assert!(section.address >= 0);
-                assert!(section.offset >= 0);
-            }
+            assert_sections_match_input(&parsed.sections, &data);
 
             // Imports should have valid names
             for import in parsed.imports {
@@ -307,7 +320,7 @@ proptest! {
             let metadata = parsed.metadata;
             assert_eq!(metadata.format, BinaryFormat::Pe);
             assert_eq!(metadata.architecture, arch);
-            assert!(metadata.size > 0);
+            assert_eq!(metadata.size, data.len());
         }
     }
 
@@ -327,25 +340,28 @@ proptest! {
                 Architecture::Unknown
             ));
 
-            // Sections should have valid properties
-            for section in parsed.sections {
-                assert!(section.size >= 0);
-                assert!(section.address >= 0);
-                assert!(section.offset >= 0);
-            }
+            assert_sections_match_input(&parsed.sections, &data);
 
             // Metadata should be consistent
             let metadata = parsed.metadata;
             assert_eq!(metadata.format, BinaryFormat::MachO);
             assert_eq!(metadata.architecture, arch);
-            assert!(metadata.size > 0);
+            assert_eq!(metadata.size, data.len());
         }
     }
 
     /// Test Java parser invariants
     #[test]
     fn prop_java_parser_invariants(data in arb_java_like_data()) {
+        let has_valid_class_header = u16::from_be_bytes([data[6], data[7]]) >= 45
+            && u16::from_be_bytes([data[8], data[9]]) != 0;
+
         if let Ok(parsed) = BinaryAnalyzer::new().analyze(&data) {
+            if !has_valid_class_header {
+                assert_ne!(parsed.format, BinaryFormat::Java);
+                return Ok(());
+            }
+
             // Basic invariants
             assert_eq!(parsed.format, BinaryFormat::Java);
             assert_eq!(parsed.architecture, Architecture::Jvm);
@@ -377,8 +393,8 @@ proptest! {
             // Entry point consistency
             assert_eq!(result.metadata.entry_point, result.entry_point);
 
-            // Section count should match
-            assert_eq!(result.sections.len(), result.sections.len());
+            assert_eq!(result.metadata.size, data.len());
+            assert_sections_match_input(&result.sections, &data);
 
             // If disassembly is present, instructions should have valid addresses
             #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
@@ -523,6 +539,7 @@ proptest! {
             address: 0x1000,
             size: 1024,
             offset: 0x1000,
+            file_size: 1024,
             permissions,
             section_type: SectionType::Data,
             data: None,

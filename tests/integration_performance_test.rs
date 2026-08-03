@@ -5,7 +5,7 @@
 //! system binaries to ensure the library performs well in real-world scenarios.
 
 use std::time::{Duration, Instant};
-use threatflux_binary_analysis::{types::*, AnalysisConfig, BinaryAnalyzer};
+use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer, types::*};
 
 // Parser imports removed - using BinaryAnalyzer API
 
@@ -63,49 +63,48 @@ fn test_parsing_performance_scaling() {
             description
         );
 
-        if let Ok(format) = result {
-            let start = Instant::now();
-            let parse_result = match format {
-                BinaryFormat::Elf => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-                BinaryFormat::Pe => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-                BinaryFormat::MachO => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-                BinaryFormat::Java => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-                _ => Ok(()),
-            };
-            let parsing_time = start.elapsed();
-
-            println!("  Parsing time: {:?}", parsing_time);
-
-            if parse_result.is_ok() {
-                // Parsing time should scale reasonably with file size
-                match description {
-                    desc if desc.contains("Small") => {
-                        assert!(
-                            parsing_time < Duration::from_millis(50),
-                            "Small binary parsing should be very fast"
-                        );
-                    }
-                    desc if desc.contains("Medium") => {
-                        assert!(
-                            parsing_time < Duration::from_millis(500),
-                            "Medium binary parsing should be fast"
-                        );
-                    }
-                    desc if desc.contains("Large") => {
-                        assert!(
-                            parsing_time < Duration::from_secs(10),
-                            "Large binary parsing should be reasonable"
-                        );
-                    }
-                    desc if desc.contains("Very large") => {
-                        assert!(
-                            parsing_time < Duration::from_secs(30),
-                            "Very large binary parsing should complete"
-                        );
-                    }
-                    _ => {}
-                }
+        let format =
+            result.unwrap_or_else(|error| panic!("{description}: detection failed: {error}"));
+        let start = Instant::now();
+        match format {
+            BinaryFormat::Elf | BinaryFormat::Pe | BinaryFormat::MachO | BinaryFormat::Java => {
+                BinaryAnalyzer::new()
+                    .analyze(&data)
+                    .unwrap_or_else(|error| panic!("{description}: analysis failed: {error}"));
             }
+            _ => {}
+        }
+        let parsing_time = start.elapsed();
+
+        println!("  Parsing time: {:?}", parsing_time);
+
+        // Parsing time should scale reasonably with file size
+        match description {
+            desc if desc.contains("Small") => {
+                assert!(
+                    parsing_time < Duration::from_millis(50),
+                    "Small binary parsing should be very fast"
+                );
+            }
+            desc if desc.contains("Medium") => {
+                assert!(
+                    parsing_time < Duration::from_millis(500),
+                    "Medium binary parsing should be fast"
+                );
+            }
+            desc if desc.contains("Large") => {
+                assert!(
+                    parsing_time < Duration::from_secs(10),
+                    "Large binary parsing should be reasonable"
+                );
+            }
+            desc if desc.contains("Very large") => {
+                assert!(
+                    parsing_time < Duration::from_secs(30),
+                    "Very large binary parsing should complete"
+                );
+            }
+            _ => {}
         }
     }
 }
@@ -113,37 +112,42 @@ fn test_parsing_performance_scaling() {
 /// Test parsing performance with many small files
 #[test]
 fn test_batch_parsing_performance() {
+    type FixtureFactory = (&'static str, fn() -> Vec<u8>);
+
     let num_files = 100;
+    let fixture_factories: Vec<FixtureFactory> = vec![
+        #[cfg(feature = "elf")]
+        ("ELF", create_realistic_elf_64),
+        #[cfg(feature = "pe")]
+        ("PE", create_realistic_pe_64),
+        #[cfg(feature = "macho")]
+        ("Mach-O", create_realistic_macho_64),
+        #[cfg(feature = "java")]
+        ("Java", create_realistic_java_class),
+    ];
+
+    if fixture_factories.is_empty() {
+        return;
+    }
+
     let mut files = Vec::new();
 
-    // Generate many small files of different formats
+    // Generate many small files for the parsers compiled into this build.
     for i in 0..num_files {
-        match i % 4 {
-            0 => files.push(("ELF", create_realistic_elf_64())),
-            1 => files.push(("PE", create_realistic_pe_64())),
-            2 => files.push(("Mach-O", create_realistic_macho_64())),
-            3 => files.push(("Java", create_realistic_java_class())),
-            _ => unreachable!(),
-        }
+        let (format_name, create_fixture) = fixture_factories[i % fixture_factories.len()];
+        files.push((format_name, create_fixture()));
     }
 
     let start = Instant::now();
     let mut successful_parses = 0;
 
-    for (_format_name, data) in &files {
-        if let Ok(format) = threatflux_binary_analysis::formats::detect_format(data) {
-            let parse_result = match format {
-                BinaryFormat::Elf => BinaryAnalyzer::new().analyze(data).map(|_| ()),
-                BinaryFormat::Pe => BinaryAnalyzer::new().analyze(data).map(|_| ()),
-                BinaryFormat::MachO => BinaryAnalyzer::new().analyze(data).map(|_| ()),
-                BinaryFormat::Java => BinaryAnalyzer::new().analyze(data).map(|_| ()),
-                _ => Ok(()),
-            };
-
-            if parse_result.is_ok() {
-                successful_parses += 1;
-            }
-        }
+    for (format_name, data) in &files {
+        threatflux_binary_analysis::formats::detect_format(data)
+            .unwrap_or_else(|error| panic!("{format_name} detection failed: {error}"));
+        BinaryAnalyzer::new()
+            .analyze(data)
+            .unwrap_or_else(|error| panic!("{format_name} analysis failed: {error}"));
+        successful_parses += 1;
     }
 
     let total_time = start.elapsed();
@@ -160,8 +164,8 @@ fn test_batch_parsing_performance() {
         "Average parsing time should be reasonable"
     );
     assert!(
-        successful_parses >= num_files / 2,
-        "Most files should parse successfully"
+        successful_parses == num_files,
+        "All generated fixtures should parse successfully"
     );
 }
 
@@ -184,19 +188,17 @@ fn test_concurrent_parsing_performance() {
             let mut successful = 0;
 
             for _iteration in 0..iterations_per_thread {
-                if let Ok(format) = threatflux_binary_analysis::formats::detect_format(&data) {
-                    let result = match format {
-                        BinaryFormat::Elf => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-                        BinaryFormat::Pe => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-                        BinaryFormat::MachO => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-                        BinaryFormat::Java => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-                        _ => Ok(()),
-                    };
-
-                    if result.is_ok() {
-                        successful += 1;
-                    }
+                let format = threatflux_binary_analysis::formats::detect_format(&data)
+                    .unwrap_or_else(|error| panic!("detection failed: {error}"));
+                if matches!(
+                    format,
+                    BinaryFormat::Elf | BinaryFormat::Pe | BinaryFormat::MachO | BinaryFormat::Java
+                ) {
+                    BinaryAnalyzer::new()
+                        .analyze(&data)
+                        .unwrap_or_else(|error| panic!("analysis failed: {error}"));
                 }
+                successful += 1;
             }
 
             (thread_id, successful)
@@ -236,107 +238,65 @@ fn test_concurrent_parsing_performance() {
     );
 }
 
-/// Test memory usage with large files
-#[test]
-fn test_memory_usage_large_files() {
-    let test_cases = vec![
-        ("10MB ELF", create_large_elf_binary(10 * 1024 * 1024)),
-        ("20MB PE", create_large_pe_binary(20 * 1024 * 1024)),
-        ("15MB Mach-O", create_large_macho_binary(15 * 1024 * 1024)),
-    ];
-
-    for (description, data) in test_cases {
-        println!("Testing memory usage for {}", description);
-
-        // Get baseline memory usage
-        let baseline_memory = get_memory_usage();
-
-        let result = match threatflux_binary_analysis::formats::detect_format(&data) {
-            Ok(BinaryFormat::Elf) => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-            Ok(BinaryFormat::Pe) => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-            Ok(BinaryFormat::MachO) => BinaryAnalyzer::new().analyze(&data).map(|_| ()),
-            _ => Ok(()),
-        };
-
-        let peak_memory = get_memory_usage();
-        let memory_increase = peak_memory.saturating_sub(baseline_memory);
-
-        println!("  Memory increase: {} MB", memory_increase / 1024 / 1024);
-
-        if result.is_ok() {
-            // Memory usage should be reasonable relative to file size
-            let _file_size_mb = data.len() / 1024 / 1024;
-            let memory_ratio = memory_increase / data.len();
-
-            assert!(
-                memory_ratio < 5,
-                "Memory usage should not exceed 5x file size for {}",
-                description
-            );
-
-            // Force garbage collection
-            drop(data);
-            std::thread::sleep(Duration::from_millis(100));
-        }
-    }
-}
-
 /// Test analysis performance with full feature set
 #[test]
 fn test_full_analysis_performance() {
     let config = AnalysisConfig {
-        enable_disassembly: true,
+        enable_disassembly: cfg!(any(feature = "disasm-capstone", feature = "disasm-iced")),
         #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
         disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
-        enable_control_flow: true,
-        enable_entropy: true,
-        enable_symbols: true,
+        enable_control_flow: cfg!(feature = "control-flow"),
+        enable_call_graph: cfg!(feature = "control-flow"),
+        enable_cognitive_complexity: cfg!(feature = "control-flow"),
+        enable_advanced_loops: cfg!(feature = "control-flow"),
+        enable_entropy: cfg!(feature = "entropy-analysis"),
+        enable_symbols: cfg!(feature = "symbol-resolution"),
         max_analysis_size: 50 * 1024 * 1024,
         architecture_hint: None,
         ..Default::default()
     };
 
     let analyzer = BinaryAnalyzer::with_config(config);
-    let test_data = create_realistic_elf_64();
+    let test_data = create_analysis_elf_64();
 
     let start = Instant::now();
-    let result = analyzer.analyze(&test_data);
+    let analysis = analyzer
+        .analyze(&test_data)
+        .expect("full-feature analysis should succeed");
     let analysis_time = start.elapsed();
 
     println!("Full analysis time: {:?}", analysis_time);
 
-    if let Ok(analysis) = result {
-        // The test ELF data might be parsed as Raw format if it has structural issues
-        assert!(
-            analysis.format == BinaryFormat::Elf || analysis.format == BinaryFormat::Raw,
-            "Expected ELF or Raw format, got: {:?}",
-            analysis.format
-        );
-        // Only expect sections if it's actually parsed as ELF
-        if analysis.format == BinaryFormat::Elf {
-            assert!(!analysis.sections.is_empty());
-        }
+    // The test ELF data might be parsed as Raw format if it has structural issues
+    assert!(
+        analysis.format == BinaryFormat::Elf || analysis.format == BinaryFormat::Raw,
+        "Expected ELF or Raw format, got: {:?}",
+        analysis.format
+    );
+    // Only expect sections if it's actually parsed as ELF
+    if analysis.format == BinaryFormat::Elf {
+        assert!(!analysis.sections.is_empty());
+    }
 
-        // Verify that optional analyses were performed if features are enabled
-        #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
-        {
-            if let Some(ref disassembly) = analysis.disassembly {
-                println!("  Disassembled {} instructions", disassembly.len());
-            }
+    // Verify that optional analyses were performed if features are enabled
+    #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
+    {
+        if let Some(ref disassembly) = analysis.disassembly {
+            println!("  Disassembled {} instructions", disassembly.len());
         }
+    }
 
-        #[cfg(feature = "control-flow")]
-        {
-            if let Some(ref control_flow) = analysis.control_flow {
-                println!("  Generated {} control flow graphs", control_flow.len());
-            }
+    #[cfg(feature = "control-flow")]
+    {
+        if let Some(ref control_flow) = analysis.control_flow {
+            println!("  Generated {} control flow graphs", control_flow.len());
         }
+    }
 
-        #[cfg(feature = "entropy-analysis")]
-        {
-            if let Some(ref entropy) = analysis.entropy {
-                println!("  Overall entropy: {:.2}", entropy.overall_entropy);
-            }
+    #[cfg(feature = "entropy-analysis")]
+    {
+        if let Some(ref entropy) = analysis.entropy {
+            println!("  Overall entropy: {:.2}", entropy.overall_entropy);
         }
     }
 
@@ -355,13 +315,17 @@ fn test_performance_regression() {
 
     // Extended warm up to ensure JIT compilation and optimization
     for _ in 0..50 {
-        let _ = BinaryAnalyzer::new().analyze(&test_data);
+        BinaryAnalyzer::new()
+            .analyze(&test_data)
+            .expect("warm-up analysis should succeed");
     }
 
     // Measure parsing times
     for _ in 0..iterations {
         let start = Instant::now();
-        let _ = BinaryAnalyzer::new().analyze(&test_data);
+        BinaryAnalyzer::new()
+            .analyze(&test_data)
+            .expect("measured analysis should succeed");
         times.push(start.elapsed());
     }
 
@@ -472,7 +436,7 @@ fn test_performance_adversarial_inputs() {
 /// Benchmark different analysis configurations
 #[test]
 fn test_analysis_configuration_performance() {
-    let test_data = create_realistic_elf_64();
+    let test_data = create_analysis_elf_64();
     let configs = vec![
         (
             "Minimal",
@@ -492,12 +456,15 @@ fn test_analysis_configuration_performance() {
         (
             "Full",
             AnalysisConfig {
-                enable_disassembly: true,
+                enable_disassembly: cfg!(any(feature = "disasm-capstone", feature = "disasm-iced")),
                 #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
                 disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
-                enable_control_flow: true,
-                enable_entropy: true,
-                enable_symbols: true,
+                enable_control_flow: cfg!(feature = "control-flow"),
+                enable_call_graph: cfg!(feature = "control-flow"),
+                enable_cognitive_complexity: cfg!(feature = "control-flow"),
+                enable_advanced_loops: cfg!(feature = "control-flow"),
+                enable_entropy: cfg!(feature = "entropy-analysis"),
+                enable_symbols: cfg!(feature = "symbol-resolution"),
                 max_analysis_size: 100 * 1024 * 1024,
                 architecture_hint: Some(Architecture::X86_64),
                 ..Default::default()
@@ -509,33 +476,33 @@ fn test_analysis_configuration_performance() {
         let analyzer = BinaryAnalyzer::with_config(config);
 
         let start = Instant::now();
-        let result = analyzer.analyze(&test_data);
+        analyzer
+            .analyze(&test_data)
+            .unwrap_or_else(|error| panic!("{config_name} analysis failed: {error}"));
         let analysis_time = start.elapsed();
 
         println!("{} analysis: {:?}", config_name, analysis_time);
 
-        if result.is_ok() {
-            match config_name {
-                "Minimal" => {
-                    assert!(
-                        analysis_time < Duration::from_millis(50),
-                        "Minimal analysis should be very fast"
-                    );
-                }
-                "Standard" => {
-                    assert!(
-                        analysis_time < Duration::from_millis(500),
-                        "Standard analysis should be fast"
-                    );
-                }
-                "Full" => {
-                    assert!(
-                        analysis_time < Duration::from_secs(5),
-                        "Full analysis should be reasonable"
-                    );
-                }
-                _ => {}
+        match config_name {
+            "Minimal" => {
+                assert!(
+                    analysis_time < Duration::from_millis(50),
+                    "Minimal analysis should be very fast"
+                );
             }
+            "Standard" => {
+                assert!(
+                    analysis_time < Duration::from_millis(500),
+                    "Standard analysis should be fast"
+                );
+            }
+            "Full" => {
+                assert!(
+                    analysis_time < Duration::from_secs(5),
+                    "Full analysis should be reasonable"
+                );
+            }
+            _ => {}
         }
     }
 }
@@ -563,32 +530,32 @@ fn test_system_binary_integration() {
                 "System binary format detection should be fast"
             );
 
-            if let Ok(format) = format_result {
-                let start = Instant::now();
-                let parse_result = match format {
-                    BinaryFormat::Elf => BinaryAnalyzer::new().analyze(&data),
-                    BinaryFormat::Pe => BinaryAnalyzer::new().analyze(&data),
-                    BinaryFormat::MachO => BinaryAnalyzer::new().analyze(&data),
-                    _ => continue,
-                };
-                let parsing_time = start.elapsed();
-
-                println!("  Parsing: {:?}", parsing_time);
-
-                if let Ok(parsed) = parse_result {
-                    println!("  Format: {:?}", parsed.format);
-                    println!("  Architecture: {:?}", parsed.architecture);
-                    println!("  Sections: {}", parsed.sections.len());
-                    println!("  Symbols: {}", parsed.symbols.len());
-
-                    // System binaries should parse successfully
-                    assert_eq!(parsed.format, format);
-                    assert!(
-                        !&parsed.sections.is_empty(),
-                        "System binary should have sections"
-                    );
-                }
+            let format = format_result
+                .unwrap_or_else(|error| panic!("{binary_path}: detection failed: {error}"));
+            if !matches!(
+                format,
+                BinaryFormat::Elf | BinaryFormat::Pe | BinaryFormat::MachO
+            ) {
+                continue;
             }
+
+            let start = Instant::now();
+            let parsed = BinaryAnalyzer::new()
+                .analyze(&data)
+                .unwrap_or_else(|error| panic!("{binary_path}: analysis failed: {error}"));
+            let parsing_time = start.elapsed();
+
+            println!("  Parsing: {:?}", parsing_time);
+            println!("  Format: {:?}", parsed.format);
+            println!("  Architecture: {:?}", parsed.architecture);
+            println!("  Sections: {}", parsed.sections.len());
+            println!("  Symbols: {}", parsed.symbols.len());
+
+            assert_eq!(parsed.format, format);
+            assert!(
+                !parsed.sections.is_empty(),
+                "System binary should have sections"
+            );
         } else {
             println!("System binary not found: {}", binary_path);
         }
@@ -596,13 +563,6 @@ fn test_system_binary_integration() {
 }
 
 // Helper functions
-
-fn get_memory_usage() -> usize {
-    // Simplified memory usage measurement
-    // In a real implementation, you might use platform-specific APIs
-    // or a crate like `memory-stats`
-    0 // Placeholder
-}
 
 fn create_small_test_binary(size: usize) -> Vec<u8> {
     let mut data = create_realistic_elf_64();

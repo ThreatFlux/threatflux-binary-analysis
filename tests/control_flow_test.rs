@@ -4,9 +4,9 @@
     any(feature = "disasm-capstone", feature = "disasm-iced")
 ))]
 
+use threatflux_binary_analysis::BinaryFile;
 use threatflux_binary_analysis::analysis::control_flow;
 use threatflux_binary_analysis::types::ControlFlow as FlowType;
-use threatflux_binary_analysis::BinaryFile;
 
 mod util;
 use util::create_test_elf;

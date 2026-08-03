@@ -10,7 +10,7 @@
 use pretty_assertions::assert_eq;
 use rstest::*;
 use threatflux_binary_analysis::BinaryAnalyzer;
-use threatflux_binary_analysis::{types::*, BinaryError};
+use threatflux_binary_analysis::{BinaryError, types::*};
 
 mod common;
 use common::fixtures::*;
@@ -25,11 +25,24 @@ fn test_pe_header_parsing() {
     assert_eq!(result.format, BinaryFormat::Pe);
     assert_eq!(result.architecture, Architecture::X86_64);
     assert_eq!(result.entry_point, Some(0x140001000));
+    assert_eq!(result.sections[0].address, 0x140001000);
+}
+
+#[test]
+fn test_pe_entry_point_overflow_is_rejected() {
+    let mut data = create_realistic_pe_64();
+    data[0xa8..0xac].copy_from_slice(&1_u32.to_le_bytes());
+    data[0xb0..0xb8].copy_from_slice(&u64::MAX.to_le_bytes());
+
+    let error = BinaryAnalyzer::new()
+        .analyze(&data)
+        .expect_err("overflowing entry point must fail");
+    assert!(error.to_string().contains("entry point address overflows"));
 }
 
 /// Test DOS header validation
 #[rstest]
-#[case(&[0x4d, 0x5a], false, "Valid MZ signature but incomplete PE structure")]
+#[case(&[0x4d, 0x5a], true, "MZ without a PE signature falls back to Raw")]
 #[case(&[0x5a, 0x4d], true, "Reversed MZ signature - falls back to Raw")]
 #[case(&[0x00, 0x00], true, "Null signature - falls back to Raw")]
 #[case(&[0x4d], true, "Incomplete signature - falls back to Raw")]
@@ -66,7 +79,7 @@ fn test_dos_header_validation(
 #[case(b"LE\0\0", false, "LE signature")]
 fn test_pe_signature_validation(
     #[case] signature: &[u8],
-    #[case] should_pass: bool,
+    #[case] is_pe_signature: bool,
     #[case] description: &str,
 ) {
     let mut data = create_basic_dos_header();
@@ -80,7 +93,7 @@ fn test_pe_signature_validation(
 
     let result = BinaryAnalyzer::new().analyze(&data);
 
-    if should_pass {
+    if is_pe_signature {
         // With valid PE signature, should progress further
         if let Err(e) = &result {
             let error_msg = format!("{}", e);
@@ -91,8 +104,12 @@ fn test_pe_signature_validation(
             );
         }
     } else {
-        // Invalid PE signature should cause failure
-        assert!(result.is_err(), "Should have failed: {}", description);
+        // MZ alone is not enough to identify PE. Non-PE signatures are
+        // deliberately handled by the raw fallback instead of reaching the
+        // PE parser and producing an error.
+        let parsed =
+            result.unwrap_or_else(|error| panic!("Raw fallback failed for {description}: {error}"));
+        assert_eq!(parsed.format, BinaryFormat::Raw, "{description}");
     }
 }
 
@@ -161,10 +178,10 @@ fn test_pe_characteristics(#[case] characteristic: u16, #[case] description: &st
 
     // Verify that security features are detected based on characteristics
     if characteristic & 0x0020 != 0 { // LARGE_ADDRESS_AWARE
-         // Should affect security analysis
+        // Should affect security analysis
     }
     if characteristic & 0x1000 != 0 { // DLL
-         // Should be detected as library/DLL
+        // Should be detected as library/DLL
     }
 }
 
@@ -357,14 +374,14 @@ fn test_pe_import_parsing() {
 
         // Common Windows APIs we might expect
         let common_apis = ["kernel32.dll", "user32.dll", "ntdll.dll", "msvcrt.dll"];
-        if let Some(lib) = &import.library {
-            if common_apis.iter().any(|&api| lib.contains(api)) {
-                // Validate that common API imports are reasonable
-                assert!(
-                    import.address.is_some() || import.ordinal.is_some(),
-                    "Import should have address or ordinal"
-                );
-            }
+        if let Some(lib) = &import.library
+            && common_apis.iter().any(|&api| lib.contains(api))
+        {
+            // Validate that common API imports are reasonable
+            assert!(
+                import.address.is_some() || import.ordinal.is_some(),
+                "Import should have address or ordinal"
+            );
         }
     }
 }
@@ -456,27 +473,37 @@ fn test_pe_security_directory() {
 #[case(
     "invalid_dos_stub",
     create_pe_with_invalid_dos_stub(),
+    BinaryFormat::Raw,
     "Invalid DOS stub"
 )]
-#[case("truncated_headers", create_truncated_pe(), "Truncated headers")]
+#[case(
+    "truncated_headers",
+    create_truncated_pe(),
+    BinaryFormat::Raw,
+    "Truncated headers"
+)]
 #[case(
     "invalid_section_count",
     &create_pe_with_invalid_section_count(),
+    BinaryFormat::Pe,
     "Invalid section count"
 )]
 #[case(
     "overlapping_sections",
     &create_pe_with_overlapping_sections(),
+    BinaryFormat::Pe,
     "Overlapping sections"
 )]
 #[case(
     "invalid_optional_header_size",
     &create_pe_with_invalid_optional_header_size(),
+    BinaryFormat::Pe,
     "Invalid optional header size"
 )]
 fn test_pe_error_handling(
     #[case] _test_name: &str,
     #[case] data: &[u8],
+    #[case] expected_format_on_success: BinaryFormat,
     #[case] description: &str,
 ) {
     let result = BinaryAnalyzer::new().analyze(data);
@@ -505,7 +532,7 @@ fn test_pe_error_handling(
     } else {
         // If it parsed, verify basic validity
         let parsed = result.unwrap();
-        assert_eq!(parsed.format, BinaryFormat::Pe);
+        assert_eq!(parsed.format, expected_format_on_success);
     }
 }
 

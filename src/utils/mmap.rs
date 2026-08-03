@@ -18,11 +18,19 @@ pub struct MappedBinary {
 }
 
 impl MappedBinary {
-    /// Create a new memory-mapped binary from a file path
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
+    /// Create a new memory-mapped binary from a file path.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the mapped file's contents and length are not
+    /// modified for the lifetime of the returned mapping, including through other
+    /// file handles or processes. Violating this requirement can invalidate shared
+    /// references into the map or trigger platform-specific faults.
+    pub unsafe fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file = File::open(path)
             .map_err(|e| BinaryError::memory_map(format!("Failed to open file: {}", e)))?;
 
+        // SAFETY: the caller accepts the backing-file stability contract above.
         let mmap = unsafe {
             MmapOptions::new().map(&file).map_err(|e| {
                 BinaryError::memory_map(format!("Failed to create memory map: {}", e))
@@ -38,8 +46,15 @@ impl MappedBinary {
         })
     }
 
-    /// Create a memory-mapped binary from an open file
-    pub fn from_file(file: File) -> Result<Self> {
+    /// Create a memory-mapped binary from an open file.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the mapped file's contents and length are not
+    /// modified for the lifetime of the returned mapping, including through other
+    /// file handles or processes.
+    pub unsafe fn from_file(file: File) -> Result<Self> {
+        // SAFETY: the caller accepts the backing-file stability contract above.
         let mmap = unsafe {
             MmapOptions::new().map(&file).map_err(|e| {
                 BinaryError::memory_map(format!("Failed to create memory map: {}", e))
@@ -62,24 +77,22 @@ impl MappedBinary {
 
     /// Get a slice of the mapped data
     pub fn slice(&self, range: Range<usize>) -> crate::types::ByteSliceResult<'_> {
-        if range.end > self.size {
-            return Err(BinaryError::memory_map(
-                "Range exceeds file size".to_string(),
-            ));
+        if range.start > range.end {
+            return Err(BinaryError::memory_map("Invalid reversed range"));
         }
-
-        Ok(&self.mmap[range])
+        self.mmap
+            .get(range)
+            .ok_or_else(|| BinaryError::memory_map("Range exceeds file size"))
     }
 
     /// Get data at a specific offset with a given length
     pub fn read_at(&self, offset: usize, length: usize) -> crate::types::ByteSliceResult<'_> {
-        if offset + length > self.size {
-            return Err(BinaryError::memory_map(
-                "Read exceeds file size".to_string(),
-            ));
-        }
-
-        Ok(&self.mmap[offset..offset + length])
+        let end = offset
+            .checked_add(length)
+            .ok_or_else(|| BinaryError::memory_map("Read range overflows usize"))?;
+        self.mmap
+            .get(offset..end)
+            .ok_or_else(|| BinaryError::memory_map("Read exceeds file size"))
     }
 
     /// Read a specific number of bytes starting from an offset
@@ -140,8 +153,12 @@ impl MappedBinary {
 
     /// Read a null-terminated string at the specified offset
     pub fn read_cstring(&self, offset: usize, max_length: usize) -> Result<String> {
+        if offset > self.size {
+            return Err(BinaryError::memory_map("Offset exceeds file size"));
+        }
+
         let mut end = offset;
-        let limit = (offset + max_length).min(self.size);
+        let limit = offset.saturating_add(max_length).min(self.size);
 
         while end < limit && self.mmap[end] != 0 {
             end += 1;
@@ -154,6 +171,10 @@ impl MappedBinary {
 
     /// Find the first occurrence of a pattern in the mapped data
     pub fn find_pattern(&self, pattern: &[u8]) -> Option<usize> {
+        if pattern.is_empty() {
+            return Some(0);
+        }
+
         self.mmap
             .windows(pattern.len())
             .position(|window| window == pattern)
@@ -161,10 +182,16 @@ impl MappedBinary {
 
     /// Find all occurrences of a pattern in the mapped data
     pub fn find_all_patterns(&self, pattern: &[u8]) -> Vec<usize> {
+        // Returning every boundary for an empty pattern would allocate in
+        // proportion to the file size and has no useful binary-analysis meaning.
+        if pattern.is_empty() || pattern.len() > self.size {
+            return Vec::new();
+        }
+
         let mut positions = Vec::new();
         let mut start = 0;
 
-        while start + pattern.len() <= self.size {
+        while start <= self.size - pattern.len() {
             if let Some(pos) = self.mmap[start..]
                 .windows(pattern.len())
                 .position(|window| window == pattern)
@@ -196,16 +223,16 @@ impl MappedBinary {
 
     /// Create a safe view into a portion of the mapped data
     pub fn view(&self, range: Range<usize>) -> Result<MappedView<'_>> {
-        if range.end > self.size {
-            return Err(BinaryError::memory_map(
-                "Range exceeds file size".to_string(),
-            ));
+        if range.start > range.end {
+            return Err(BinaryError::memory_map("Invalid reversed range"));
         }
+        let offset = range.start;
+        let data = self
+            .mmap
+            .get(range)
+            .ok_or_else(|| BinaryError::memory_map("Range exceeds file size"))?;
 
-        Ok(MappedView {
-            data: &self.mmap[range.clone()],
-            offset: range.start,
-        })
+        Ok(MappedView { data, offset })
     }
 }
 
@@ -254,7 +281,7 @@ fn format_hexdump(data: &[u8], base_offset: usize) -> String {
     let mut result = String::new();
 
     for (i, chunk) in data.chunks(16).enumerate() {
-        let offset = base_offset + i * 16;
+        let offset = base_offset.saturating_add(i.saturating_mul(16));
         result.push_str(&format!("{:08x}: ", offset));
 
         // Hex bytes
@@ -293,7 +320,8 @@ fn format_hexdump(data: &[u8], base_offset: usize) -> String {
 pub struct MmapConfig {
     /// Whether to use huge pages if available
     pub use_huge_pages: bool,
-    /// Whether to populate the mapping (fault pages immediately)
+    /// Whether to populate the mapping (fault pages immediately). Supported on
+    /// Linux and Android; requests are rejected on platforms where this is a no-op.
     pub populate: bool,
     /// Whether to lock the mapping in memory
     pub lock_memory: bool,
@@ -308,8 +336,37 @@ pub struct AdvancedMmap {
 }
 
 impl AdvancedMmap {
-    /// Create an advanced memory map with configuration
-    pub fn new<P: AsRef<Path>>(path: P, config: MmapConfig) -> Result<Self> {
+    /// Create an advanced memory map with configuration.
+    ///
+    /// Huge pages are not supported for file-backed mappings and are rejected
+    /// instead of being silently ignored.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the mapped file's contents and length are not
+    /// modified for the lifetime of the returned mapping, including through other
+    /// file handles or processes.
+    pub unsafe fn new<P: AsRef<Path>>(path: P, config: MmapConfig) -> Result<Self> {
+        if config.use_huge_pages {
+            return Err(BinaryError::config(
+                "huge pages are not supported for file-backed memory maps",
+            ));
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        if config.populate {
+            return Err(BinaryError::config(
+                "populating mapped pages is unsupported on this platform",
+            ));
+        }
+
+        #[cfg(not(unix))]
+        if config.lock_memory {
+            return Err(BinaryError::config(
+                "locking mapped memory is unsupported on this platform",
+            ));
+        }
+
         let file = File::open(path)
             .map_err(|e| BinaryError::memory_map(format!("Failed to open file: {}", e)))?;
 
@@ -319,11 +376,19 @@ impl AdvancedMmap {
             options.populate();
         }
 
+        // SAFETY: the caller accepts the backing-file stability contract above.
         let mmap = unsafe {
             options.map(&file).map_err(|e| {
                 BinaryError::memory_map(format!("Failed to create memory map: {}", e))
             })?
         };
+
+        #[cfg(unix)]
+        if config.lock_memory {
+            mmap.lock().map_err(|error| {
+                BinaryError::memory_map(format!("Failed to lock memory map: {error}"))
+            })?;
+        }
 
         Ok(Self {
             _file: file,
@@ -348,6 +413,24 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
+
+    fn mapped_binary(path: impl AsRef<Path>) -> Result<super::MappedBinary> {
+        // SAFETY: each test owns its temporary file and does not mutate it after
+        // creating the mapping.
+        unsafe { super::MappedBinary::new(path) }
+    }
+
+    fn mapped_binary_from_file(file: File) -> Result<super::MappedBinary> {
+        // SAFETY: each test retains the temporary file solely to keep its path
+        // alive and does not mutate the mapped contents.
+        unsafe { super::MappedBinary::from_file(file) }
+    }
+
+    fn advanced_mmap(path: impl AsRef<Path>, config: MmapConfig) -> Result<super::AdvancedMmap> {
+        // SAFETY: each test owns its temporary file and does not mutate it after
+        // creating the mapping.
+        unsafe { super::AdvancedMmap::new(path, config) }
+    }
 
     fn create_test_file() -> NamedTempFile {
         let mut file = NamedTempFile::new().unwrap();
@@ -382,7 +465,7 @@ mod tests {
     #[test]
     fn test_mapped_binary_creation() {
         let file = create_test_file();
-        let mapped = MappedBinary::new(file.path());
+        let mapped = mapped_binary(file.path());
         assert!(mapped.is_ok());
 
         let mapped = mapped.unwrap();
@@ -393,7 +476,7 @@ mod tests {
     fn test_mapped_binary_from_file() {
         let temp_file = create_test_file();
         let file = File::open(temp_file.path()).unwrap();
-        let mapped = MappedBinary::from_file(file);
+        let mapped = mapped_binary_from_file(file);
         assert!(mapped.is_ok());
 
         let mapped = mapped.unwrap();
@@ -404,7 +487,7 @@ mod tests {
     #[test]
     fn test_mapped_binary_deref() {
         let file = create_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test Deref implementation
         assert_eq!(&mapped[0..5], b"Hello");
@@ -414,7 +497,7 @@ mod tests {
     #[test]
     fn test_slice_method() {
         let file = create_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test successful slice
         let slice = mapped.slice(0..5).unwrap();
@@ -426,16 +509,18 @@ mod tests {
         // Test error case - range exceeds file size
         let result = mapped.slice(0..100);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Range exceeds file size"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Range exceeds file size")
+        );
     }
 
     #[test]
     fn test_read_operations() {
         let file = create_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test read_at
         let data = mapped.read_at(0, 5).unwrap();
@@ -453,15 +538,17 @@ mod tests {
     #[test]
     fn test_read_operations_errors() {
         let file = create_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test read_at with out of bounds
         let result = mapped.read_at(0, 100);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Read exceeds file size"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Read exceeds file size")
+        );
 
         // Test read_at with offset out of bounds
         let result = mapped.read_at(50, 5);
@@ -474,16 +561,22 @@ mod tests {
         // Test read_u8 with offset out of bounds
         let result = mapped.read_u8(100);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Offset exceeds file size"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Offset exceeds file size")
+        );
+
+        // Overflow must be rejected before constructing a slice range.
+        let result = mapped.read_at(usize::MAX, 2);
+        assert!(result.unwrap_err().to_string().contains("overflows usize"));
     }
 
     #[test]
     fn test_integer_read_operations() {
         let file = create_binary_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test u16 reads (bytes 0-1: 0x12, 0x34)
         let val_le = mapped.read_u16_le(0).unwrap();
@@ -510,7 +603,7 @@ mod tests {
     #[test]
     fn test_integer_read_operations_errors() {
         let file = create_binary_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
         let file_size = mapped.size();
 
         // Test u16 read errors
@@ -529,7 +622,7 @@ mod tests {
     #[test]
     fn test_read_cstring() {
         let file = create_binary_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test reading "Hello\0" starting at byte 8
         let s = mapped.read_cstring(8, 10).unwrap();
@@ -555,21 +648,25 @@ mod tests {
         file.write_all(&[0xFF, 0xFE, 0x00]).unwrap();
         file.flush().unwrap();
 
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test invalid UTF-8 string
         let result = mapped.read_cstring(0, 10);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid UTF-8 string"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid UTF-8 string")
+        );
+
+        assert!(mapped.read_cstring(usize::MAX, 1).is_err());
     }
 
     #[test]
     fn test_pattern_finding() {
         let file = create_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test find_pattern
         let pos = mapped.find_pattern(b"World");
@@ -589,7 +686,7 @@ mod tests {
         file.write_all(b"ababcabab").unwrap();
         file.flush().unwrap();
 
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test find_all_patterns with multiple occurrences
         let positions = mapped.find_all_patterns(b"ab");
@@ -611,7 +708,7 @@ mod tests {
     #[test]
     fn test_pattern_edge_cases() {
         let file = create_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test pattern longer than file
         let long_pattern = vec![b'A'; 1000];
@@ -621,12 +718,15 @@ mod tests {
         // Test pattern at end of file
         let result = mapped.find_pattern(b"file.");
         assert!(result.is_some());
+
+        assert_eq!(mapped.find_pattern(b""), Some(0));
+        assert!(mapped.find_all_patterns(b"").is_empty());
     }
 
     #[test]
     fn test_starts_with() {
         let file = create_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         assert!(mapped.starts_with(b"Hello"));
         assert!(!mapped.starts_with(b"World"));
@@ -641,7 +741,7 @@ mod tests {
     #[test]
     fn test_hexdump_method() {
         let file = create_binary_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test hexdump method
         let hexdump = mapped.hexdump(0, 8).unwrap();
@@ -656,7 +756,7 @@ mod tests {
     #[test]
     fn test_view_creation() {
         let file = create_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         let view = mapped.view(0..5).unwrap();
         assert_eq!(view.size(), 5);
@@ -666,16 +766,23 @@ mod tests {
         // Test error case
         let result = mapped.view(0..100);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Range exceeds file size"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Range exceeds file size")
+        );
+
+        let reversed_start = 5;
+        let reversed_end = 4;
+        assert!(mapped.view(reversed_start..reversed_end).is_err());
+        assert!(mapped.slice(reversed_start..reversed_end).is_err());
     }
 
     #[test]
     fn test_mapped_view_methods() {
         let file = create_test_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         let view = mapped.view(7..12).unwrap();
         assert_eq!(view.offset(), 7);
@@ -722,12 +829,15 @@ mod tests {
         let data = &[b'A', b'B', 0xFF, b'C', b'D'];
         let hexdump = format_hexdump(data, 0);
         assert!(hexdump.contains("AB.CD"));
+
+        let hexdump = format_hexdump(&[0; 32], usize::MAX - 4);
+        assert_eq!(hexdump.lines().count(), 2);
     }
 
     #[test]
     fn test_empty_file_handling() {
         let file = create_empty_file();
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         assert_eq!(mapped.size(), 0);
 
@@ -781,7 +891,7 @@ mod tests {
     fn test_advanced_mmap() {
         let file = create_test_file();
         let config = MmapConfig::default();
-        let advanced = AdvancedMmap::new(file.path(), config.clone()).unwrap();
+        let advanced = advanced_mmap(file.path(), config.clone()).unwrap();
 
         assert_eq!(advanced.data().len(), 34);
         assert_eq!(advanced.data()[0..5], *b"Hello");
@@ -800,15 +910,27 @@ mod tests {
             populate: true,
             lock_memory: false,
         };
-        let advanced = AdvancedMmap::new(file.path(), config).unwrap();
+        let advanced = advanced_mmap(file.path(), config).unwrap();
 
         assert_eq!(advanced.data().len(), 34);
         assert!(advanced.config().populate);
     }
 
     #[test]
+    fn test_advanced_mmap_rejects_ignored_huge_page_request() {
+        let file = create_test_file();
+        let config = MmapConfig {
+            use_huge_pages: true,
+            ..Default::default()
+        };
+
+        let error = advanced_mmap(file.path(), config).unwrap_err();
+        assert!(error.to_string().contains("not supported"));
+    }
+
+    #[test]
     fn test_file_not_found_error() {
-        let result = MappedBinary::new("/nonexistent/file/path");
+        let result = mapped_binary("/nonexistent/file/path");
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.to_string().contains("Failed to open file"));
@@ -817,7 +939,7 @@ mod tests {
     #[test]
     fn test_advanced_mmap_file_not_found_error() {
         let config = MmapConfig::default();
-        let result = AdvancedMmap::new("/nonexistent/file/path", config);
+        let result = advanced_mmap("/nonexistent/file/path", config);
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(error.to_string().contains("Failed to open file"));
@@ -830,7 +952,7 @@ mod tests {
         file.write_all(&large_data).unwrap();
         file.flush().unwrap();
 
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test reading from various positions
         assert_eq!(mapped.read_u8(5000).unwrap(), 0xAB);
@@ -848,7 +970,7 @@ mod tests {
     #[test]
     fn test_boundary_conditions() {
         let file = create_test_file(); // 34 bytes: "Hello, World! This is a test file."
-        let mapped = MappedBinary::new(file.path()).unwrap();
+        let mapped = mapped_binary(file.path()).unwrap();
 
         // Test reading at exact file boundary
         assert!(mapped.read_u8(33).is_ok()); // Last byte

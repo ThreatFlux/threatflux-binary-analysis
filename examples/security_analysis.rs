@@ -1,15 +1,17 @@
 #![allow(clippy::uninlined_format_args)]
 //! Security analysis example
 //!
-//! This example demonstrates how to perform security analysis on binary files,
-//! including vulnerability detection and malware indicators.
+//! This example demonstrates heuristic triage of imports, names, section
+//! permissions, parser-derived hardening fields, and built-in byte patterns.
+//! Findings and scores can be incomplete or noisy; they are not vulnerability
+//! detection, malware classification, or evidence that a file is safe.
 
 use std::env;
 use std::fs;
 use threatflux_binary_analysis::{
+    BinaryFile,
     analysis::security::{SecurityAnalyzer, SecurityConfig},
     utils::patterns::{PatternCategory, PatternMatcher},
-    BinaryFile,
 };
 
 mod util;
@@ -98,6 +100,7 @@ fn main() -> Result<()> {
 fn print_security_results(
     results: &threatflux_binary_analysis::analysis::security::SecurityAnalysisResult,
 ) {
+    // This is a project-specific weighted heuristic, not CVSS or probability.
     println!("Risk Score: {:.1}/100", results.risk_score);
 
     let risk_level = match results.risk_score {

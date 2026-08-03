@@ -1,11 +1,11 @@
 //! Raw binary format parser
 
 use crate::{
+    BinaryFormatParser, BinaryFormatTrait, Result,
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
         SectionPermissions, SectionType, SecurityFeatures, Symbol,
     },
-    BinaryFormatParser, BinaryFormatTrait, Result,
 };
 
 /// Raw binary format parser
@@ -23,8 +23,6 @@ impl BinaryFormatParser for RawParser {
 
 /// Raw binary representation
 pub struct RawBinary {
-    #[allow(dead_code)]
-    data: Vec<u8>,
     metadata: BinaryMetadata,
     sections: Vec<Section>,
 }
@@ -36,10 +34,10 @@ impl RawBinary {
             format: Format::Raw,
             architecture: Architecture::Unknown,
             entry_point: None,
-            base_address: Some(0),
+            base_address: None,
             timestamp: None,
             compiler_info: None,
-            endian: Endianness::Little,
+            endian: Endianness::Unknown,
             security_features: SecurityFeatures::default(),
         };
 
@@ -49,6 +47,7 @@ impl RawBinary {
             address: 0,
             size: data.len() as u64,
             offset: 0,
+            file_size: data.len() as u64,
             permissions: SectionPermissions {
                 read: true,
                 write: false,
@@ -62,11 +61,7 @@ impl RawBinary {
             },
         }];
 
-        Self {
-            data: data.to_vec(),
-            metadata,
-            sections,
-        }
+        Self { metadata, sections }
     }
 }
 

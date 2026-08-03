@@ -1,12 +1,12 @@
 //! ELF format parser
 
 use crate::{
+    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
         SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding, SymbolType,
         SymbolVisibility,
     },
-    BinaryFormatParser, BinaryFormatTrait, Result,
 };
 use goblin::elf::Elf;
 
@@ -26,10 +26,6 @@ impl BinaryFormatParser for ElfParser {
 
 /// Parsed ELF binary
 pub struct ElfBinary {
-    #[allow(dead_code)]
-    elf: Elf<'static>,
-    #[allow(dead_code)]
-    data: Vec<u8>,
     metadata: BinaryMetadata,
     sections: Vec<Section>,
     symbols: Vec<Symbol>,
@@ -39,7 +35,7 @@ pub struct ElfBinary {
 
 impl ElfBinary {
     fn new(elf: Elf<'_>, data: &[u8]) -> Result<Self> {
-        let data = data.to_vec();
+        let mut output_budget = super::ParseOutputBudget::default();
 
         // Convert architecture
         let architecture = match elf.header.e_machine {
@@ -47,10 +43,22 @@ impl ElfBinary {
             goblin::elf::header::EM_X86_64 => Architecture::X86_64,
             goblin::elf::header::EM_ARM => Architecture::Arm,
             goblin::elf::header::EM_AARCH64 => Architecture::Arm64,
-            goblin::elf::header::EM_MIPS => Architecture::Mips,
+            goblin::elf::header::EM_MIPS | goblin::elf::header::EM_MIPS_RS3_LE => {
+                if elf.is_64 {
+                    Architecture::Mips64
+                } else {
+                    Architecture::Mips
+                }
+            }
             goblin::elf::header::EM_PPC => Architecture::PowerPC,
             goblin::elf::header::EM_PPC64 => Architecture::PowerPC64,
-            goblin::elf::header::EM_RISCV => Architecture::RiscV,
+            goblin::elf::header::EM_RISCV => {
+                if elf.is_64 {
+                    Architecture::RiscV64
+                } else {
+                    Architecture::RiscV
+                }
+            }
             _ => Architecture::Unknown,
         };
 
@@ -61,7 +69,7 @@ impl ElfBinary {
         };
 
         // Analyze security features
-        let security_features = analyze_security_features(&elf, &data);
+        let security_features = analyze_security_features(&elf);
 
         let metadata = BinaryMetadata {
             size: data.len(),
@@ -72,29 +80,23 @@ impl ElfBinary {
             } else {
                 None
             },
-            base_address: None, // ELF doesn't have a fixed base address
-            timestamp: None,    // Not available in ELF headers
-            compiler_info: extract_compiler_info(&elf, &data),
+            base_address: preferred_base_address(&elf),
+            timestamp: None, // Not available in ELF headers
+            compiler_info: extract_compiler_info(&elf, data, &mut output_budget)?,
             endian,
             security_features,
         };
 
         // Parse sections
-        let sections = parse_sections(&elf, &data)?;
+        let sections = parse_sections(&elf, data, &mut output_budget)?;
 
         // Parse symbols
-        let symbols = parse_symbols(&elf)?;
+        let symbols = parse_symbols(&elf, &mut output_budget)?;
 
         // Parse imports and exports
-        let (imports, exports) = parse_imports_exports(&elf)?;
-
-        // We need to handle lifetime issues with the Elf struct
-        // For now, we'll store the essential data and reconstruct what we need
-        let elf_owned = unsafe { std::mem::transmute::<Elf<'_>, Elf<'static>>(elf) };
+        let (imports, exports) = parse_imports_exports(&elf, &mut output_budget)?;
 
         Ok(Self {
-            elf: elf_owned,
-            data,
             metadata,
             sections,
             symbols,
@@ -138,15 +140,23 @@ impl BinaryFormatTrait for ElfBinary {
     }
 }
 
-fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
+fn parse_sections(
+    elf: &Elf,
+    data: &[u8],
+    output_budget: &mut super::ParseOutputBudget,
+) -> Result<Vec<Section>> {
     let mut sections = Vec::new();
 
     for (i, section_header) in elf.section_headers.iter().enumerate() {
-        let name = elf
-            .shdr_strtab
-            .get_at(section_header.sh_name)
-            .unwrap_or(&format!(".section_{}", i))
-            .to_string();
+        output_budget.reserve_record(&mut sections, "ELF sections")?;
+        let fallback_name;
+        let parsed_name = if let Some(name) = elf.shdr_strtab.get_at(section_header.sh_name) {
+            name
+        } else {
+            fallback_name = format!(".section_{i}");
+            &fallback_name
+        };
+        let name = output_budget.copy_name(parsed_name, "ELF section name")?;
 
         let section_type = match section_header.sh_type {
             goblin::elf::section_header::SHT_PROGBITS => {
@@ -184,17 +194,21 @@ fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
                 != 0,
         };
 
-        // Extract small section data
-        let section_data = if section_header.sh_size <= 1024
-            && section_header.sh_type != goblin::elf::section_header::SHT_NOBITS
+        let has_file_data = section_header.sh_type != goblin::elf::section_header::SHT_NOBITS
+            && section_header.sh_size != 0;
+        if has_file_data
+            && super::checked_file_range(data, section_header.sh_offset, section_header.sh_size)
+                .is_none()
         {
-            let start = section_header.sh_offset as usize;
-            let end = start + section_header.sh_size as usize;
-            if end <= data.len() {
-                Some(data[start..end].to_vec())
-            } else {
-                None
-            }
+            return Err(crate::BinaryError::invalid_data(format!(
+                "ELF section '{name}' range {}..+{} exceeds the file",
+                section_header.sh_offset, section_header.sh_size
+            )));
+        }
+
+        // Extract small section data
+        let section_data = if has_file_data {
+            super::inline_section_data(data, section_header.sh_offset, section_header.sh_size)
         } else {
             None
         };
@@ -204,6 +218,11 @@ fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
             address: section_header.sh_addr,
             size: section_header.sh_size,
             offset: section_header.sh_offset,
+            file_size: if has_file_data {
+                section_header.sh_size
+            } else {
+                0
+            },
             permissions,
             section_type,
             data: section_data,
@@ -213,20 +232,18 @@ fn parse_sections(elf: &Elf, data: &[u8]) -> Result<Vec<Section>> {
     Ok(sections)
 }
 
-fn parse_symbols(elf: &Elf) -> Result<Vec<Symbol>> {
+fn parse_symbols(elf: &Elf, output_budget: &mut super::ParseOutputBudget) -> Result<Vec<Symbol>> {
     let mut symbols = Vec::new();
 
     for sym in &elf.syms {
-        let name = elf
-            .strtab
-            .get_at(sym.st_name)
-            .unwrap_or("unknown")
-            .to_string();
+        let parsed_name = elf.strtab.get_at(sym.st_name).unwrap_or("unknown");
 
         // Skip empty names
-        if name.is_empty() {
+        if parsed_name.is_empty() {
             continue;
         }
+        output_budget.reserve_record(&mut symbols, "ELF symbols")?;
+        let name = output_budget.copy_name(parsed_name, "ELF symbol name")?;
 
         let symbol_type = match sym.st_type() {
             goblin::elf::sym::STT_FUNC => SymbolType::Function,
@@ -260,8 +277,10 @@ fn parse_symbols(elf: &Elf) -> Result<Vec<Symbol>> {
         };
 
         symbols.push(Symbol {
-            name: name.clone(),
-            demangled_name: try_demangle(&name),
+            name,
+            // Demangling is intentionally left to the optional symbol-resolution
+            // pass. Returning a fabricated name here would be a false result.
+            demangled_name: None,
             address: sym.st_value,
             size: sym.st_size,
             symbol_type,
@@ -274,34 +293,35 @@ fn parse_symbols(elf: &Elf) -> Result<Vec<Symbol>> {
     Ok(symbols)
 }
 
-fn parse_imports_exports(elf: &Elf) -> crate::types::ImportExportResult {
+fn parse_imports_exports(
+    elf: &Elf,
+    output_budget: &mut super::ParseOutputBudget,
+) -> crate::types::ImportExportResult {
     let mut imports = Vec::new();
     let mut exports = Vec::new();
 
     // Parse dynamic symbols for imports/exports
     for sym in &elf.dynsyms {
-        let name = elf
-            .dynstrtab
-            .get_at(sym.st_name)
-            .unwrap_or("unknown")
-            .to_string();
+        let parsed_name = elf.dynstrtab.get_at(sym.st_name).unwrap_or("unknown");
 
-        if name.is_empty() {
+        if parsed_name.is_empty() {
             continue;
         }
 
         if sym.st_shndx == (goblin::elf::section_header::SHN_UNDEF as usize) {
             // This is an import
+            output_budget.reserve_record(&mut imports, "ELF imports")?;
             imports.push(Import {
-                name,
+                name: output_budget.copy_name(parsed_name, "ELF import name")?,
                 library: None, // Library name would need to be resolved from dynamic entries
                 address: None,
                 ordinal: None,
             });
         } else if sym.st_bind() == goblin::elf::sym::STB_GLOBAL {
             // This is an export
+            output_budget.reserve_record(&mut exports, "ELF exports")?;
             exports.push(Export {
-                name,
+                name: output_budget.copy_name(parsed_name, "ELF export name")?,
                 address: sym.st_value,
                 ordinal: None,
                 forwarded_name: None,
@@ -312,7 +332,7 @@ fn parse_imports_exports(elf: &Elf) -> crate::types::ImportExportResult {
     Ok((imports, exports))
 }
 
-fn analyze_security_features(elf: &Elf, _data: &[u8]) -> SecurityFeatures {
+fn analyze_security_features(elf: &Elf) -> SecurityFeatures {
     let mut features = SecurityFeatures::default();
 
     // Check for NX bit (GNU_STACK segment)
@@ -323,7 +343,8 @@ fn analyze_security_features(elf: &Elf, _data: &[u8]) -> SecurityFeatures {
     }
 
     // Check for PIE (Position Independent Executable)
-    features.pie = elf.header.e_type == goblin::elf::header::ET_DYN;
+    features.pie = elf.header.e_type == goblin::elf::header::ET_DYN
+        && (!elf.is_lib || elf.interpreter.is_some());
 
     // Check for RELRO
     for phdr in &elf.program_headers {
@@ -332,62 +353,85 @@ fn analyze_security_features(elf: &Elf, _data: &[u8]) -> SecurityFeatures {
         }
     }
 
-    // Other features would need more complex analysis
+    features.stack_canary = elf.dynsyms.iter().any(|symbol| {
+        elf.dynstrtab
+            .get_at(symbol.st_name)
+            .is_some_and(|name| name == "__stack_chk_fail" || name == "__stack_chk_guard")
+    });
+    features.fortify = elf.dynsyms.iter().any(|symbol| {
+        elf.dynstrtab
+            .get_at(symbol.st_name)
+            .is_some_and(|name| name.ends_with("_chk"))
+    });
+
     features.aslr = features.pie; // PIE enables ASLR
 
     features
 }
 
-fn extract_compiler_info(elf: &Elf, data: &[u8]) -> Option<String> {
+fn preferred_base_address(elf: &Elf) -> Option<u64> {
+    elf.program_headers
+        .iter()
+        .filter(|header| header.p_type == goblin::elf::program_header::PT_LOAD)
+        .map(|header| header.p_vaddr)
+        .min()
+}
+
+fn extract_compiler_info(
+    elf: &Elf,
+    data: &[u8],
+    output_budget: &mut super::ParseOutputBudget,
+) -> Result<Option<String>> {
     // Look for compiler information in .comment section
     for section in &elf.section_headers {
-        if let Some(name) = elf.shdr_strtab.get_at(section.sh_name) {
-            if name == ".comment" {
-                let offset = section.sh_offset as usize;
-                let size = section.sh_size as usize;
+        if let Some(name) = elf.shdr_strtab.get_at(section.sh_name)
+            && name == ".comment"
+            && let Some(section_data) = section_range(data, section.sh_offset, section.sh_size)
+        {
+            if section_data.len() > super::MAX_NAME_BYTES {
+                return Err(BinaryError::invalid_data(format!(
+                    "ELF compiler comment is {} bytes; limit is {}",
+                    section_data.len(),
+                    super::MAX_NAME_BYTES
+                )));
+            }
+            // Parse null-terminated strings from the comment section
+            let comment_str = String::from_utf8_lossy(section_data);
+            let comment = comment_str.trim_end_matches('\0').trim();
 
-                if offset + size <= data.len() {
-                    let section_data = &data[offset..offset + size];
-
-                    // Parse null-terminated strings from the comment section
-                    let comment_str = String::from_utf8_lossy(section_data);
-                    let comment = comment_str.trim_end_matches('\0').trim();
-
-                    if !comment.is_empty() {
-                        return Some(comment.to_string());
-                    }
-                }
+            if !comment.is_empty() {
+                return output_budget
+                    .copy_name(comment, "ELF compiler comment")
+                    .map(Some);
             }
         }
     }
 
     // Also look for Go build info
     for section in &elf.section_headers {
-        if let Some(name) = elf.shdr_strtab.get_at(section.sh_name) {
-            if name == ".go.buildinfo" || name.contains("go.") {
-                return Some("Go compiler".to_string());
-            }
+        if let Some(name) = elf.shdr_strtab.get_at(section.sh_name)
+            && (name == ".go.buildinfo" || name.contains("go."))
+        {
+            return output_budget
+                .copy_name("Go compiler", "ELF compiler label")
+                .map(Some);
         }
     }
 
     // Look for Rust-specific sections
     for section in &elf.section_headers {
-        if let Some(name) = elf.shdr_strtab.get_at(section.sh_name) {
-            if name.starts_with(".rustc") || name.contains("rust") {
-                return Some("Rust compiler".to_string());
-            }
+        if let Some(name) = elf.shdr_strtab.get_at(section.sh_name)
+            && (name.starts_with(".rustc") || name.contains("rust"))
+        {
+            return output_budget
+                .copy_name("Rust compiler", "ELF compiler label")
+                .map(Some);
         }
     }
 
-    None
+    Ok(None)
 }
 
-fn try_demangle(name: &str) -> Option<String> {
-    // Basic C++ demangling detection
-    if name.starts_with("_Z") {
-        // This is a mangled C++ name, but we'd need a proper demangler
-        Some(format!("demangled_{}", name))
-    } else {
-        None
-    }
+fn section_range(data: &[u8], offset: u64, size: u64) -> Option<&[u8]> {
+    super::checked_file_range(data, offset, size).map(|range| &data[range])
 }

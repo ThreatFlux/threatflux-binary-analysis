@@ -1,325 +1,203 @@
-# ThreatFlux Binary Analysis - Testing Documentation
+# Testing Guide
 
-## Overview
+The repository uses Rust unit tests, integration targets under
+<code>tests/</code>, property-based tests, doctests, and feature-matrix builds.
+No coverage percentage is promised: coverage is diagnostic evidence, not a
+substitute for boundary and adversarial tests.
 
-This document describes the comprehensive test suite for the ThreatFlux Binary Analysis library, designed to achieve 90%+ test coverage across all Phase 1 features and ensure production-ready quality.
+## Supported contracts
 
-## Test Suite Architecture
+Use the Makefile interface:
 
-### Comprehensive Coverage Strategy
-
-Our testing approach follows a multi-layered strategy:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Test Architecture                    │
-├─────────────────────────────────────────────────────────┤
-│  Property-Based Tests (Fuzzing & Invariants)           │
-├─────────────────────────────────────────────────────────┤
-│  Integration Tests (Performance & Real Binaries)       │
-├─────────────────────────────────────────────────────────┤
-│  Unit Tests (Individual Components)                    │
-├─────────────────────────────────────────────────────────┤
-│  Test Fixtures & Common Infrastructure                 │
-└─────────────────────────────────────────────────────────┘
+```console
+make check
+make test
+make security
+make feature-check
 ```
 
-### Test Categories
+<code>make check</code> covers formatting, all-feature Clippy, rustdoc, and
+default/no-default all-target compilation. <code>make test</code> runs the
+all-feature suite. <code>make security</code> runs dependency/advisory policy,
+and <code>make feature-check</code> exercises the feature power set.
 
-#### 1. Unit Tests (90%+ Coverage Target)
+Run the full pre-PR contract with:
 
-**Binary Format Parsers:**
-- `unit_elf_test.rs` - ELF parser comprehensive testing
-- `unit_pe_test.rs` - PE parser comprehensive testing  
-- `unit_macho_test.rs` - Mach-O parser comprehensive testing
-- `unit_java_test.rs` - Java format comprehensive testing
-
-**Advanced Features:**
-- `unit_compiler_detection_test.rs` - Compiler/toolchain detection
-- `unit_debug_info_test.rs` - Debug information extraction (DWARF, PDB, CodeView)
-- `unit_enhanced_binary_info_test.rs` - Enhanced structures and serialization
-
-**Robustness Testing:**
-- `unit_property_based_test.rs` - Property-based fuzzing with proptest
-
-#### 2. Integration Tests
-
-**Performance & Scalability:**
-- `integration_performance_test.rs` - Performance benchmarks and real-world testing
-
-#### 3. Common Infrastructure
-
-**Shared Utilities:**
-- `common/fixtures.rs` - Test binary data creation
-- `common/helpers.rs` - Test utility functions
-- `common/mod.rs` - Module organization
-
-## Test Coverage Goals
-
-| Component | Current Target | Key Areas |
-|-----------|---------------|-----------|
-| **ELF Parser** | 90%+ | Header parsing, sections, symbols, security features |
-| **PE Parser** | 90%+ | DOS/PE headers, imports/exports, debug directories |
-| **Mach-O Parser** | 90%+ | Load commands, segments, code signing |
-| **Java Parser** | 90%+ | Class files, JAR/WAR/EAR/APK archives |
-| **Compiler Detection** | 90%+ | GCC, Clang, MSVC, Rust, Go toolchains |
-| **Debug Information** | 90%+ | DWARF v2-v5, PDB, CodeView, stripped detection |
-| **Enhanced Structures** | 90%+ | Metadata, serialization, security features |
-| **Overall Library** | 90%+ | Format detection, analysis pipeline, error handling |
-
-## Test Features
-
-### 1. Comprehensive Format Support
-
-**ELF Testing:**
-- All architectures (x86, x86_64, ARM, AARCH64, RISC-V, etc.)
-- Endianness variants (little/big endian)
-- File types (executable, shared object, core)
-- Section parsing (.text, .data, .bss, .debug_*, etc.)
-- Symbol table analysis (local, global, weak symbols)
-- Program header validation
-- Security feature detection (NX, ASLR, PIE, RELRO)
-
-**PE Testing:**
-- Machine types (x86, x64, ARM, ARM64)
-- DOS header validation
-- COFF header parsing
-- Optional header analysis (PE32/PE32+)
-- Section characteristics and permissions
-- Import/export table parsing
-- Rich header detection (compiler identification)
-- Debug directory analysis (PDB, CodeView)
-- Digital signature validation
-
-**Mach-O Testing:**
-- Magic number variants (32/64-bit, endianness)
-- CPU types (x86, x64, ARM, ARM64, PowerPC)
-- Load command parsing (LC_SEGMENT, LC_SYMTAB, etc.)
-- Platform detection (macOS, iOS, tvOS, watchOS)
-- Code signing detection
-- Universal binary support
-- Swift metadata analysis
-
-**Java Testing:**
-- Class file versions (Java 1.1 through Java 21)
-- Constant pool parsing
-- Method and field extraction
-- Archive formats (JAR, WAR, EAR)
-- Android APK analysis
-- Manifest parsing
-- JNI library detection
-
-### 2. Advanced Compiler Detection
-
-**Comprehensive Toolchain Support:**
-- **GCC**: Versions 9-13, comment section analysis
-- **Clang/LLVM**: Versions 12-16, metadata detection
-- **MSVC**: Visual Studio 2013-2022, Rich header analysis
-- **Rust**: Cargo metadata, symbol mangling patterns
-- **Go**: Build info, runtime sections
-- **Swift**: Metadata sections, Swift runtime
-- **Intel Compiler**: Specific signatures and patterns
-
-**Detection Confidence Scoring:**
-- Strong indicators: Specific version strings, unique signatures
-- Medium indicators: Import patterns, section layouts
-- Weak indicators: Heuristic patterns, statistical analysis
-
-### 3. Debug Information Analysis
-
-**DWARF Support (v2-v5):**
-- Standard sections (.debug_info, .debug_line, .debug_abbrev)
-- Extended sections (.debug_str, .debug_ranges, .debug_loc)
-- Compressed debug sections (.zdebug_*)
-- Language detection (C, C++, Rust, Go, Fortran)
-- Compilation unit analysis
-- Line number information
-
-**Windows Debug Formats:**
-- PDB references and signatures
-- CodeView format detection
-- Debug directory parsing
-- Symbol server information
-
-**Debug Quality Assessment:**
-- Stripped vs. unstripped detection
-- Debug information completeness
-- Source file availability
-- Optimization level indicators
-
-### 4. Property-Based Testing
-
-**Robustness Validation:**
-- Random binary data generation
-- Format detection invariants
-- Parser consistency checks
-- Memory usage bounds
-- Error handling quality
-
-**Fuzzing Strategies:**
-- Magic number variations
-- Header field randomization
-- Section boundary testing
-- Symbol table corruption
-- Import/export manipulation
-
-### 5. Performance Testing
-
-**Scalability Validation:**
-- Small files (4KB) - sub-millisecond parsing
-- Medium files (256KB) - under 50ms parsing
-- Large files (10MB) - under 5s parsing
-- Very large files (100MB) - under 30s parsing
-
-**Concurrency Testing:**
-- Multi-threaded parsing validation
-- Thread safety verification
-- Resource contention analysis
-- Memory leak detection
-
-**Real-World Integration:**
-- System binary analysis (/bin/ls, /usr/bin/file)
-- Production binary compatibility
-- Cross-platform validation
-
-### 6. Error Handling & Edge Cases
-
-**Malformed Data Handling:**
-- Truncated files
-- Corrupted headers
-- Invalid section references
-- Circular dependencies
-- Buffer overflows/underflows
-
-**Adversarial Input Protection:**
-- Zip bomb detection
-- Deep recursion prevention
-- Memory exhaustion protection
-- Timeout mechanisms
-- Resource limit enforcement
-
-## Running Tests
-
-### Quick Test Run
-```bash
-# Run all tests with default configuration
-./run_tests.sh
-
-# Run with specific features
-./run_tests.sh --features "elf,pe,disasm-capstone"
+```console
+make ci
 ```
 
-### Comprehensive Test Suite
-```bash
-# Full test suite with coverage
-./run_tests.sh --verbose
+CI runs all-feature tests on Linux, Windows, and macOS, validates the 1.95.0
+MSRV, and checks the feature power set.
 
-# Performance-focused testing
-./run_tests.sh --no-coverage --no-integration
+## Test organization
 
-# Feature-specific testing
-cargo test unit_elf_test --features "elf"
+### Library unit tests
+
+Module-local tests live next to code in <code>src/</code>. They exercise error
+helpers, format internals, disassembly adapters, analysis algorithms, memory-map
+reads, pattern matching, optional utilities, and serialization.
+
+### Integration targets
+
+The files under <code>tests/</code> compile as separate crates. Major groups
+include:
+
+| Area                              | Targets                                                                                                                                                      |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Top-level API and shared types    | <code>analyzer_test</code>, <code>types_test</code>, <code>integration_test</code>                                                                           |
+| Detection and parser behavior     | <code>format*detection_test</code>, <code>elf_test</code>, <code>macho_test</code>, <code>wasm_test</code>, and the <code>unit*\*\_test</code> parser suites |
+| Disassembly and graphs            | <code>iced_disasm_test</code>, <code>control_flow_test</code>, <code>enhanced_analysis_integration_test</code>                                               |
+| Robustness                        | <code>unit_property_based_test</code> and its checked-in Proptest regression seeds                                                                           |
+| Timing/stress-oriented assertions | <code>integration_performance_test</code>                                                                                                                    |
+
+Feature attributes inside each target decide which tests are active. A target
+that reports zero tests under a minimal feature set may be behaving correctly.
+
+<code>integration_performance_test</code> is an ordinary test target with
+timing-oriented assertions. The project currently has no enabled Criterion
+benchmark targets, so do not describe <code>cargo bench</code> output as a
+maintained benchmark suite.
+
+## Focused commands
+
+Run an integration target:
+
+```console
+cargo test --locked --test format_detection_test
+cargo test --locked --test analyzer_test
+cargo test --locked --test unit_property_based_test
 ```
 
-### Coverage Analysis
-```bash
-# Generate detailed coverage report
-cargo llvm-cov --html --output-dir coverage-report
+Run one test and preserve its output:
 
-# Check specific file coverage
-cargo llvm-cov --show-missing-lines src/formats/elf.rs
+```console
+cargo test --locked --test elf_test test_name -- --nocapture
 ```
 
-### Continuous Integration
+Exercise individual parsers:
 
-**GitHub Actions Configuration:**
-```yaml
-name: Comprehensive Test Suite
-on: [push, pull_request]
-jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable, beta, nightly]
-        features: [default, "elf,pe", "all-features"]
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ matrix.rust }}
-      - run: ./run_tests.sh --features ${{ matrix.features }}
+```console
+cargo test --locked --no-default-features --features elf
+cargo test --locked --no-default-features --features pe
+cargo test --locked --no-default-features --features macho
+cargo test --locked --no-default-features --features java
+cargo test --locked --no-default-features --features wasm
 ```
 
-## Quality Assurance
+Exercise optional analysis combinations:
 
-### Coverage Monitoring
-- **Line Coverage**: 90%+ target across all modules
-- **Branch Coverage**: 85%+ target for complex logic
-- **Function Coverage**: 95%+ target for public APIs
+```console
+cargo test --locked --no-default-features --features disasm-iced
+cargo test --locked --no-default-features --features disasm-capstone
+cargo test --locked --no-default-features --features control-flow
+cargo test --locked --no-default-features --features entropy-analysis
+cargo test --locked --no-default-features --features serde-support
+```
 
-### Performance Benchmarks
-- **Parsing Speed**: Tracked across file sizes
-- **Memory Usage**: Maximum 5x file size for processing
-- **Concurrency**: Linear scaling up to CPU core count
+The <code>control-flow</code> feature enables Capstone automatically.
 
-### Regression Prevention
-- **Performance Regression**: ±10% tolerance
-- **API Compatibility**: Semver compliance
-- **Feature Parity**: No functionality loss
+For exhaustive pairwise feature validation, install cargo-hack and run the same
+command as the Makefile/CI:
 
-## Contributing to Tests
+```console
+make feature-check
+```
 
-### Adding New Tests
+## What parser tests should establish
 
-1. **Follow naming conventions**: `test_<feature>_<specific_case>`
-2. **Include documentation**: Describe test purpose and coverage
-3. **Add edge cases**: Test error conditions and boundaries
-4. **Update fixtures**: Add new test data as needed
-5. **Maintain coverage**: Keep 90%+ coverage target
+For every format or structural field, include:
 
-### Test Categories
-- **Smoke tests**: Basic functionality validation
-- **Unit tests**: Individual component isolation
-- **Integration tests**: Cross-component interaction
-- **Property tests**: Invariant validation
-- **Performance tests**: Speed/memory validation
-- **Regression tests**: Previous bug prevention
+- a minimal valid input;
+- truncated input at each meaningful boundary;
+- invalid offsets, sizes, counts, alignments, and enum values;
+- overflow-prone offset-plus-length cases;
+- both supported widths/endianness where applicable;
+- unsupported variants that return a typed error;
+- an assertion for every capability or omission documented in the README/API;
+- random bytes and structured random mutation where useful.
 
-### Code Review Checklist
-- [ ] Test coverage maintained above 90%
-- [ ] All edge cases covered
-- [ ] Performance tests included
-- [ ] Error conditions tested
-- [ ] Documentation updated
-- [ ] CI passes on all platforms
+A test that only checks “does not return Err” is not enough for metadata.
+Assert the format, architecture, offsets, sizes, entry point, permissions,
+symbols/imports/exports, and relevant error variant.
 
-## Test Data Management
+## Analysis tests
 
-### Synthetic Test Binaries
-- **Realistic structures**: Valid headers and sections
-- **Multiple architectures**: x86, x64, ARM variants
-- **Security features**: Modern protection mechanisms
-- **Compiler signatures**: Authentic toolchain markers
+Disassembly tests should state the exact architecture, base address, bytes,
+engine feature, instruction budget, and expected instruction sequence.
 
-### Real Binary Integration
-- **System binaries**: Common utilities and libraries
-- **Cross-platform**: Linux, macOS, Windows executables
-- **Various sizes**: From small tools to large applications
-- **Multiple formats**: ELF, PE, Mach-O, Java archives
+Control-flow/call-graph tests should distinguish:
 
-## Maintenance & Updates
+- complete expected graphs for deliberately tiny byte sequences;
+- partial graphs caused by missing symbols, invalid file ranges, or budgets;
+- empty results that are valid under the current discovery model;
+- unsupported architecture/backend errors.
 
-### Regular Maintenance Tasks
-- **Compiler version updates**: New GCC, Clang, MSVC releases
-- **Format specification updates**: New binary format features
-- **Performance threshold tuning**: Hardware capability evolution
-- **Security feature evolution**: New protection mechanisms
+Security and entropy tests should include benign counterexamples. Findings and
+scores are heuristic, so tests should lock down rule behavior without claiming
+that a sample is malicious, vulnerable, packed, or safe.
 
-### Future Enhancements
-- **Additional formats**: .NET assemblies, WebAssembly modules
-- **Enhanced analysis**: Control flow graphs, data flow analysis
-- **Machine learning**: Pattern recognition, anomaly detection
-- **Cloud integration**: Distributed analysis, result caching
+## Property-based tests
 
-This comprehensive test suite ensures the ThreatFlux Binary Analysis library maintains the highest standards of quality, performance, and reliability across all supported binary formats and use cases.
+The Proptest target generates arbitrary bytes and magic-prefixed structures to
+exercise detection and parser invariants. Keep
+<code>tests/unit_property_based_test.proptest-regressions</code> tracked so a
+minimized failure remains reproducible.
+
+Useful invariants include:
+
+- public APIs return a value or typed error without reading outside input;
+- reported ranges do not overflow and remain within the source where promised;
+- limits are respected;
+- repeated analysis of the same bytes/configuration is deterministic;
+- disabled features continue to compile independently.
+
+Property tests are not a fuzzing service. They complement, rather than replace,
+long-running fuzzers and corpus-based testing.
+
+## Fixtures
+
+Most automated tests build synthetic bytes in memory or use helpers in
+<code>tests/common/</code>. This makes format intent reviewable and avoids
+opaque binary provenance.
+
+<code>test_samples/</code> contains manual fixtures, generators, and scripts.
+They are not referenced by the automated Rust test suite. Some source and
+scripts intentionally demonstrate unsafe behavior; read
+[test_samples/README.md](test_samples/README.md) and do not execute them on a
+host you care about.
+
+When adding a binary fixture:
+
+1. Prefer generating it in the test.
+2. If a checked-in binary is necessary, minimize it.
+3. Document its source, license, generator/toolchain, architecture, and hash.
+4. Never include live malware, credentials, personal data, or an unexplained
+   compiled artifact.
+5. Never execute a fixture in parser tests.
+
+## Coverage
+
+With cargo-llvm-cov installed:
+
+```console
+make coverage
+```
+
+Coverage output is generated under Cargo's target directory and must remain
+untracked.
+
+Review uncovered error paths and format boundaries rather than optimizing only
+for a headline percentage.
+
+## Debugging failures
+
+```console
+RUST_BACKTRACE=1 cargo test --locked --test integration_test -- --nocapture
+cargo test --locked --test unit_property_based_test -- --nocapture
+cargo test --locked --all-features -- --test-threads=1
+```
+
+When a failure is feature-specific, reproduce it with the smallest feature set
+first, then confirm default, all-feature, and no-default configurations before
+closing the issue.

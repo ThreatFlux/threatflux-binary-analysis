@@ -1,10 +1,15 @@
-//! Pattern matching utilities for binary analysis
+//! Bounded pattern matching utilities for binary data.
 //!
-//! This module provides advanced pattern matching capabilities for identifying
-//! specific byte sequences, strings, and structural patterns in binary data.
+//! Exact bytes, ASCII string matching, hexadecimal wildcards, and leading magic
+//! signatures are implemented. Regex and structural variants return
+//! [`crate::BinaryError::FeatureNotAvailable`] instead of silently producing no
+//! matches.
 
 use crate::{BinaryError, Result};
 use std::collections::HashMap;
+
+/// Default aggregate owned-output limit for a pattern search: 16 MiB.
+pub const DEFAULT_MAX_MATCH_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
 /// Pattern matcher for binary data
 pub struct PatternMatcher {
@@ -15,10 +20,17 @@ pub struct PatternMatcher {
 /// Pattern matching configuration
 #[derive(Debug, Clone)]
 pub struct MatchConfig {
-    /// Case sensitive string matching
+    /// Case-sensitive byte matching for string patterns. When disabled, matching
+    /// uses ASCII case folding so byte offsets always refer to the original input.
     pub case_sensitive: bool,
     /// Maximum number of matches to find
     pub max_matches: usize,
+    /// Maximum aggregate bytes owned by returned matches and category buckets.
+    ///
+    /// This includes cloned pattern metadata and matched bytes in both result
+    /// collections. Exceeding the limit fails the search instead of returning a
+    /// partial result.
+    pub max_output_bytes: usize,
     /// Enable wildcard matching
     pub enable_wildcards: bool,
     /// Minimum pattern length
@@ -30,6 +42,7 @@ impl Default for MatchConfig {
         Self {
             case_sensitive: true,
             max_matches: 1000,
+            max_output_bytes: DEFAULT_MAX_MATCH_OUTPUT_BYTES,
             enable_wildcards: true,
             min_pattern_length: 3,
         }
@@ -121,6 +134,68 @@ pub struct PatternMatch {
     pub confidence: f64,
 }
 
+struct MatchOutputBudget {
+    limit: usize,
+    used: usize,
+}
+
+impl MatchOutputBudget {
+    fn new(limit: usize) -> Self {
+        Self { limit, used: 0 }
+    }
+
+    fn claim(&mut self, pattern: &Pattern, matched_bytes: usize) -> Result<()> {
+        let pattern_bytes = pattern
+            .name
+            .len()
+            .checked_add(pattern.description.len())
+            .and_then(|size| size.checked_add(pattern_data_len(&pattern.data)))
+            .ok_or_else(pattern_output_overflow)?;
+        let one_match = std::mem::size_of::<PatternMatch>()
+            .checked_add(pattern_bytes)
+            .and_then(|size| size.checked_add(matched_bytes))
+            .ok_or_else(pattern_output_overflow)?;
+
+        // SearchResults owns every match twice: once in `matches` and once in
+        // its category bucket. Reserve both copies before constructing either.
+        let owned_bytes = one_match
+            .checked_mul(2)
+            .ok_or_else(pattern_output_overflow)?;
+        let next_used = self
+            .used
+            .checked_add(owned_bytes)
+            .ok_or_else(pattern_output_overflow)?;
+        if next_used > self.limit {
+            return Err(BinaryError::invalid_data(format!(
+                "pattern-match output would use {next_used} bytes, exceeding the configured {}-byte limit",
+                self.limit
+            )));
+        }
+
+        self.used = next_used;
+        Ok(())
+    }
+}
+
+fn pattern_data_len(data: &PatternData) -> usize {
+    match data {
+        PatternData::Bytes(bytes) => bytes.len(),
+        PatternData::String(value)
+        | PatternData::HexWildcard(value)
+        | PatternData::Regex(value) => value.len(),
+    }
+}
+
+fn pattern_output_overflow() -> BinaryError {
+    BinaryError::invalid_data("pattern-match output size overflows usize")
+}
+
+fn reserve_match_slot(matches: &mut Vec<PatternMatch>) -> Result<()> {
+    matches
+        .try_reserve(1)
+        .map_err(|_| BinaryError::invalid_data("unable to allocate pattern-match output"))
+}
+
 /// Pattern search results
 #[derive(Debug, Clone)]
 pub struct SearchResults {
@@ -180,16 +255,34 @@ impl PatternMatcher {
         let start_time = std::time::Instant::now();
         let mut matches = Vec::new();
         let mut by_category: crate::types::PatternMatchMap = HashMap::new();
+        let mut output_budget = MatchOutputBudget::new(self.config.max_output_bytes);
+
+        if self.config.max_matches == 0 {
+            return Ok(SearchResults {
+                matches,
+                by_category,
+                bytes_searched: data.len(),
+                duration_ms: start_time.elapsed().as_millis() as u64,
+            });
+        }
 
         for pattern in &self.patterns {
-            let pattern_matches = self.search_pattern(data, pattern)?;
+            let remaining_matches = self.config.max_matches - matches.len();
+            let pattern_matches =
+                self.search_pattern(data, pattern, remaining_matches, &mut output_budget)?;
 
             for pattern_match in pattern_matches {
-                by_category
+                let category_matches = by_category
                     .entry(pattern_match.pattern.category.clone())
-                    .or_default()
-                    .push(pattern_match.clone());
+                    .or_default();
+                category_matches.try_reserve(1).map_err(|_| {
+                    BinaryError::invalid_data("unable to allocate categorized pattern matches")
+                })?;
+                matches.try_reserve(1).map_err(|_| {
+                    BinaryError::invalid_data("unable to allocate pattern-match output")
+                })?;
 
+                category_matches.push(pattern_match.clone());
                 matches.push(pattern_match);
 
                 if matches.len() >= self.config.max_matches {
@@ -213,142 +306,175 @@ impl PatternMatcher {
     }
 
     /// Search for a specific pattern in data
-    fn search_pattern(&self, data: &[u8], pattern: &Pattern) -> Result<Vec<PatternMatch>> {
+    fn search_pattern(
+        &self,
+        data: &[u8],
+        pattern: &Pattern,
+        match_limit: usize,
+        output_budget: &mut MatchOutputBudget,
+    ) -> Result<Vec<PatternMatch>> {
+        if match_limit == 0 {
+            return Ok(Vec::new());
+        }
+
         match &pattern.pattern_type {
-            PatternType::Bytes => self.search_bytes(data, pattern),
-            PatternType::String => self.search_string(data, pattern),
-            PatternType::HexWildcard => self.search_hex_wildcard(data, pattern),
-            PatternType::Magic => self.search_magic(data, pattern),
+            PatternType::Bytes => self.search_bytes(data, pattern, match_limit, output_budget),
+            PatternType::String => self.search_string(data, pattern, match_limit, output_budget),
+            PatternType::HexWildcard => {
+                self.search_hex_wildcard(data, pattern, match_limit, output_budget)
+            }
+            PatternType::Magic => self.search_magic(data, pattern, match_limit, output_budget),
             PatternType::Regex => self.search_regex(data, pattern),
             PatternType::Structural => self.search_structural(data, pattern),
         }
     }
 
     /// Search for exact byte sequences
-    fn search_bytes(&self, data: &[u8], pattern: &Pattern) -> Result<Vec<PatternMatch>> {
+    fn search_bytes(
+        &self,
+        data: &[u8],
+        pattern: &Pattern,
+        match_limit: usize,
+        output_budget: &mut MatchOutputBudget,
+    ) -> Result<Vec<PatternMatch>> {
         let mut matches = Vec::new();
 
         if let PatternData::Bytes(pattern_bytes) = &pattern.data {
-            if pattern_bytes.len() < self.config.min_pattern_length {
+            if pattern_bytes.is_empty() || pattern_bytes.len() < self.config.min_pattern_length {
                 return Ok(matches);
             }
 
-            let mut start = 0;
-            while start + pattern_bytes.len() <= data.len() {
-                if let Some(pos) = data[start..]
-                    .windows(pattern_bytes.len())
-                    .position(|window| window == pattern_bytes)
-                {
-                    let offset = start + pos;
+            for (offset, candidate) in data.windows(pattern_bytes.len()).enumerate() {
+                if candidate == pattern_bytes {
+                    output_budget.claim(pattern, candidate.len())?;
+                    reserve_match_slot(&mut matches)?;
                     matches.push(PatternMatch {
                         pattern: pattern.clone(),
                         offset,
                         length: pattern_bytes.len(),
-                        data: data[offset..offset + pattern_bytes.len()].to_vec(),
+                        data: candidate.to_vec(),
                         confidence: 1.0,
                     });
 
-                    start = offset + 1;
-
-                    if matches.len() >= self.config.max_matches {
+                    if matches.len() >= match_limit {
                         break;
                     }
-                } else {
-                    break;
                 }
             }
+        } else {
+            return Err(pattern_data_mismatch(pattern, "bytes"));
         }
 
         Ok(matches)
     }
 
     /// Search for string patterns
-    fn search_string(&self, data: &[u8], pattern: &Pattern) -> Result<Vec<PatternMatch>> {
+    fn search_string(
+        &self,
+        data: &[u8],
+        pattern: &Pattern,
+        match_limit: usize,
+        output_budget: &mut MatchOutputBudget,
+    ) -> Result<Vec<PatternMatch>> {
         let mut matches = Vec::new();
 
         if let PatternData::String(pattern_str) = &pattern.data {
-            if pattern_str.len() < self.config.min_pattern_length {
+            let pattern_bytes = pattern_str.as_bytes();
+            if pattern_bytes.is_empty() || pattern_bytes.len() < self.config.min_pattern_length {
                 return Ok(matches);
             }
 
-            let search_str = if self.config.case_sensitive {
-                pattern_str.clone()
-            } else {
-                pattern_str.to_lowercase()
-            };
-
-            let search_bytes = search_str.as_bytes();
-
-            // Convert data to string for searching
-            if let Ok(data_str) = String::from_utf8(data.to_vec()) {
-                let search_data = if self.config.case_sensitive {
-                    data_str
+            for (offset, candidate) in data.windows(pattern_bytes.len()).enumerate() {
+                let matched = if self.config.case_sensitive {
+                    candidate == pattern_bytes
                 } else {
-                    data_str.to_lowercase()
+                    candidate.eq_ignore_ascii_case(pattern_bytes)
                 };
 
-                let mut start = 0;
-                while let Some(pos) = search_data[start..].find(&search_str) {
-                    let offset = start + pos;
+                if matched {
+                    output_budget.claim(pattern, candidate.len())?;
+                    reserve_match_slot(&mut matches)?;
                     matches.push(PatternMatch {
                         pattern: pattern.clone(),
                         offset,
-                        length: search_bytes.len(),
-                        data: data[offset..offset + search_bytes.len()].to_vec(),
+                        length: pattern_bytes.len(),
+                        data: candidate.to_vec(),
                         confidence: 1.0,
                     });
 
-                    start = offset + 1;
-
-                    if matches.len() >= self.config.max_matches {
+                    if matches.len() >= match_limit {
                         break;
                     }
                 }
             }
+        } else {
+            return Err(pattern_data_mismatch(pattern, "string"));
         }
 
         Ok(matches)
     }
 
     /// Search for hex patterns with wildcards
-    fn search_hex_wildcard(&self, data: &[u8], pattern: &Pattern) -> Result<Vec<PatternMatch>> {
+    fn search_hex_wildcard(
+        &self,
+        data: &[u8],
+        pattern: &Pattern,
+        match_limit: usize,
+        output_budget: &mut MatchOutputBudget,
+    ) -> Result<Vec<PatternMatch>> {
         let mut matches = Vec::new();
 
         if let PatternData::HexWildcard(hex_pattern) = &pattern.data {
-            let compiled_pattern = compile_hex_wildcard(hex_pattern)?;
+            if !self.config.enable_wildcards {
+                return Ok(matches);
+            }
 
-            let mut start = 0;
-            while start + compiled_pattern.len() <= data.len() {
-                if hex_wildcard_matches(
-                    &data[start..start + compiled_pattern.len()],
-                    &compiled_pattern,
-                ) {
+            let compiled_pattern = compile_hex_wildcard(hex_pattern)?;
+            if compiled_pattern.is_empty()
+                || compiled_pattern.len() < self.config.min_pattern_length
+            {
+                return Ok(matches);
+            }
+
+            for (start, candidate) in data.windows(compiled_pattern.len()).enumerate() {
+                if hex_wildcard_matches(candidate, &compiled_pattern) {
+                    output_budget.claim(pattern, candidate.len())?;
+                    reserve_match_slot(&mut matches)?;
                     matches.push(PatternMatch {
                         pattern: pattern.clone(),
                         offset: start,
                         length: compiled_pattern.len(),
-                        data: data[start..start + compiled_pattern.len()].to_vec(),
+                        data: candidate.to_vec(),
                         confidence: 1.0,
                     });
 
-                    if matches.len() >= self.config.max_matches {
+                    if matches.len() >= match_limit {
                         break;
                     }
                 }
-                start += 1;
             }
+        } else {
+            return Err(pattern_data_mismatch(pattern, "hex wildcard"));
         }
 
         Ok(matches)
     }
 
     /// Search for magic signatures
-    fn search_magic(&self, data: &[u8], pattern: &Pattern) -> Result<Vec<PatternMatch>> {
+    fn search_magic(
+        &self,
+        data: &[u8],
+        pattern: &Pattern,
+        match_limit: usize,
+        output_budget: &mut MatchOutputBudget,
+    ) -> Result<Vec<PatternMatch>> {
         // Magic signatures are typically at the beginning of files
         let mut matches = Vec::new();
 
         if let PatternData::Bytes(magic_bytes) = &pattern.data {
-            if data.len() >= magic_bytes.len() && &data[..magic_bytes.len()] == magic_bytes {
+            if match_limit > 0 && !magic_bytes.is_empty() && data.starts_with(magic_bytes) {
+                output_budget.claim(pattern, magic_bytes.len())?;
+                reserve_match_slot(&mut matches)?;
                 matches.push(PatternMatch {
                     pattern: pattern.clone(),
                     offset: 0,
@@ -357,6 +483,8 @@ impl PatternMatcher {
                     confidence: 1.0,
                 });
             }
+        } else {
+            return Err(pattern_data_mismatch(pattern, "magic bytes"));
         }
 
         Ok(matches)
@@ -364,23 +492,36 @@ impl PatternMatcher {
 
     /// Search using regular expressions
     fn search_regex(&self, _data: &[u8], _pattern: &Pattern) -> Result<Vec<PatternMatch>> {
-        // Regex support would require the regex crate
-        // For now, return empty matches
-        Ok(Vec::new())
+        Err(BinaryError::feature_not_available("regex pattern matching"))
     }
 
     /// Search for structural patterns
     fn search_structural(&self, _data: &[u8], _pattern: &Pattern) -> Result<Vec<PatternMatch>> {
-        // Structural pattern matching would be more complex
-        // For now, return empty matches
-        Ok(Vec::new())
+        Err(BinaryError::feature_not_available(
+            "structural pattern matching",
+        ))
     }
+}
+
+fn pattern_data_mismatch(pattern: &Pattern, expected: &str) -> BinaryError {
+    BinaryError::invalid_data(format!(
+        "pattern '{}' requires {expected} data for {:?} matching",
+        pattern.name, pattern.pattern_type
+    ))
 }
 
 /// Compile hex wildcard pattern
 fn compile_hex_wildcard(pattern: &str) -> crate::types::HexPatternResult {
-    let mut compiled = Vec::new();
-    let clean_pattern = pattern.replace(" ", "").replace("\n", "");
+    let clean_pattern: String = pattern
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .collect();
+
+    if !clean_pattern.is_ascii() {
+        return Err(BinaryError::invalid_data(
+            "Hex pattern must contain only ASCII hexadecimal bytes, wildcards, and whitespace",
+        ));
+    }
 
     if !clean_pattern.len().is_multiple_of(2) {
         return Err(BinaryError::invalid_data(
@@ -388,15 +529,15 @@ fn compile_hex_wildcard(pattern: &str) -> crate::types::HexPatternResult {
         ));
     }
 
-    for i in (0..clean_pattern.len()).step_by(2) {
-        let hex_byte = &clean_pattern[i..i + 2];
-
-        if hex_byte == "??" {
+    let mut compiled = Vec::with_capacity(clean_pattern.len() / 2);
+    for pair in clean_pattern.as_bytes().chunks_exact(2) {
+        if pair == b"??" {
             compiled.push(None); // Wildcard
         } else {
-            let byte_value = u8::from_str_radix(hex_byte, 16).map_err(|_| {
-                BinaryError::invalid_data(format!("Invalid hex byte: {}", hex_byte))
-            })?;
+            let hex_byte = std::str::from_utf8(pair)
+                .map_err(|_| BinaryError::invalid_data("Hex pattern contains invalid UTF-8"))?;
+            let byte_value = u8::from_str_radix(hex_byte, 16)
+                .map_err(|_| BinaryError::invalid_data(format!("Invalid hex byte: {hex_byte}")))?;
             compiled.push(Some(byte_value));
         }
     }
@@ -546,6 +687,10 @@ mod tests {
         assert_eq!(matcher.patterns.len(), 0);
         assert!(matcher.config.case_sensitive);
         assert_eq!(matcher.config.max_matches, 1000);
+        assert_eq!(
+            matcher.config.max_output_bytes,
+            DEFAULT_MAX_MATCH_OUTPUT_BYTES
+        );
         assert!(matcher.config.enable_wildcards);
         assert_eq!(matcher.config.min_pattern_length, 3);
     }
@@ -561,12 +706,14 @@ mod tests {
         let config = MatchConfig {
             case_sensitive: false,
             max_matches: 500,
+            max_output_bytes: 1024,
             enable_wildcards: false,
             min_pattern_length: 5,
         };
         let matcher = PatternMatcher::with_config(config.clone());
         assert!(!matcher.config.case_sensitive);
         assert_eq!(matcher.config.max_matches, 500);
+        assert_eq!(matcher.config.max_output_bytes, 1024);
         assert!(!matcher.config.enable_wildcards);
         assert_eq!(matcher.config.min_pattern_length, 5);
     }
@@ -576,6 +723,7 @@ mod tests {
         let config = MatchConfig::default();
         assert!(config.case_sensitive);
         assert_eq!(config.max_matches, 1000);
+        assert_eq!(config.max_output_bytes, DEFAULT_MAX_MATCH_OUTPUT_BYTES);
         assert!(config.enable_wildcards);
         assert_eq!(config.min_pattern_length, 3);
     }
@@ -667,6 +815,12 @@ mod tests {
     fn test_hex_wildcard_compilation_error_invalid_hex() {
         let pattern = "48 65 XY 6c";
         let result = compile_hex_wildcard(pattern);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hex_wildcard_compilation_rejects_non_ascii_without_panicking() {
+        let result = compile_hex_wildcard("€?");
         assert!(result.is_err());
     }
 
@@ -820,6 +974,63 @@ mod tests {
         assert_eq!(results.matches.len(), 2); // Limited by max_matches
     }
 
+    #[test]
+    fn repeated_large_pattern_fails_before_amplifying_owned_output() {
+        const PATTERN_SIZE: usize = 64 * 1024;
+        let config = MatchConfig {
+            max_matches: 1_000,
+            max_output_bytes: 1024 * 1024,
+            ..Default::default()
+        };
+        let mut matcher = PatternMatcher::with_config(config);
+        matcher.add_pattern(create_test_pattern(
+            "large-repeated-pattern",
+            PatternType::Bytes,
+            PatternData::Bytes(vec![b'A'; PATTERN_SIZE]),
+        ));
+        let data = vec![b'A'; PATTERN_SIZE + 16];
+
+        let error = matcher.search(&data).unwrap_err();
+
+        assert!(error.to_string().contains("pattern-match output would use"));
+        assert!(error.to_string().contains("1048576-byte limit"));
+    }
+
+    #[test]
+    fn test_zero_max_matches_returns_no_matches() {
+        let config = MatchConfig {
+            max_matches: 0,
+            min_pattern_length: 0,
+            ..Default::default()
+        };
+        let mut matcher = PatternMatcher::with_config(config);
+        matcher.add_pattern(create_test_pattern(
+            "test",
+            PatternType::Bytes,
+            PatternData::Bytes(b"test".to_vec()),
+        ));
+
+        let results = matcher.search(b"test").unwrap();
+        assert!(results.matches.is_empty());
+        assert!(results.by_category.is_empty());
+    }
+
+    #[test]
+    fn test_empty_byte_pattern_does_not_panic_or_match() {
+        let config = MatchConfig {
+            min_pattern_length: 0,
+            ..Default::default()
+        };
+        let mut matcher = PatternMatcher::with_config(config);
+        matcher.add_pattern(create_test_pattern(
+            "empty",
+            PatternType::Bytes,
+            PatternData::Bytes(Vec::new()),
+        ));
+
+        assert!(matcher.search(b"data").unwrap().matches.is_empty());
+    }
+
     // ==============================
     // String Pattern Search Tests
     // ==============================
@@ -860,6 +1071,28 @@ mod tests {
 
         assert_eq!(results.matches.len(), 1);
         assert_eq!(results.matches[0].offset, 4);
+    }
+
+    #[test]
+    fn test_case_insensitive_offsets_stay_on_original_bytes() {
+        let config = MatchConfig {
+            case_sensitive: false,
+            min_pattern_length: 1,
+            ..Default::default()
+        };
+        let mut matcher = PatternMatcher::with_config(config);
+        matcher.add_pattern(create_test_pattern(
+            "ascii-suffix",
+            PatternType::String,
+            PatternData::String("a".to_string()),
+        ));
+
+        // Unicode lowercase expansion used to shift the search offset and then
+        // panic while slicing the original byte string.
+        let results = matcher.search("İA".as_bytes()).unwrap();
+        assert_eq!(results.matches.len(), 1);
+        assert_eq!(results.matches[0].offset, 2);
+        assert_eq!(results.matches[0].data, b"A");
     }
 
     #[test]
@@ -932,6 +1165,35 @@ mod tests {
         assert!(results.is_err()); // Invalid hex pattern should error
     }
 
+    #[test]
+    fn test_hex_wildcard_search_respects_disabled_config() {
+        let config = MatchConfig {
+            enable_wildcards: false,
+            ..Default::default()
+        };
+        let mut matcher = PatternMatcher::with_config(config);
+        matcher.add_pattern(create_test_pattern(
+            "disabled",
+            PatternType::HexWildcard,
+            PatternData::HexWildcard("48 65 ?? 6c 6f".to_string()),
+        ));
+
+        assert!(matcher.search(b"Hello").unwrap().matches.is_empty());
+    }
+
+    #[test]
+    fn test_pattern_type_and_data_mismatch_is_an_error() {
+        let mut matcher = PatternMatcher::new();
+        matcher.add_pattern(create_test_pattern(
+            "mismatch",
+            PatternType::Bytes,
+            PatternData::String("bytes".to_string()),
+        ));
+
+        let error = matcher.search(b"bytes").unwrap_err();
+        assert!(error.to_string().contains("requires bytes data"));
+    }
+
     // ==============================
     // Magic Pattern Search Tests
     // ==============================
@@ -978,11 +1240,11 @@ mod tests {
     }
 
     // ==============================
-    // Regex and Structural Pattern Tests (Empty implementations)
+    // Regex and Structural Pattern Tests
     // ==============================
 
     #[test]
-    fn test_regex_pattern_search_returns_empty() {
+    fn test_regex_pattern_search_reports_unavailable_feature() {
         let mut matcher = PatternMatcher::new();
         let pattern = create_test_pattern(
             "test",
@@ -992,13 +1254,12 @@ mod tests {
         matcher.add_pattern(pattern);
 
         let data = b"test pattern";
-        let results = matcher.search(data).unwrap();
-
-        assert_eq!(results.matches.len(), 0); // Regex not implemented yet
+        let error = matcher.search(data).unwrap_err();
+        assert!(error.to_string().contains("regex pattern matching"));
     }
 
     #[test]
-    fn test_structural_pattern_search_returns_empty() {
+    fn test_structural_pattern_search_reports_unavailable_feature() {
         let mut matcher = PatternMatcher::new();
         let pattern = create_test_pattern(
             "test",
@@ -1008,9 +1269,8 @@ mod tests {
         matcher.add_pattern(pattern);
 
         let data = b"test pattern";
-        let results = matcher.search(data).unwrap();
-
-        assert_eq!(results.matches.len(), 0); // Structural not implemented yet
+        let error = matcher.search(data).unwrap_err();
+        assert!(error.to_string().contains("structural pattern matching"));
     }
 
     // ==============================
@@ -1196,9 +1456,11 @@ mod tests {
 
         assert_eq!(results.matches.len(), 2);
         assert_eq!(results.by_category.len(), 2);
-        assert!(results
-            .by_category
-            .contains_key(&PatternCategory::FileFormat));
+        assert!(
+            results
+                .by_category
+                .contains_key(&PatternCategory::FileFormat)
+        );
         assert!(results.by_category.contains_key(&PatternCategory::Compiler));
     }
 

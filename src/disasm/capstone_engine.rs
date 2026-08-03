@@ -1,9 +1,9 @@
 //! Capstone disassembly engine implementation
 
-use super::{analyze_control_flow, categorize_instruction, DisassemblyConfig};
+use super::{DisassemblyConfig, analyze_control_flow, categorize_instruction};
 use crate::{
-    types::{Architecture, ControlFlow as FlowType, Instruction},
     BinaryError, Result,
+    types::{Architecture, ControlFlow as FlowType, Instruction},
 };
 use capstone::prelude::*;
 use capstone::{Arch, Mode};
@@ -15,22 +15,21 @@ pub fn disassemble(
     architecture: Architecture,
     config: &DisassemblyConfig,
 ) -> Result<Vec<Instruction>> {
+    if config.max_instructions == 0 || data.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let cs = create_capstone_engine(architecture)?;
 
     let instructions = cs
-        .disasm_all(data, address)
+        .disasm_count(data, address, config.max_instructions)
         .map_err(|e| BinaryError::disassembly(format!("Capstone error: {}", e)))?;
 
-    let mut result = Vec::new();
-    let max_instructions = config.max_instructions;
+    let mut result = Vec::with_capacity(instructions.len());
 
-    for (i, instr) in instructions.iter().enumerate() {
-        if i >= max_instructions {
-            break;
-        }
-
+    for instr in instructions.iter() {
         let mnemonic = instr.mnemonic().unwrap_or("unknown").to_string();
-        let operands = instr.op_str().unwrap_or("").to_string();
+        let raw_operands = instr.op_str().unwrap_or("");
 
         // Skip invalid instructions if configured
         if config.skip_invalid && mnemonic == "unknown" {
@@ -39,9 +38,14 @@ pub fn disassemble(
 
         let category = categorize_instruction(&mnemonic);
         let flow = if config.analyze_control_flow {
-            analyze_control_flow(&mnemonic, &operands)
+            analyze_control_flow(&mnemonic, raw_operands)
         } else {
             FlowType::Sequential
+        };
+        let operands = if config.detailed {
+            raw_operands.to_string()
+        } else {
+            String::new()
         };
 
         let instruction = Instruction {
@@ -82,61 +86,6 @@ fn create_capstone_engine(architecture: Architecture) -> Result<Capstone> {
     Capstone::new_raw(arch, mode, std::iter::empty(), None)
         .map_err(|e| BinaryError::disassembly(format!("Failed to create Capstone engine: {}", e)))
 }
-
-/// Enhanced instruction analysis using Capstone details
-#[allow(dead_code)]
-pub fn analyze_instruction_details(
-    cs: &Capstone,
-    instr: &capstone::Insn,
-) -> Result<InstructionDetails> {
-    let detail = cs.insn_detail(instr).map_err(|e| {
-        BinaryError::disassembly(format!("Failed to get instruction details: {}", e))
-    })?;
-
-    let mut operands = Vec::new();
-    let memory_accesses = Vec::new();
-    let mut registers_read = Vec::new();
-    let mut registers_written = Vec::new();
-
-    // Extract operand information
-    // NOTE: Operand extraction needs implementation for capstone 0.13 API changes
-    operands.push("operands_analysis_needed".to_string());
-
-    // Extract register information
-    for reg in detail.regs_read() {
-        registers_read.push(format!("reg_{:?}", reg)); // Use Debug formatting
-    }
-
-    for reg in detail.regs_write() {
-        registers_written.push(format!("reg_{:?}", reg)); // Use Debug formatting
-    }
-
-    Ok(InstructionDetails {
-        operands,
-        memory_accesses,
-        registers_read,
-        registers_written,
-        groups: detail.groups().iter().map(|g| g.0).collect(),
-    })
-}
-
-/// Detailed instruction information
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct InstructionDetails {
-    /// Operand descriptions
-    pub operands: Vec<String>,
-    /// Memory access information
-    pub memory_accesses: Vec<String>,
-    /// Registers read by this instruction
-    pub registers_read: Vec<String>,
-    /// Registers written by this instruction
-    pub registers_written: Vec<String>,
-    /// Instruction groups
-    pub groups: Vec<u8>,
-}
-
-// Removed format_operand function - using Debug formatting instead
 
 #[cfg(test)]
 mod tests {
@@ -205,5 +154,33 @@ mod tests {
             assert_eq!(result[0].bytes.len(), expected_size);
             assert_eq!(result[0].bytes, data);
         }
+    }
+
+    #[test]
+    fn zero_instruction_limit_returns_without_disassembling() {
+        let config = DisassemblyConfig {
+            max_instructions: 0,
+            ..DisassemblyConfig::default()
+        };
+
+        assert!(
+            disassemble(&[0x90], 0x1000, Architecture::X86_64, &config)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn compact_output_preserves_flow_analysis() {
+        let config = DisassemblyConfig {
+            detailed: false,
+            analyze_control_flow: true,
+            ..DisassemblyConfig::default()
+        };
+        let instructions =
+            disassemble(&[0xe8, 0, 0, 0, 0], 0x1000, Architecture::X86_64, &config).unwrap();
+
+        assert!(instructions[0].operands.is_empty());
+        assert_eq!(instructions[0].flow, FlowType::Call(0x1005));
     }
 }

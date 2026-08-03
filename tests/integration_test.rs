@@ -10,6 +10,9 @@ use threatflux_binary_analysis::error::BinaryError;
 use threatflux_binary_analysis::types::*;
 use threatflux_binary_analysis::*;
 
+#[cfg(feature = "elf")]
+mod common;
+
 // Create comprehensive test binaries for different formats
 mod test_data {
     #[cfg(feature = "elf")]
@@ -256,7 +259,7 @@ mod test_data {
     #[cfg(feature = "java")]
     pub fn create_java_jar() -> Vec<u8> {
         use std::io::Write;
-        use zip::{write::FileOptions, ZipWriter};
+        use zip::{ZipWriter, write::FileOptions};
 
         let class_data = create_java_class();
         let cursor = std::io::Cursor::new(Vec::new());
@@ -386,15 +389,15 @@ fn test_complete_wasm_analysis() {
 #[test]
 #[cfg(feature = "elf")]
 fn test_analysis_with_all_features_enabled() {
-    let data = test_data::create_minimal_elf();
+    let data = common::fixtures::create_analysis_elf_64();
 
     let config = AnalysisConfig {
-        enable_disassembly: true,
+        enable_disassembly: cfg!(any(feature = "disasm-capstone", feature = "disasm-iced")),
         #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
         disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
-        enable_control_flow: true,
-        enable_entropy: true,
-        enable_symbols: true,
+        enable_control_flow: cfg!(feature = "control-flow"),
+        enable_entropy: cfg!(feature = "entropy-analysis"),
+        enable_symbols: cfg!(feature = "symbol-resolution"),
         max_analysis_size: 100 * 1024 * 1024,
         architecture_hint: None,
         ..Default::default()
@@ -620,9 +623,13 @@ fn test_large_file_handling() {
     let analyzer = BinaryAnalyzer::with_config(config);
     let result = analyzer.analyze(&data);
 
-    assert!(result.is_ok());
-    let analysis = result.unwrap();
-    assert_eq!(analysis.format, BinaryFormat::Elf);
+    assert!(matches!(
+        result,
+        Err(BinaryError::InputTooLarge {
+            actual: 10_485_760,
+            limit: 1_048_576
+        })
+    ));
 }
 
 #[test]

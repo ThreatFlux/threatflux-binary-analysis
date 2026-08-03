@@ -1,14 +1,10 @@
 //! Entropy analysis for binary files
 
 use crate::{
-    types::{EntropyAnalysis, EntropyRegion, ObfuscationLevel, PackingIndicators},
     BinaryFile, Result,
+    types::{EntropyAnalysis, EntropyRegion, ObfuscationLevel, PackingIndicators, Section},
 };
 use std::collections::HashMap;
-
-// Note: Advanced statistical analysis planned for future entropy features
-// #[cfg(feature = "entropy-analysis")]
-// use statrs::statistics::Statistics;
 
 /// Analyze entropy of a binary file
 pub fn analyze_binary(binary: &BinaryFile) -> Result<EntropyAnalysis> {
@@ -20,11 +16,7 @@ pub fn analyze_binary(binary: &BinaryFile) -> Result<EntropyAnalysis> {
     // Calculate section-wise entropy
     let mut section_entropy = HashMap::new();
     for section in binary.sections() {
-        let start = section.offset as usize;
-        let end = (section.offset + section.size) as usize;
-
-        if start < data.len() && end <= data.len() && start < end {
-            let section_data = &data[start..end];
+        if let Some(section_data) = section_bytes(data, section) {
             let entropy = calculate_entropy(section_data);
             section_entropy.insert(section.name.clone(), entropy);
         }
@@ -44,6 +36,18 @@ pub fn analyze_binary(binary: &BinaryFile) -> Result<EntropyAnalysis> {
     })
 }
 
+fn section_bytes<'a>(data: &'a [u8], section: &Section) -> Option<&'a [u8]> {
+    let length = section.file_size.min(section.size);
+    if length == 0 {
+        return None;
+    }
+
+    let end_offset = section.offset.checked_add(length)?;
+    let start = usize::try_from(section.offset).ok()?;
+    let end = usize::try_from(end_offset).ok()?;
+    data.get(start..end)
+}
+
 /// Calculate Shannon entropy for data
 fn calculate_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
@@ -51,7 +55,7 @@ fn calculate_entropy(data: &[u8]) -> f64 {
     }
 
     // Count byte frequencies
-    let mut freq = [0u32; 256];
+    let mut freq = [0_u64; 256];
     for &byte in data {
         freq[byte as usize] += 1;
     }
@@ -136,15 +140,10 @@ fn has_crypto_constants(data: &[u8]) -> bool {
 
 /// Check for compression signatures
 fn has_compression_signature(data: &[u8]) -> bool {
-    if data.len() < 4 {
-        return false;
-    }
-
-    // Check for common compression signatures
-    matches!(&data[0..2], b"\x1f\x8b") || // GZIP
-    matches!(&data[0..4], b"PK\x03\x04") || // ZIP
-    matches!(&data[0..3], b"BZh") || // BZIP2
-    matches!(&data[0..4], b"\xfd7zXZ") // XZ
+    data.starts_with(b"\x1f\x8b") // GZIP
+        || data.starts_with(b"PK\x03\x04") // ZIP
+        || data.starts_with(b"BZh") // BZIP2
+        || data.starts_with(b"\xfd7zXZ\0") // XZ
 }
 
 /// Analyze indicators of packing/obfuscation
@@ -175,11 +174,8 @@ fn analyze_packing_indicators(
         indicators.is_packed = true;
     }
 
-    // Estimate compression ratio (simplified)
-    if indicators.is_packed {
-        // This is a very rough estimate
-        indicators.compression_ratio = Some(overall_entropy / 8.0);
-    }
+    // Entropy alone cannot determine a compression ratio, so leave the estimate unknown.
+    indicators.compression_ratio = None;
 
     // Determine obfuscation level
     indicators.obfuscation_level = if overall_entropy > 7.8 {
@@ -203,20 +199,18 @@ fn detect_packer(data: &[u8]) -> Option<String> {
     // This is a very simplified packer detection
     // In practice, this would use a database of packer signatures
 
-    if data.len() < 1024 {
-        return None;
-    }
+    let contains = |signature: &[u8]| {
+        data.windows(signature.len())
+            .any(|window| window == signature)
+    };
 
-    // Check for common packer strings (simplified)
-    let data_str = String::from_utf8_lossy(&data[..std::cmp::min(1024, data.len())]);
-
-    if data_str.contains("UPX") {
+    if contains(b"UPX") {
         Some("UPX".to_string())
-    } else if data_str.contains("VMProtect") {
+    } else if contains(b"VMProtect") {
         Some("VMProtect".to_string())
-    } else if data_str.contains("Themida") {
+    } else if contains(b"Themida") {
         Some("Themida".to_string())
-    } else if data_str.contains("ASPack") {
+    } else if contains(b"ASPack") {
         Some("ASPack".to_string())
     } else {
         None
@@ -226,6 +220,31 @@ fn detect_packer(data: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{SectionPermissions, SectionType};
+
+    fn section(size: u64, offset: u64, file_size: u64) -> Section {
+        Section {
+            name: ".test".to_string(),
+            address: 0x1000,
+            size,
+            offset,
+            file_size,
+            permissions: SectionPermissions::default(),
+            section_type: SectionType::Data,
+            data: None,
+        }
+    }
+
+    #[test]
+    fn section_entropy_uses_only_file_backed_bytes() {
+        let data = b"headersPAYLOADnext-section";
+
+        assert_eq!(
+            section_bytes(data, &section(32, 7, 7)),
+            Some(&b"PAYLOAD"[..])
+        );
+        assert_eq!(section_bytes(data, &section(32, 0, 0)), None);
+    }
 
     #[test]
     fn test_entropy_calculation() {
@@ -259,8 +278,28 @@ mod tests {
         let zip_data = b"PK\x03\x04";
         assert!(has_compression_signature(zip_data));
 
+        let xz_data = b"\xfd7zXZ\0payload";
+        assert!(has_compression_signature(xz_data));
+
         // Test no compression
         let normal_data = b"normal data";
         assert!(!has_compression_signature(normal_data));
+    }
+
+    #[test]
+    fn detects_packer_marker_beyond_the_file_prefix() {
+        let mut data = vec![0_u8; 4096];
+        data[3000..3003].copy_from_slice(b"UPX");
+
+        assert_eq!(detect_packer(&data).as_deref(), Some("UPX"));
+    }
+
+    #[test]
+    fn entropy_does_not_claim_a_compression_ratio() {
+        let data: Vec<u8> = (0..8192).map(|index| index as u8).collect();
+        let indicators = analyze_packing_indicators(&data, &HashMap::new());
+
+        assert!(indicators.is_packed);
+        assert!(indicators.compression_ratio.is_none());
     }
 }

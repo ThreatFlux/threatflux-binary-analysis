@@ -9,8 +9,8 @@
 
 use pretty_assertions::assert_eq;
 use rstest::*;
-use threatflux_binary_analysis::types::*;
 use threatflux_binary_analysis::BinaryAnalyzer;
+use threatflux_binary_analysis::types::*;
 
 mod common;
 use common::fixtures::*;
@@ -42,6 +42,10 @@ fn test_java_magic_validation(
     let mut data = vec![0; 1024];
     if magic.len() <= data.len() {
         data[0..magic.len()].copy_from_slice(magic);
+    }
+    if magic == [0xca, 0xfe, 0xba, 0xbe] {
+        data[6..8].copy_from_slice(&52_u16.to_be_bytes());
+        data[8..10].copy_from_slice(&1_u16.to_be_bytes());
     }
 
     let result = BinaryAnalyzer::new().analyze(&data);
@@ -96,14 +100,10 @@ fn test_java_version_detection(#[case] major: u16, #[case] minor: u16, #[case] d
     let result = BinaryAnalyzer::new().analyze(&data).unwrap();
     let metadata = result.metadata;
 
-    // Version should be reflected in compiler_info
-    if let Some(ref compiler_info) = metadata.compiler_info {
-        assert!(
-            compiler_info.contains(&major.to_string()),
-            "Should contain major version for: {}",
-            description
-        );
-    }
+    assert!(
+        metadata.compiler_info.is_none(),
+        "Class version must not be mislabeled as compiler evidence: {description}"
+    );
 
     assert_eq!(result.architecture, Architecture::Jvm);
 }
@@ -594,7 +594,7 @@ fn create_java_class_with_complex_constant_pool() -> Vec<u8> {
 
 fn create_realistic_jar_file() -> Vec<u8> {
     use std::io::Write;
-    use zip::{write::FileOptions, ZipWriter};
+    use zip::{ZipWriter, write::FileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
@@ -618,7 +618,7 @@ fn create_realistic_jar_file() -> Vec<u8> {
 
 fn create_war_file() -> Vec<u8> {
     use std::io::Write;
-    use zip::{write::FileOptions, ZipWriter};
+    use zip::{ZipWriter, write::FileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
@@ -642,7 +642,7 @@ fn create_war_file() -> Vec<u8> {
 
 fn create_ear_file() -> Vec<u8> {
     use std::io::Write;
-    use zip::{write::FileOptions, ZipWriter};
+    use zip::{ZipWriter, write::FileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
@@ -666,7 +666,7 @@ fn create_ear_file() -> Vec<u8> {
 
 fn create_android_apk() -> Vec<u8> {
     use std::io::Write;
-    use zip::{write::FileOptions, ZipWriter};
+    use zip::{ZipWriter, write::FileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
@@ -730,7 +730,7 @@ fn create_java_class_with_annotations() -> Vec<u8> {
 
 fn create_jar_with_manifest() -> Vec<u8> {
     use std::io::Write;
-    use zip::{write::FileOptions, ZipWriter};
+    use zip::{ZipWriter, write::FileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
@@ -813,7 +813,7 @@ fn create_truncated_java_class() -> &'static [u8] {
 
 fn create_potential_zip_bomb_jar() -> Vec<u8> {
     use std::io::Write;
-    use zip::{write::FileOptions, ZipWriter};
+    use zip::{ZipWriter, write::FileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
@@ -833,7 +833,7 @@ fn create_potential_zip_bomb_jar() -> Vec<u8> {
 
 fn create_large_jar_file(target_size: usize) -> Vec<u8> {
     use std::io::Write;
-    use zip::{write::FileOptions, ZipWriter};
+    use zip::{ZipWriter, write::FileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
@@ -855,7 +855,7 @@ fn create_large_jar_file(target_size: usize) -> Vec<u8> {
 
 fn create_jar_with_native_libraries() -> Vec<u8> {
     use std::io::Write;
-    use zip::{write::FileOptions, ZipWriter};
+    use zip::{ZipWriter, write::FileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {

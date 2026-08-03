@@ -75,7 +75,9 @@ fn test_detect_macho_64_format() {
 #[test]
 #[cfg(feature = "java")]
 fn test_detect_java_format() {
-    let data = create_test_data(&JAVA_MAGIC);
+    let mut data = create_test_data(&JAVA_MAGIC);
+    data[6..8].copy_from_slice(&52_u16.to_be_bytes());
+    data[8..10].copy_from_slice(&1_u16.to_be_bytes());
     let format = formats::detect_format(&data).unwrap();
     assert_eq!(format, BinaryFormat::Java);
 }
@@ -84,7 +86,7 @@ fn test_detect_java_format() {
 #[cfg(feature = "java")]
 fn test_detect_java_jar_format() {
     use std::io::Write;
-    use zip::{write::FileOptions, ZipWriter};
+    use zip::{ZipWriter, write::FileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
@@ -135,6 +137,8 @@ fn test_format_precedence() {
     let mut data = create_test_data(&ELF_MAGIC);
     data[0] = 0x4d; // Overwrite with MZ signature
     data[1] = 0x5a;
+    data[0x3c..0x40].copy_from_slice(&0x80_u32.to_le_bytes());
+    data[0x80..0x84].copy_from_slice(b"PE\0\0");
 
     let format = formats::detect_format(&data).unwrap();
     // Should detect as PE since MZ magic comes first in detection order
@@ -155,8 +159,7 @@ fn test_pe_without_signature() {
     // PE header without proper PE signature
     let data = create_test_data(&PE_MAGIC);
     let format = formats::detect_format(&data).unwrap();
-    // Current implementation detects PE based on MZ magic alone
-    assert_eq!(format, BinaryFormat::Pe);
+    assert_eq!(format, BinaryFormat::Raw);
 }
 
 #[test]
@@ -167,8 +170,7 @@ fn test_corrupted_pe_header() {
     data[0x3d] = 0xff;
 
     let format = formats::detect_format(&data).unwrap();
-    // Current implementation detects PE based on MZ magic alone
-    assert_eq!(format, BinaryFormat::Pe);
+    assert_eq!(format, BinaryFormat::Raw);
 }
 
 #[test]
@@ -182,6 +184,8 @@ fn test_java_version_variants() {
     data[5] = 0x03;
     data[6] = 0x00; // Major version
     data[7] = 0x34; // Java 8
+    data[8] = 0x00; // Constant pool count
+    data[9] = 0x01;
 
     let format = formats::detect_format(&data).unwrap();
     assert_eq!(format, BinaryFormat::Java);
@@ -274,7 +278,7 @@ fn test_minimum_file_sizes() {
         // PE requires DOS header + PE header
         let small_pe = PE_MAGIC.to_vec();
         let format = formats::detect_format(&small_pe).unwrap();
-        assert_eq!(format, BinaryFormat::Pe); // Should detect basic MZ magic
+        assert_eq!(format, BinaryFormat::Raw); // MZ alone does not establish PE
     }
 }
 

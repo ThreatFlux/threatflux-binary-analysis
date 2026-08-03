@@ -82,12 +82,15 @@ pub fn analyze_minimal(data: &[u8]) -> HelperResult<AnalysisResult> {
 /// Test analysis with maximum configuration (all features enabled)
 pub fn analyze_maximal(data: &[u8]) -> HelperResult<AnalysisResult> {
     let config = AnalysisConfig {
-        enable_disassembly: true,
+        enable_disassembly: cfg!(any(feature = "disasm-capstone", feature = "disasm-iced")),
         #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
         disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
-        enable_control_flow: true,
-        enable_entropy: true,
-        enable_symbols: true,
+        enable_control_flow: cfg!(feature = "control-flow"),
+        enable_call_graph: cfg!(feature = "control-flow"),
+        enable_cognitive_complexity: cfg!(feature = "control-flow"),
+        enable_advanced_loops: cfg!(feature = "control-flow"),
+        enable_entropy: cfg!(feature = "entropy-analysis"),
+        enable_symbols: cfg!(feature = "symbol-resolution"),
         max_analysis_size: 100 * 1024 * 1024,
         architecture_hint: None,
         ..Default::default()
@@ -113,13 +116,6 @@ pub fn verify_analysis_completeness(result: &AnalysisResult) {
     assert_eq!(result.metadata.format, result.format);
     assert_eq!(result.metadata.architecture, result.architecture);
     assert!(result.metadata.size > 0, "File size should be positive");
-
-    // Collections should be initialized (but may be empty)
-    // Note: len() >= 0 is always true, so we just verify they exist
-    let _ = result.sections.len();
-    let _ = result.symbols.len();
-    let _ = result.imports.len();
-    let _ = result.exports.len();
 }
 
 /// Verify that analysis result metadata is valid
@@ -185,11 +181,11 @@ pub fn verify_sections_validity(sections: &[Section]) {
             i
         );
 
-        // If data is present, it should not exceed the section size
+        // If data is present, it should not exceed the file-backed extent.
         if let Some(ref data) = section.data {
             assert!(
-                data.len() <= section.size as usize,
-                "Section {} data size exceeds section size",
+                data.len() <= section.file_size as usize,
+                "Section {} data size exceeds file-backed size",
                 i
             );
         }
@@ -396,12 +392,15 @@ where
 /// Create a stress test configuration
 pub fn stress_test_config() -> AnalysisConfig {
     AnalysisConfig {
-        enable_disassembly: true,
+        enable_disassembly: cfg!(any(feature = "disasm-capstone", feature = "disasm-iced")),
         #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
         disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
-        enable_control_flow: true,
-        enable_entropy: true,
-        enable_symbols: true,
+        enable_control_flow: cfg!(feature = "control-flow"),
+        enable_call_graph: cfg!(feature = "control-flow"),
+        enable_cognitive_complexity: cfg!(feature = "control-flow"),
+        enable_advanced_loops: cfg!(feature = "control-flow"),
+        enable_entropy: cfg!(feature = "entropy-analysis"),
+        enable_symbols: cfg!(feature = "symbol-resolution"),
         max_analysis_size: 1024 * 1024, // 1MB limit for stress testing
         architecture_hint: None,
         ..Default::default()
@@ -416,7 +415,7 @@ pub fn performance_test_config() -> AnalysisConfig {
         disassembly_engine: threatflux_binary_analysis::DisassemblyEngine::Auto,
         enable_control_flow: false,
         enable_entropy: false,
-        enable_symbols: true,                // Keep basic symbol analysis
+        enable_symbols: cfg!(feature = "symbol-resolution"),
         max_analysis_size: 10 * 1024 * 1024, // 10MB limit
         architecture_hint: None,
         ..Default::default()

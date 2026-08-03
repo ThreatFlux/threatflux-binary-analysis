@@ -1,13 +1,14 @@
 //! PE (Portable Executable) format parser for Windows binaries
 
 use crate::{
+    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
-        SectionPermissions, SectionType, SecurityFeatures, Symbol,
+        SectionPermissions, SectionType, SecurityFeatures, Symbol, SymbolBinding, SymbolType,
+        SymbolVisibility,
     },
-    BinaryFormatParser, BinaryFormatTrait, Result,
 };
-use goblin::pe::{dll_characteristic::*, PE};
+use goblin::pe::{PE, dll_characteristic::*};
 
 /// PE format parser
 pub struct PeParser;
@@ -29,9 +30,10 @@ impl BinaryFormatParser for PeParser {
             let pe_offset =
                 u32::from_le_bytes([data[0x3c], data[0x3d], data[0x3e], data[0x3f]]) as usize;
 
-            if pe_offset + 4 <= data.len() {
-                return &data[pe_offset..pe_offset + 4] == b"PE\0\0";
-            }
+            return pe_offset
+                .checked_add(4)
+                .and_then(|end| data.get(pe_offset..end))
+                .is_some_and(|signature| signature == b"PE\0\0");
         }
 
         false
@@ -40,10 +42,6 @@ impl BinaryFormatParser for PeParser {
 
 /// Parsed PE binary
 pub struct PeBinary {
-    #[allow(dead_code)]
-    pe: PE<'static>,
-    #[allow(dead_code)]
-    data: Vec<u8>,
     metadata: BinaryMetadata,
     sections: Vec<Section>,
     symbols: Vec<Symbol>,
@@ -53,14 +51,25 @@ pub struct PeBinary {
 
 impl PeBinary {
     fn new(pe: PE<'_>, data: &[u8]) -> Result<Self> {
-        let data = data.to_vec();
+        let mut output_budget = super::ParseOutputBudget::default();
 
         // Convert architecture
         let architecture = match pe.header.coff_header.machine {
             goblin::pe::header::COFF_MACHINE_X86 => Architecture::X86,
             goblin::pe::header::COFF_MACHINE_X86_64 => Architecture::X86_64,
-            goblin::pe::header::COFF_MACHINE_ARM => Architecture::Arm,
+            goblin::pe::header::COFF_MACHINE_ARM
+            | goblin::pe::header::COFF_MACHINE_ARMNT
+            | goblin::pe::header::COFF_MACHINE_THUMB => Architecture::Arm,
             goblin::pe::header::COFF_MACHINE_ARM64 => Architecture::Arm64,
+            goblin::pe::header::COFF_MACHINE_MIPS16
+            | goblin::pe::header::COFF_MACHINE_MIPSFPU
+            | goblin::pe::header::COFF_MACHINE_MIPSFPU16
+            | goblin::pe::header::COFF_MACHINE_R4000
+            | goblin::pe::header::COFF_MACHINE_WCEMIPSV2 => Architecture::Mips,
+            goblin::pe::header::COFF_MACHINE_POWERPC
+            | goblin::pe::header::COFF_MACHINE_POWERPCFP => Architecture::PowerPC,
+            goblin::pe::header::COFF_MACHINE_RISCV32 => Architecture::RiscV,
+            goblin::pe::header::COFF_MACHINE_RISCV64 => Architecture::RiscV64,
             _ => Architecture::Unknown,
         };
 
@@ -73,13 +82,20 @@ impl PeBinary {
         // Get base address and entry point from optional header
         let (base_address, entry_point) = if let Some(optional_header) = &pe.header.optional_header
         {
-            (
-                Some(optional_header.windows_fields.image_base),
+            let image_base = optional_header.windows_fields.image_base;
+            let entry_rva = optional_header.standard_fields.address_of_entry_point;
+            let entry_point = if entry_rva == 0 {
+                None
+            } else {
                 Some(
-                    optional_header.standard_fields.address_of_entry_point as u64
-                        + optional_header.windows_fields.image_base,
-                ),
-            )
+                    image_base
+                        .checked_add(u64::from(entry_rva))
+                        .ok_or_else(|| {
+                            BinaryError::invalid_data("PE entry point address overflows u64")
+                        })?,
+                )
+            };
+            (Some(image_base), entry_point)
         } else {
             (None, None)
         };
@@ -90,27 +106,23 @@ impl PeBinary {
             architecture,
             entry_point,
             base_address,
-            timestamp: Some(pe.header.coff_header.time_date_stamp as u64),
-            compiler_info: extract_compiler_info(&pe),
+            timestamp: (pe.header.coff_header.time_date_stamp != 0)
+                .then_some(u64::from(pe.header.coff_header.time_date_stamp)),
+            compiler_info: None,
             endian,
             security_features,
         };
 
         // Parse sections
-        let sections = parse_sections(&pe, &data)?;
+        let sections = parse_sections(&pe, data, &mut output_budget)?;
 
         // Parse symbols
-        let symbols = parse_symbols(&pe, &data)?;
+        let symbols = parse_symbols(&pe, data, &mut output_budget)?;
 
         // Parse imports and exports
-        let (imports, exports) = parse_imports_exports(&pe)?;
-
-        // Handle lifetime issues with PE struct
-        let pe_owned = unsafe { std::mem::transmute::<PE<'_>, PE<'static>>(pe) };
+        let (imports, exports) = parse_imports_exports(&pe, &mut output_budget)?;
 
         Ok(Self {
-            pe: pe_owned,
-            data,
             metadata,
             sections,
             symbols,
@@ -154,13 +166,18 @@ impl BinaryFormatTrait for PeBinary {
     }
 }
 
-fn parse_sections(pe: &PE, data: &[u8]) -> Result<Vec<Section>> {
+fn parse_sections(
+    pe: &PE,
+    data: &[u8],
+    output_budget: &mut super::ParseOutputBudget,
+) -> Result<Vec<Section>> {
     let mut sections = Vec::new();
 
     for section in &pe.sections {
-        let name = String::from_utf8_lossy(&section.name)
-            .trim_end_matches('\0')
-            .to_string();
+        output_budget.reserve_record(&mut sections, "PE sections")?;
+        let decoded_name = String::from_utf8_lossy(&section.name);
+        let name =
+            output_budget.copy_name(decoded_name.trim_end_matches('\0'), "PE section name")?;
 
         // Determine section type based on characteristics
         let section_type =
@@ -191,24 +208,45 @@ fn parse_sections(pe: &PE, data: &[u8]) -> Result<Vec<Section>> {
                 != 0,
         };
 
+        let has_file_data = section.size_of_raw_data != 0;
+        if has_file_data
+            && super::checked_file_range(
+                data,
+                u64::from(section.pointer_to_raw_data),
+                u64::from(section.size_of_raw_data),
+            )
+            .is_none()
+        {
+            return Err(BinaryError::invalid_data(format!(
+                "PE section '{name}' range {}..+{} exceeds the file",
+                section.pointer_to_raw_data, section.size_of_raw_data
+            )));
+        }
+
         // Extract small section data
-        let section_data = if section.size_of_raw_data <= 1024 && section.pointer_to_raw_data > 0 {
-            let start = section.pointer_to_raw_data as usize;
-            let end = start + section.size_of_raw_data as usize;
-            if end <= data.len() {
-                Some(data[start..end].to_vec())
-            } else {
-                None
-            }
+        let section_data = if has_file_data {
+            super::inline_section_data(
+                data,
+                u64::from(section.pointer_to_raw_data),
+                u64::from(section.size_of_raw_data),
+            )
         } else {
             None
         };
 
         sections.push(Section {
             name,
-            address: section.virtual_address as u64,
-            size: section.virtual_size as u64,
+            address: pe
+                .image_base
+                .checked_add(u64::from(section.virtual_address))
+                .ok_or_else(|| BinaryError::invalid_data("PE section address overflows u64"))?,
+            size: u64::from(if section.virtual_size == 0 {
+                section.size_of_raw_data
+            } else {
+                section.virtual_size
+            }),
             offset: section.pointer_to_raw_data as u64,
+            file_size: u64::from(section.size_of_raw_data),
             permissions,
             section_type,
             data: section_data,
@@ -218,22 +256,149 @@ fn parse_sections(pe: &PE, data: &[u8]) -> Result<Vec<Section>> {
     Ok(sections)
 }
 
-fn parse_symbols(_pe: &PE, _data: &[u8]) -> Result<Vec<Symbol>> {
-    // For now, return empty symbols as goblin 0.10 has changed the symbol API significantly
-    // NOTE: Symbol parsing API changed significantly in goblin 0.10
-    Ok(Vec::new())
+fn parse_symbols(
+    pe: &PE,
+    data: &[u8],
+    output_budget: &mut super::ParseOutputBudget,
+) -> Result<Vec<Symbol>> {
+    use goblin::pe::symbol::{
+        COFF_SYMBOL_SIZE, IMAGE_SYM_CLASS_EXTERNAL, IMAGE_SYM_CLASS_EXTERNAL_DEF,
+        IMAGE_SYM_CLASS_FILE, IMAGE_SYM_CLASS_SECTION, IMAGE_SYM_CLASS_STATIC,
+        IMAGE_SYM_DTYPE_FUNCTION, IMAGE_SYM_UNDEFINED,
+    };
+
+    let coff = &pe.header.coff_header;
+    let table_offset = usize::try_from(coff.pointer_to_symbol_table)
+        .map_err(|_| BinaryError::invalid_data("COFF symbol table offset exceeds usize"))?;
+    let table_size = usize::try_from(coff.number_of_symbol_table)
+        .ok()
+        .and_then(|count| count.checked_mul(COFF_SYMBOL_SIZE))
+        .ok_or_else(|| BinaryError::invalid_data("COFF symbol table size overflows usize"))?;
+
+    if table_offset == 0 {
+        return Ok(Vec::new());
+    }
+    if table_offset
+        .checked_add(table_size)
+        .is_none_or(|end| end > data.len())
+    {
+        return Err(BinaryError::invalid_data(
+            "COFF symbol table extends beyond the file",
+        ));
+    }
+
+    let Some(table) = coff.symbols(data)? else {
+        return Ok(Vec::new());
+    };
+    let strings = coff.strings(data)?;
+    let mut symbols = Vec::new();
+
+    for (index, inline_name, native) in table.iter() {
+        let parsed_name = match inline_name {
+            Some(name) => name,
+            None => native.name(strings.as_ref().ok_or_else(|| {
+                BinaryError::invalid_data("COFF symbol requires a missing string table")
+            })?)?,
+        };
+        if parsed_name.is_empty() {
+            continue;
+        }
+        output_budget.reserve_record(&mut symbols, "PE symbols")?;
+        let name = output_budget.copy_name(parsed_name, "PE symbol name")?;
+
+        let section_index = usize::try_from(native.section_number)
+            .ok()
+            .and_then(|ordinal| ordinal.checked_sub(1));
+        let address = if let Some(section_index) = section_index {
+            let section = pe.sections.get(section_index).ok_or_else(|| {
+                BinaryError::invalid_data(format!(
+                    "COFF symbol '{name}' references missing section {}",
+                    native.section_number
+                ))
+            })?;
+            pe.image_base
+                .checked_add(u64::from(section.virtual_address))
+                .and_then(|base| base.checked_add(u64::from(native.value)))
+                .ok_or_else(|| {
+                    BinaryError::invalid_data(format!(
+                        "COFF symbol '{name}' virtual address overflows u64"
+                    ))
+                })?
+        } else {
+            u64::from(native.value)
+        };
+
+        let symbol_type = if native.is_function_definition()
+            || native.derived_type() == IMAGE_SYM_DTYPE_FUNCTION
+        {
+            SymbolType::Function
+        } else if native.is_file() || native.storage_class == IMAGE_SYM_CLASS_FILE {
+            SymbolType::File
+        } else if native.is_section_definition() || native.storage_class == IMAGE_SYM_CLASS_SECTION
+        {
+            SymbolType::Section
+        } else if native.section_number == IMAGE_SYM_UNDEFINED && native.value != 0 {
+            SymbolType::Common
+        } else {
+            SymbolType::Object
+        };
+
+        let binding = if native.is_weak_external() {
+            SymbolBinding::Weak
+        } else if matches!(
+            native.storage_class,
+            IMAGE_SYM_CLASS_EXTERNAL | IMAGE_SYM_CLASS_EXTERNAL_DEF
+        ) {
+            SymbolBinding::Global
+        } else if native.storage_class == IMAGE_SYM_CLASS_STATIC {
+            SymbolBinding::Local
+        } else {
+            SymbolBinding::Other(format!("COFF_STORAGE_CLASS_{}", native.storage_class))
+        };
+
+        let size = if native.is_function_definition() && native.number_of_aux_symbols != 0 {
+            table
+                .aux_function_definition(index + 1)
+                .map_or(0, |aux| u64::from(aux.total_size))
+        } else {
+            0
+        };
+
+        symbols.push(Symbol {
+            name,
+            demangled_name: None,
+            address,
+            size,
+            symbol_type,
+            binding,
+            visibility: SymbolVisibility::Default,
+            section_index,
+        });
+    }
+
+    Ok(symbols)
 }
 
-fn parse_imports_exports(pe: &PE) -> crate::types::ImportExportResult {
+fn parse_imports_exports(
+    pe: &PE,
+    output_budget: &mut super::ParseOutputBudget,
+) -> crate::types::ImportExportResult {
     let mut imports = Vec::new();
     let mut exports = Vec::new();
 
     // Parse imports
     for import in &pe.imports {
+        output_budget.reserve_record(&mut imports, "PE imports")?;
+        let rva = u64::try_from(import.rva)
+            .map_err(|_| BinaryError::invalid_data("PE import RVA exceeds u64"))?;
         imports.push(Import {
-            name: import.name.to_string(),
-            library: Some(import.dll.to_string()),
-            address: Some(import.rva as u64),
+            name: output_budget.copy_name(&import.name, "PE import name")?,
+            library: Some(output_budget.copy_name(import.dll, "PE import library")?),
+            address: Some(
+                pe.image_base
+                    .checked_add(rva)
+                    .ok_or_else(|| BinaryError::invalid_data("PE import address overflows u64"))?,
+            ),
             ordinal: Some(import.ordinal),
         });
     }
@@ -241,18 +406,32 @@ fn parse_imports_exports(pe: &PE) -> crate::types::ImportExportResult {
     // Parse exports
     for export in &pe.exports {
         if let Some(name) = &export.name {
+            output_budget.reserve_record(&mut exports, "PE exports")?;
+            let rva = u64::try_from(export.rva)
+                .map_err(|_| BinaryError::invalid_data("PE export RVA exceeds u64"))?;
+            let forwarded_name =
+                match export.reexport.as_ref() {
+                    Some(goblin::pe::export::Reexport::DLLName { export, lib }) => Some(
+                        output_budget
+                            .copy_name_parts(&[lib, ".", export], "PE forwarded export name")?,
+                    ),
+                    Some(goblin::pe::export::Reexport::DLLOrdinal { ordinal, lib }) => {
+                        let ordinal = ordinal.to_string();
+                        Some(output_budget.copy_name_parts(
+                            &[lib, ".#", &ordinal],
+                            "PE forwarded export ordinal",
+                        )?)
+                    }
+                    None => None,
+                };
             exports.push(Export {
-                name: name.to_string(),
-                address: export.rva as u64,
+                name: output_budget.copy_name(name, "PE export name")?,
+                address: pe
+                    .image_base
+                    .checked_add(rva)
+                    .ok_or_else(|| BinaryError::invalid_data("PE export address overflows u64"))?,
                 ordinal: None, // PE exports don't have ordinals in goblin 0.10
-                forwarded_name: export.reexport.as_ref().map(|r| match r {
-                    goblin::pe::export::Reexport::DLLName { export, lib } => {
-                        format!("{}.{}", lib, export)
-                    }
-                    goblin::pe::export::Reexport::DLLOrdinal { ordinal, lib } => {
-                        format!("{}.#{}", lib, ordinal)
-                    }
-                }),
+                forwarded_name,
             });
         }
     }
@@ -290,14 +469,4 @@ fn analyze_security_features(pe: &PE) -> SecurityFeatures {
     features.signed = !pe.certificates.is_empty();
 
     features
-}
-
-fn extract_compiler_info(pe: &PE) -> Option<String> {
-    // Look for compiler strings in debug info or rich header
-    // This is a simplified implementation
-    if pe.header.coff_header.number_of_symbol_table > 0 {
-        Some("MSVC (detected from symbols)".to_string())
-    } else {
-        None
-    }
 }

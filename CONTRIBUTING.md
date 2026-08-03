@@ -1,292 +1,186 @@
-# Contributing to ThreatFlux Binary Analysis
+# Contributing
 
-Thank you for your interest in contributing to ThreatFlux Binary Analysis! This document provides guidelines and instructions for contributing to the project.
+Thank you for helping improve ThreatFlux Binary Analysis. Focused bug fixes,
+format-boundary tests, documentation corrections, and carefully scoped parser
+or analysis improvements are welcome.
 
-## Table of Contents
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+Suspected vulnerabilities must follow [SECURITY.md](SECURITY.md), not the public
+issue tracker.
 
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [How to Contribute](#how-to-contribute)
-- [Development Workflow](#development-workflow)
-- [Code Style and Standards](#code-style-and-standards)
-- [Testing Guidelines](#testing-guidelines)
-- [Documentation](#documentation)
-- [Security](#security)
-- [License](#license)
+## Before you start
 
-## Code of Conduct
+- Search existing issues and pull requests for related work.
+- Open an issue before a large API, dependency, format, or architecture change
+  so the scope and compatibility impact can be discussed.
+- Do not attach a confidential, proprietary, or live-malware sample to a public
+  issue. Prefer a minimal synthetic reproducer.
+- Read [API.md](API.md) and
+  [Analysis boundaries](docs/ANALYSIS_BOUNDARIES.md). Capability claims in a
+  change must match the implementation.
+- For changes relative to the published 0.2.x line, read
+  [Migrating to 0.3](docs/MIGRATING_TO_0.3.md).
 
-Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). We are committed to providing a welcoming and inclusive environment for all contributors.
+## Development setup
 
-## Getting Started
+The crate requires Rust 1.95.0 or newer. Clone your fork and create a focused
+branch:
 
-1. **Fork the repository** on GitHub
-2. **Clone your fork** locally:
-   ```bash
-   git clone https://github.com/your-username/threatflux-binary-analysis.git
-   cd threatflux-binary-analysis
-   ```
-3. **Add the upstream remote**:
-   ```bash
-   git remote add upstream https://github.com/threatflux/threatflux-binary-analysis.git
-   ```
-4. **Keep your fork up to date**:
-   ```bash
-   git fetch upstream
-   git checkout main
-   git merge upstream/main
-   ```
-
-## Development Setup
-
-### Prerequisites
-
-- Rust 1.95.0 or later
-- Cargo (comes with Rust)
-- Git
-- Make (optional but recommended)
-
-### Building the Project
-
-```bash
-# Build with default features
-cargo build
-
-# Build with all features
-cargo build --all-features
-
-# Build in release mode
-cargo build --release
+```console
+git clone https://github.com/YOUR-ACCOUNT/threatflux-binary-analysis.git
+cd threatflux-binary-analysis
+git remote add upstream https://github.com/ThreatFlux/threatflux-binary-analysis.git
+git switch -c fix/short-description
 ```
 
-### Running Tests
+Install rustfmt and Clippy:
 
-```bash
-# Run all tests
-cargo test
-
-# Run tests with all features
-cargo test --all-features
-
-# Run a specific test
-cargo test test_name_here
-
-# Run tests with output
-cargo test -- --nocapture
+```console
+rustup component add rustfmt clippy
 ```
 
-### Using Make
+The all-features build may need Capstone development files and
+<code>pkg-config</code>. See [DEVELOPMENT.md](DEVELOPMENT.md) for platform
+prerequisites and optional tooling.
 
-The project includes a comprehensive Makefile for common tasks:
+## Make a change
 
-```bash
-# Run all checks (format, lint, audit, test, etc.)
-make all
+Keep each pull request narrow and reviewable:
 
-# Individual commands
-make fmt          # Format code
-make lint         # Run clippy
-make test         # Run tests
-make audit        # Security audit
-make doc          # Generate documentation
-make check-features  # Verify feature combinations
+1. Reproduce the problem with a test where practical.
+2. Implement the smallest coherent change.
+3. Add valid, malformed, boundary, and feature-gating coverage appropriate to
+   the code.
+4. Update rustdoc and Markdown in the same change.
+5. Run the validation matrix.
+6. Review the final diff for unrelated formatting, generated files, binary
+   artifacts, credentials, and sample provenance.
+
+Avoid drive-by dependency updates or broad refactors in a bug-fix pull request.
+Call out any public API or output change explicitly.
+
+## Validation
+
+Run the supported checks individually while iterating:
+
+```console
+make check
+make test
+make security
+make feature-check
 ```
 
-## How to Contribute
+Before opening the pull request, run the complete contract:
 
-### Reporting Issues
-
-- **Check existing issues** to avoid duplicates
-- **Use issue templates** when available
-- **Provide detailed information**:
-  - Clear description of the problem
-  - Steps to reproduce
-  - Expected vs actual behavior
-  - System information (OS, Rust version, etc.)
-  - Relevant code samples or error messages
-
-### Suggesting Features
-
-- **Open a discussion** first for major features
-- **Provide use cases** and examples
-- **Consider backwards compatibility**
-- **Be open to feedback** and alternative approaches
-
-### Submitting Pull Requests
-
-1. **Create a feature branch**:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Make your changes**:
-   - Write clean, readable code
-   - Follow existing patterns and conventions
-   - Add tests for new functionality
-   - Update documentation as needed
-
-3. **Commit your changes**:
-   ```bash
-   git add .
-   git commit -m "feat: Add new feature description"
-   ```
-   
-   Follow [Conventional Commits](https://www.conventionalcommits.org/):
-   - `feat:` New feature
-   - `fix:` Bug fix
-   - `docs:` Documentation changes
-   - `style:` Formatting, missing semicolons, etc.
-   - `refactor:` Code restructuring without changing functionality
-   - `test:` Adding or modifying tests
-   - `chore:` Maintenance tasks
-
-4. **Run checks locally**:
-   ```bash
-   make all  # Runs all checks
-   ```
-
-5. **Push to your fork**:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-6. **Create a Pull Request**:
-   - Use a clear, descriptive title
-   - Reference any related issues
-   - Describe what changes were made and why
-   - Include test instructions if applicable
-
-## Development Workflow
-
-### Pre-commit Hook
-
-The project includes a pre-commit hook that runs `make all` automatically. To install it:
-
-```bash
-make install-hooks
+```console
+make ci
 ```
 
-### Feature Flags
+If you cannot run a check, state which one and why in the pull request. Do not
+describe unrun checks as passing.
 
-The project uses Cargo features for optional functionality:
+For a single optional feature:
 
-- `disasm-capstone`: Capstone disassembly engine (default)
-- `disasm-iced`: Iced-x86 disassembly engine
-- `control-flow`: Control flow analysis
-- `visualization`: Graph visualization
-- `wasm`: WebAssembly support
-- `serde-support`: JSON serialization
-- `symbol-resolution`: Symbol demangling
-- `compression`: Compressed file support
-- `mmap`: Memory-mapped file support
-
-When adding features that depend on external crates, use feature flags appropriately.
-
-### Architecture Support
-
-When adding support for new architectures:
-
-1. Update the `Architecture` enum in `src/types.rs`
-2. Add parsing logic in the relevant format parser
-3. Add disassembly support if applicable
-4. Add comprehensive tests
-5. Update documentation
-
-## Code Style and Standards
-
-### Rust Guidelines
-
-- Follow standard Rust naming conventions
-- Use `rustfmt` for formatting (run `cargo fmt`)
-- Use `clippy` for linting (run `cargo clippy`)
-- Write idiomatic Rust code
-- Prefer explicit error handling over panics
-- Use descriptive variable and function names
-
-### Documentation
-
-- Add doc comments for all public APIs
-- Include examples in doc comments when helpful
-- Keep comments concise and relevant
-- Update README.md for significant changes
-
-### Error Handling
-
-- Use the custom `BinaryError` type for library errors
-- Provide meaningful error messages
-- Chain errors appropriately with `thiserror`
-- Never panic in library code (except for programmer errors)
-
-## Testing Guidelines
-
-### Test Organization
-
-- Unit tests in the same file as the code (`#[cfg(test)]` module)
-- Integration tests in `tests/` directory
-- Feature-specific tests behind appropriate feature flags
-
-### Test Coverage
-
-- Test both success and failure cases
-- Test edge cases and boundary conditions
-- Use property-based testing where appropriate (`proptest`)
-- Aim for high code coverage but prioritize meaningful tests
-
-### Test Naming
-
-Use descriptive test names that explain what is being tested:
-
-```rust
-#[test]
-fn test_parse_elf_64bit_header() { ... }
-
-#[test]
-fn test_disassemble_x86_instructions() { ... }
+```console
+cargo test --locked --no-default-features --features wasm
+cargo test --locked --no-default-features --features disasm-iced
+cargo test --locked --no-default-features --features control-flow
 ```
 
-## Documentation
+The <code>control-flow</code> feature implies Capstone. See
+[TESTING.md](TESTING.md) for the full matrix.
 
-### Code Documentation
+## Parser contributions
 
-- Document all public APIs
-- Include examples for complex functionality
-- Explain non-obvious implementation details
-- Keep documentation up to date with code changes
+A parser change should define both support and limits:
 
-### Project Documentation
+- accepted magic/container variants;
+- architecture and endianness mapping;
+- offset/size/count validation;
+- behavior for truncated and internally inconsistent data;
+- which sections, symbols, imports, exports, entry points, and hardening fields
+  are actually populated;
+- behavior when the Cargo feature is disabled.
 
-- Update README.md for user-facing changes
-- Update CLAUDE.md for AI assistant guidance
-- Maintain accurate feature documentation
-- Document breaking changes in CHANGELOG.md
+Use checked arithmetic before constructing ranges. Never execute a fixture.
+Where a binary fixture is unavoidable, document how it was generated, its
+license/provenance, architecture, size, and cryptographic hash.
 
-## Security
+Do not label a format fully supported when only a subset is decoded. For
+example, current Java class parsing validates the fixed header and version but
+does not expose the version or decode the constant pool, members, attributes,
+or bytecode.
 
-### Security Guidelines
+## Disassembly and analysis contributions
 
-- Never commit sensitive information (keys, passwords, etc.)
-- Validate all inputs, especially when parsing binary data
-- Use safe Rust patterns (avoid `unsafe` unless necessary)
-- Consider security implications of new features
-- Report security vulnerabilities privately
+State whether a change operates on:
 
-### Binary Analysis Safety
+- caller-supplied bytes;
+- checked file-backed ranges in <code>BinaryFile</code>'s full owned bytes;
+- the preview-only <code>Section::data</code> field;
+- parsed symbols or entry-point fallbacks;
+- heuristic string/name/import rules.
 
-- Handle malformed binaries gracefully
-- Implement resource limits for analysis operations
-- Validate file sizes and formats before processing
-- Use bounded operations to prevent DoS
+Tests should cover invalid/non-file-backed section ranges, stripped binaries,
+unsupported architectures, instruction limits, and partial analysis. Graph and heuristic
+outputs must be described as best effort unless completeness is demonstrably
+established.
+
+For security rules, include benign counterexamples and document expected false
+positives/negatives. The project score is not CVSS or a malware probability.
+
+## Rust and API style
+
+- Use the crate's <code>Result</code> and specific <code>BinaryError</code>
+  variants at public boundaries.
+- Keep optional dependencies behind their Cargo feature.
+- Avoid panics for ordinary invalid input; return a typed error.
+- Document errors and any panic conditions on public APIs.
+- Prefer checked conversions and checked/saturating arithmetic where loss or
+  overflow is possible.
+- Keep public names and result semantics consistent across format parsers.
+- Add unsafe code only when a safe implementation is impractical, and document
+  the invariant immediately next to the unsafe block.
+
+Formatting is owned by rustfmt. Clippy warnings are denied in CI.
+
+## Documentation style
+
+- Use current public type and method names.
+- Put the required feature beside every feature-gated example.
+- Distinguish compile-time Cargo features from runtime configuration.
+- Put limitations next to the corresponding capability.
+- Avoid performance, safety, coverage, or format-completeness claims without
+  reproducible evidence.
+- Keep examples synchronous unless the application itself supplies an async
+  wrapper.
+
+## Pull request description
+
+Include:
+
+- the problem and user-visible impact;
+- the chosen approach and alternatives that materially affected it;
+- tests added or changed;
+- exact validation commands and results;
+- feature combinations exercised;
+- API, compatibility, performance, or security implications;
+- fixture provenance, if applicable;
+- follow-up work deliberately left out of scope.
+
+Respond to review with additional commits while discussion is active. Maintainers
+may squash commits when merging.
+
+## Reporting issues
+
+A useful public bug report contains the crate version, Rust version, OS/target,
+enabled features, expected behavior, actual error/result, and a minimal
+non-sensitive reproducer. Remove paths, symbols, strings, and metadata that
+identify people or proprietary software.
+
+For private security reports, use the process in [SECURITY.md](SECURITY.md).
 
 ## License
 
-By contributing to ThreatFlux Binary Analysis, you agree that your contributions will be licensed under the MIT License.
-
-## Questions?
-
-Feel free to:
-- Open an issue for questions
-- Start a discussion for broader topics
-- Reach out to maintainers
-
-Thank you for contributing to ThreatFlux Binary Analysis!
+By contributing, you agree that your contribution is licensed under the
+repository's [MIT License](LICENSE).

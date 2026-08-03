@@ -2,219 +2,200 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  RUST_STABLE: 1.97.1
+  RUST_MSRV: 1.95.0
 
 jobs:
+  quality:
+    name: Format, lint, docs, and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+          components: clippy, rustfmt
+
+      - name: Cache Cargo data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-quality-${{ env.RUST_STABLE }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install workflow linter
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            --output "$archive"
+          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check --status
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Lint GitHub Actions workflows
+        run: actionlint
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check default features
+        run: cargo check --all-targets --locked
+
+      - name: Check no default features
+        run: cargo check --all-targets --no-default-features --locked
+
+      - name: Lint all features
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+      - name: Build documentation
+        run: cargo doc --all-features --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings --cfg docsrs
+
+      - name: Verify crate package
+        run: cargo package --locked
+
+  msrv:
+    name: MSRV (1.95.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_MSRV }}
+
+      - name: Check all targets and features
+        run: cargo check --all-targets --all-features --locked
+
   test:
-    name: Test Suite
+    name: Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: [stable, beta]
-        exclude:
-          # Reduce matrix size while maintaining coverage
-          - os: windows-latest
-            rust: beta
-          - os: macos-latest
-            rust: beta
-    
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
-      with:
-        toolchain: ${{ matrix.rust }}
-        components: rustfmt, clippy
-    
-    - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
-    
-    - name: Install system dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcapstone-dev pkg-config
-    
-    - name: Install system dependencies (macOS)
-      if: matrix.os == 'macos-latest'
-      run: |
-        brew install capstone
-    
-    - name: Install system dependencies (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        # Capstone will be built from source on Windows
-        echo "Capstone will be built from source"
-    
-    - name: Check formatting
-      if: matrix.rust == 'stable'
-      run: cargo fmt --all -- --check
-    
-    - name: Run clippy (default features)
-      run: cargo clippy --all-targets -- -D warnings
-    
-    - name: Run clippy (all features)
-      run: cargo clippy --all-targets --all-features -- -D warnings
-    
-    - name: Run clippy (no default features)
-      run: cargo clippy --all-targets --no-default-features -- -D warnings
-    
-    - name: Build (default features)
-      run: cargo build --verbose
-    
-    - name: Build (all features)
-      run: cargo build --verbose --all-features
-    
-    - name: Build (no default features)
-      run: cargo build --verbose --no-default-features
-    
-    - name: Run tests (default features)
-      run: cargo test --verbose
-    
-    - name: Run tests (all features)
-      run: cargo test --verbose --all-features
-    
-    - name: Run tests (no default features)
-      run: cargo test --verbose --no-default-features
-    
-    - name: Run examples (default features)
-      if: matrix.rust == 'stable'
-      run: |
-        cargo run --example basic_analysis
-    
-    - name: Run examples (with features)
-      if: matrix.rust == 'stable'
-      run: |
-        cargo run --example control_flow --features control-flow
-        cargo run --example disassembly --features disasm-capstone
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Cache Cargo data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-tests-${{ env.RUST_STABLE }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Run default-feature tests
+        if: runner.os == 'Linux'
+        run: cargo test --locked
+
+      - name: Run no-default-feature tests
+        if: runner.os == 'Linux'
+        run: cargo test --no-default-features --locked
+
+      - name: Run all-feature tests
+        run: cargo test --all-features --locked
+
+  features:
+    name: Feature powerset
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-hack@0.6.45
+
+      - name: Check feature combinations
+        run: cargo hack check --feature-powerset --depth 2 --locked
 
   coverage:
-    name: Code Coverage
+    name: Coverage
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
-    
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
     steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
-      with:
-        toolchain: stable
-        components: llvm-tools-preview
-    
-    - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcapstone-dev pkg-config
-    
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
-      with:
-        tool: cargo-llvm-cov
-    
-    - name: Generate code coverage
-      run: |
-        cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
-      with:
-        files: lcov.info
-        fail_ci_if_error: true
-        token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+          components: llvm-tools-preview
 
-  benchmark:
-    name: Performance Benchmarks
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
-      with:
-        toolchain: stable
-    
-    - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcapstone-dev pkg-config
-    
-    # Note: Benchmarks are currently disabled in Cargo.toml
-    # This will be ready when benchmark files are implemented
-    - name: Run benchmarks
-      run: |
-        echo "Benchmarks will be run once benchmark files are implemented"
-        # cargo bench --all-features
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-llvm-cov@0.8.7
 
-  docs:
-    name: Documentation Check
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
-      with:
-        toolchain: stable
-    
-    - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcapstone-dev pkg-config
-    
-    - name: Check documentation
-      run: cargo doc --all-features --no-deps --document-private-items
-      env:
-        RUSTDOCFLAGS: "-D warnings"
+      - name: Generate coverage
+        run: cargo llvm-cov --workspace --all-features --locked --lcov --output-path lcov.info
 
-  feature-combinations:
-    name: Feature Combination Tests
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
-      with:
-        toolchain: stable
-    
-    - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcapstone-dev pkg-config
-    
-    - name: Install cargo-hack
-      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
-      with:
-        tool: cargo-hack
-    
-    - name: Test feature combinations
-      run: |
-        cargo hack check --feature-powerset --depth 2 --no-dev-deps
+      - name: Upload coverage
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          fail_ci_if_error: true
+          files: lcov.info
+          use_oidc: true
+          version: v11.3.1

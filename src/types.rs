@@ -129,11 +129,14 @@ pub struct BinaryMetadata {
 }
 
 /// Endianness
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
 pub enum Endianness {
     Little,
     Big,
+    /// The byte order is not known or does not apply to this input.
+    #[default]
+    Unknown,
 }
 
 /// Security features detected in the binary
@@ -154,7 +157,10 @@ pub struct SecurityFeatures {
     pub pie: bool,
     /// Relocation Read-Only
     pub relro: bool,
-    /// Signed binary
+    /// Format-specific code-signature or certificate data is present.
+    ///
+    /// This does not establish that the signature is cryptographically valid or
+    /// chains to a trusted identity.
     pub signed: bool,
 }
 
@@ -166,15 +172,17 @@ pub struct Section {
     pub name: String,
     /// Virtual address
     pub address: u64,
-    /// Size in bytes
+    /// Size of the section's virtual/memory span in bytes
     pub size: u64,
     /// File offset
     pub offset: u64,
+    /// Number of bytes backed by the file from [`Self::offset`]
+    pub file_size: u64,
     /// Section permissions
     pub permissions: SectionPermissions,
     /// Section type
     pub section_type: SectionType,
-    /// Raw data (optional, for small sections)
+    /// Inline raw-data preview (optional, for small file-backed sections)
     pub data: Option<Vec<u8>>,
 }
 
@@ -685,8 +693,8 @@ pub enum NodeType {
 pub struct CallGraphEdge {
     /// Calling function address
     pub caller: u64,
-    /// Called function address
-    pub callee: u64,
+    /// Called function address, or `None` when an indirect target is unresolved.
+    pub callee: Option<u64>,
     /// Type of call
     pub call_type: CallType,
     /// All call sites for this edge
@@ -765,17 +773,19 @@ pub struct CallGraphStatistics {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
 pub struct CallGraphConfig {
-    /// Analyze indirect calls (function pointers)
+    /// Record unresolved indirect call-family instructions with an unknown target.
     pub analyze_indirect_calls: bool,
-    /// Detect tail call optimizations
+    /// Detect direct jumps at function ends as potential tail calls.
     pub detect_tail_calls: bool,
-    /// Resolve virtual calls (C++)
-    pub resolve_virtual_calls: bool,
-    /// Follow import thunks
-    pub follow_import_thunks: bool,
-    /// Maximum call depth to analyze
-    pub max_call_depth: Option<u32>,
-    /// Include library function calls
+    /// Maximum number of discovered functions accepted for one analysis.
+    pub max_functions: usize,
+    /// Maximum number of instructions decoded across all discovered functions.
+    pub max_total_instructions: usize,
+    /// Maximum breadth-first depth for assigning [`CallGraphNode::call_depth`].
+    ///
+    /// This does not limit call-edge extraction or reachability analysis.
+    pub max_labeled_call_depth: Option<u32>,
+    /// Include calls to functions classified as libraries.
     pub include_library_calls: bool,
 }
 
@@ -784,9 +794,9 @@ impl Default for CallGraphConfig {
         Self {
             analyze_indirect_calls: true,
             detect_tail_calls: true,
-            resolve_virtual_calls: false,
-            follow_import_thunks: true,
-            max_call_depth: Some(50),
+            max_functions: 10_000,
+            max_total_instructions: 1_000_000,
+            max_labeled_call_depth: Some(50),
             include_library_calls: false,
         }
     }
@@ -882,7 +892,7 @@ impl Default for BinaryMetadata {
             base_address: None,
             timestamp: None,
             compiler_info: None,
-            endian: Endianness::Little,
+            endian: Endianness::Unknown,
             security_features: SecurityFeatures::default(),
         }
     }

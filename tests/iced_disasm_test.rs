@@ -11,6 +11,7 @@ use util::create_test_elf;
 fn test_iced_disassembly_via_analyzer() {
     let data = create_test_elf();
     let config = AnalysisConfig {
+        enable_disassembly: true,
         disassembly_engine: DisassemblyEngine::Iced,
         enable_control_flow: false,
         enable_entropy: false,
