@@ -5,20 +5,15 @@
 use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer};
 
 #[cfg(feature = "control-flow")]
-use threatflux_binary_analysis::types::*;
-#[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
 use threatflux_binary_analysis::DisassemblyEngine;
-
-mod common;
 #[cfg(feature = "control-flow")]
-use common::fixtures::*;
+use threatflux_binary_analysis::types::*;
 
 /// Test end-to-end enhanced control flow analysis
 #[test]
 #[cfg(feature = "control-flow")]
 fn test_enhanced_control_flow_analysis() {
-    // Create a realistic ELF binary with proper structure
-    let data = create_realistic_elf_64();
+    let data = create_test_elf_with_functions();
 
     let config = AnalysisConfig {
         enable_disassembly: true,
@@ -31,6 +26,7 @@ fn test_enhanced_control_flow_analysis() {
         enable_entropy: false,
         enable_symbols: true,
         max_analysis_size: 10 * 1024 * 1024,
+        max_disassembly_instructions: 10_000,
         architecture_hint: Some(Architecture::X86_64),
         call_graph_config: None,
     };
@@ -62,14 +58,14 @@ fn test_enhanced_control_flow_analysis() {
 #[test]
 #[cfg(feature = "control-flow")]
 fn test_call_graph_analysis() {
-    let data = create_realistic_elf_64();
+    let data = create_test_elf_with_functions();
 
     let call_graph_config = CallGraphConfig {
         analyze_indirect_calls: true,
         detect_tail_calls: true,
-        resolve_virtual_calls: false,
-        follow_import_thunks: true,
-        max_call_depth: Some(10),
+        max_functions: 1_000,
+        max_total_instructions: 100_000,
+        max_labeled_call_depth: Some(10),
         include_library_calls: false,
     };
 
@@ -84,6 +80,7 @@ fn test_call_graph_analysis() {
         enable_entropy: false,
         enable_symbols: true,
         max_analysis_size: 10 * 1024 * 1024,
+        max_disassembly_instructions: 10_000,
         architecture_hint: Some(Architecture::X86_64),
         call_graph_config: Some(call_graph_config),
     };
@@ -102,14 +99,14 @@ fn test_call_graph_analysis() {
         assert_eq!(stats.total_calls, call_graph.edges.len());
 
         // Test DOT export functionality
-        let dot_output = call_graph.to_dot();
+        let dot_output = call_graph.to_dot().expect("DOT export should succeed");
         assert!(dot_output.contains("digraph CallGraph"));
         assert!(dot_output.contains("rankdir=TB"));
 
         // Test JSON export functionality (if serde is available)
         #[cfg(feature = "serde-support")]
         {
-            let json_output = call_graph.to_json();
+            let json_output = call_graph.to_json().expect("JSON export should succeed");
             assert!(!json_output.is_empty());
             assert!(json_output.contains("nodes"));
             assert!(json_output.contains("edges"));
@@ -117,8 +114,7 @@ fn test_call_graph_analysis() {
 
         // Test cycle detection
         let cycles = call_graph.detect_cycles();
-        // For a simple test binary, we might not have cycles, but the method should work
-        assert!(cycles.is_empty() || !cycles.is_empty());
+        assert_eq!(cycles, call_graph.detect_cycles());
     }
 }
 
@@ -126,7 +122,7 @@ fn test_call_graph_analysis() {
 #[test]
 #[cfg(feature = "control-flow")]
 fn test_comprehensive_enhanced_analysis() {
-    let data = create_realistic_elf_64();
+    let data = create_test_elf_with_functions();
 
     let config = AnalysisConfig {
         enable_disassembly: true,
@@ -139,6 +135,7 @@ fn test_comprehensive_enhanced_analysis() {
         enable_entropy: false,
         enable_symbols: true,
         max_analysis_size: 10 * 1024 * 1024,
+        max_disassembly_instructions: 10_000,
         architecture_hint: Some(Architecture::X86_64),
         call_graph_config: Some(CallGraphConfig::default()),
     };
@@ -175,7 +172,7 @@ fn test_comprehensive_enhanced_analysis() {
 #[test]
 #[cfg(feature = "control-flow")]
 fn test_complexity_metrics_calculation() {
-    let data = create_realistic_elf_64();
+    let data = create_test_elf_with_functions();
 
     let config = AnalysisConfig {
         enable_disassembly: true,
@@ -188,6 +185,7 @@ fn test_complexity_metrics_calculation() {
         enable_entropy: false,
         enable_symbols: true,
         max_analysis_size: 10 * 1024 * 1024,
+        max_disassembly_instructions: 10_000,
         architecture_hint: Some(Architecture::X86_64),
         call_graph_config: None,
     };
@@ -220,10 +218,10 @@ fn test_complexity_metrics_calculation() {
                 }
 
                 // Maintainability index might be available if Halstead is computed
-                if complexity.halstead_metrics.is_some() {
-                    if let Some(mi) = complexity.maintainability_index {
-                        assert!((0.0..=100.0).contains(&mi));
-                    }
+                if complexity.halstead_metrics.is_some()
+                    && let Some(mi) = complexity.maintainability_index
+                {
+                    assert!((0.0..=100.0).contains(&mi));
                 }
             }
         }
@@ -247,6 +245,7 @@ fn test_loop_analysis() {
         enable_entropy: false,
         enable_symbols: true,
         max_analysis_size: 10 * 1024 * 1024,
+        max_disassembly_instructions: 10_000,
         architecture_hint: Some(Architecture::X86_64),
         call_graph_config: None,
     };
@@ -270,67 +269,64 @@ fn test_loop_analysis() {
     }
 }
 
-/// Create a test ELF binary with multiple functions
+/// Create a minimal ELF64 executable with a file-backed executable section.
 #[allow(dead_code)]
 fn create_test_elf_with_functions() -> Vec<u8> {
-    // Create a minimal but valid ELF64 binary with multiple functions
-    let mut elf_data = vec![
-        // ELF header
-        0x7f, 0x45, 0x4c, 0x46, // Magic
-        0x02, // 64-bit
-        0x01, // Little endian
-        0x01, // ELF version
-        0x00, // System V ABI
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Padding
-        0x02, 0x00, // Executable
-        0x3e, 0x00, // x86-64
-        0x01, 0x00, 0x00, 0x00, // Version
-        0x00, 0x10, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, // Entry point
-        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Program header offset
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Section header offset
-        0x00, 0x00, 0x00, 0x00, // Flags
-        0x40, 0x00, // ELF header size
-        0x38, 0x00, // Program header entry size
-        0x01, 0x00, // Program header count
-        0x40, 0x00, // Section header entry size
-        0x00, 0x00, // Section header count
-        0x00, 0x00, // Section header string table index
-    ];
+    const TEXT_OFFSET: usize = 0x100;
+    const TEXT_ADDRESS: u64 = 0x401000;
+    const STRING_TABLE_OFFSET: usize = 0x180;
+    const SECTION_TABLE_OFFSET: usize = 0x200;
 
-    // Add program header
-    elf_data.extend_from_slice(&[
-        0x01, 0x00, 0x00, 0x00, // PT_LOAD
-        0x05, 0x00, 0x00, 0x00, // PF_R | PF_X
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Offset
-        0x00, 0x10, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, // Virtual address
-        0x00, 0x10, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, // Physical address
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // File size
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Memory size
-        0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Alignment
-    ]);
-
-    // Pad to align with entry point
-    while elf_data.len() < 0x1000 {
-        elf_data.push(0x00);
-    }
-
-    // Add some simple x86-64 instructions to simulate functions
-    elf_data.extend_from_slice(&[
-        // Function 1: main
+    let instructions = [
         0x48, 0x89, 0xe5, // mov %rsp, %rbp
         0xe8, 0x05, 0x00, 0x00, 0x00, // call func2
         0xc3, // ret
-        // Function 2: func2
         0x48, 0x89, 0xe5, // mov %rsp, %rbp
         0xb8, 0x00, 0x00, 0x00, 0x00, // mov $0, %eax
         0xc3, // ret
-        // Function 3: loop_func (with a simple loop)
         0x48, 0x89, 0xe5, // mov %rsp, %rbp
         0xb8, 0x0a, 0x00, 0x00, 0x00, // mov $10, %eax
         0x48, 0x83, 0xe8, 0x01, // sub $1, %rax (loop body)
         0x75, 0xfb, // jne -5 (loop back)
         0xc3, // ret
-    ]);
+    ];
+    let section_names = b"\0.text\0.shstrtab\0";
+    let mut elf_data = vec![0_u8; SECTION_TABLE_OFFSET + 3 * 64];
+
+    elf_data[..16].copy_from_slice(&[0x7f, b'E', b'L', b'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    elf_data[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    elf_data[18..20].copy_from_slice(&0x3e_u16.to_le_bytes());
+    elf_data[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    elf_data[24..32].copy_from_slice(&TEXT_ADDRESS.to_le_bytes());
+    elf_data[40..48].copy_from_slice(&(SECTION_TABLE_OFFSET as u64).to_le_bytes());
+    elf_data[52..54].copy_from_slice(&64_u16.to_le_bytes());
+    elf_data[58..60].copy_from_slice(&64_u16.to_le_bytes());
+    elf_data[60..62].copy_from_slice(&3_u16.to_le_bytes());
+    elf_data[62..64].copy_from_slice(&2_u16.to_le_bytes());
+
+    elf_data[TEXT_OFFSET..TEXT_OFFSET + instructions.len()].copy_from_slice(&instructions);
+    elf_data[STRING_TABLE_OFFSET..STRING_TABLE_OFFSET + section_names.len()]
+        .copy_from_slice(section_names);
+
+    let text_header = SECTION_TABLE_OFFSET + 64;
+    elf_data[text_header..text_header + 4].copy_from_slice(&1_u32.to_le_bytes());
+    elf_data[text_header + 4..text_header + 8].copy_from_slice(&1_u32.to_le_bytes());
+    elf_data[text_header + 8..text_header + 16].copy_from_slice(&6_u64.to_le_bytes());
+    elf_data[text_header + 16..text_header + 24].copy_from_slice(&TEXT_ADDRESS.to_le_bytes());
+    elf_data[text_header + 24..text_header + 32]
+        .copy_from_slice(&(TEXT_OFFSET as u64).to_le_bytes());
+    elf_data[text_header + 32..text_header + 40]
+        .copy_from_slice(&(instructions.len() as u64).to_le_bytes());
+    elf_data[text_header + 48..text_header + 56].copy_from_slice(&16_u64.to_le_bytes());
+
+    let string_header = SECTION_TABLE_OFFSET + 128;
+    elf_data[string_header..string_header + 4].copy_from_slice(&7_u32.to_le_bytes());
+    elf_data[string_header + 4..string_header + 8].copy_from_slice(&3_u32.to_le_bytes());
+    elf_data[string_header + 24..string_header + 32]
+        .copy_from_slice(&(STRING_TABLE_OFFSET as u64).to_le_bytes());
+    elf_data[string_header + 32..string_header + 40]
+        .copy_from_slice(&(section_names.len() as u64).to_le_bytes());
+    elf_data[string_header + 48..string_header + 56].copy_from_slice(&1_u64.to_le_bytes());
 
     elf_data
 }
@@ -376,6 +372,7 @@ fn test_enhanced_analysis_performance() {
         enable_entropy: false,
         enable_symbols: true,
         max_analysis_size: 10 * 1024 * 1024,
+        max_disassembly_instructions: 10_000,
         architecture_hint: Some(Architecture::X86_64),
         call_graph_config: None,
     };

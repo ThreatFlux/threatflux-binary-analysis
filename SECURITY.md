@@ -1,183 +1,204 @@
 # Security Policy
 
-## Supported Versions
+ThreatFlux Binary Analysis processes attacker-controlled file structures and
+instruction bytes. Security defects in parsing, resource enforcement,
+disassembly, or unsafe invariants are in scope for private reporting.
 
-We release patches for security vulnerabilities. Which versions are eligible for receiving such patches depends on the CVSS v3.0 Rating:
+## Supported versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
-| < 0.1   | :x:                |
+| Line            | Status                                       |
+| --------------- | -------------------------------------------- |
+| 0.3.x           | Upcoming development line; not yet published |
+| 0.2.x           | Current published line                       |
+| 0.1.x and older | No longer supported                          |
 
-## Reporting a Vulnerability
+Security fixes normally target the active development line and, where
+practical, the current published line. An advisory will identify the exact
+affected and fixed versions.
 
-We take the security of ThreatFlux Binary Analysis seriously. If you believe you have found a security vulnerability, please report it to us as described below.
+## Report a vulnerability privately
 
-### Please do NOT:
-- Open a public GitHub issue for security vulnerabilities
-- Post about the vulnerability on social media or forums
-- Exploit the vulnerability for malicious purposes
+Preferred: open a
+[private GitHub security advisory](https://github.com/ThreatFlux/threatflux-binary-analysis/security/advisories/new).
 
-### Please DO:
-- Email us at: security@threatflux.io (if available) or open a private security advisory on GitHub
-- Provide detailed steps to reproduce the vulnerability
-- Include the impact and potential exploit scenarios
-- Allow reasonable time for us to address the issue before public disclosure
+If GitHub private reporting is unavailable, email
+<security@threatflux.ai>. Use a subject that identifies this repository and do
+not send a live-malware sample until a maintainer confirms a safe transfer
+method.
 
-## What to Include in Your Report
+Do not:
 
-To help us better understand and resolve the issue, please include:
+- open a public issue or pull request for an undisclosed vulnerability;
+- post exploit details, crash artifacts, or sensitive samples publicly;
+- test against systems or data you do not own or have permission to assess.
 
-1. **Type of vulnerability** (e.g., buffer overflow, arbitrary code execution, privilege escalation)
-2. **Component affected** (module, function, file)
-3. **Steps to reproduce** with sample code or files if possible
-4. **Impact assessment** - what can an attacker achieve?
-5. **Environment details**:
-   - Operating System and version
-   - Rust version
-   - Library version
-   - Feature flags enabled
-6. **Proof of concept** code (if available)
+Include, when available:
 
-## Response Timeline
+- affected crate version/commit and enabled Cargo features;
+- Rust version, target triple, operating system, and relevant system libraries;
+- affected API and expected versus observed behavior;
+- a minimal synthetic reproducer or crash input;
+- impact, preconditions, and whether the issue is reliably reproducible;
+- sanitizer, backtrace, fuzzing, or resource measurements;
+- any disclosure deadline or coordination constraints.
 
-- **Initial Response**: Within 48 hours, we will acknowledge receipt of your report
-- **Assessment**: Within 7 days, we will assess the vulnerability and provide an initial severity rating
-- **Fix Timeline**: Depending on severity:
-  - Critical: Fix within 7-14 days
-  - High: Fix within 30 days
-  - Medium: Fix within 60 days
-  - Low: Fix in the next regular release
+We will acknowledge the report as soon as practical, validate it, coordinate a
+fix and disclosure with the reporter, and credit the reporter if requested.
+Response and release timing depends on impact, reproducibility, and release
+coordination; this policy does not promise a fixed service-level deadline.
 
-## Security Considerations for Binary Analysis
+## Security findings versus library vulnerabilities
 
-### Input Validation
+<code>analysis::security::SecurityAnalyzer</code> reports heuristic traits of
+the file being inspected. False positives and false negatives are expected. Its
+score is not CVSS, a malware probability, or proof of exploitability.
 
-The library handles potentially malicious binary files. Key security measures include:
+A security vulnerability in this crate is different: examples include
+memory-safety invariant violations, attacker-controlled panics, resource-limit
+bypasses, path/file races in crate-owned behavior, or materially incorrect
+security guarantees.
 
-- **Size limits**: Configurable maximum file sizes to prevent resource exhaustion
-- **Parsing boundaries**: Strict boundary checking when parsing binary formats
-- **Memory safety**: Leveraging Rust's memory safety guarantees
-- **Resource limits**: Configurable limits for analysis operations
+## Untrusted-input model
 
-### Safe Defaults
+The crate is a static-analysis library, not a sandbox.
 
-- Analysis operations have reasonable default limits
-- Memory-mapped file access is opt-in via feature flag
-- Decompression has size limits to prevent zip bombs
-- Recursive operations have depth limits
+- APIs are synchronous and have no built-in wall-time cancellation.
+- <code>BinaryFile::parse</code> copies the full input and does not apply an
+  input-size policy on its own.
+- <code>BinaryAnalyzer</code> enforces
+  <code>AnalysisConfig::max_analysis_size</code> and returns
+  <code>BinaryError::InputTooLarge</code> when the input exceeds it.
+- Calling <code>analyze_binary</code> enforces the same limit, but a
+  pre-existing <code>BinaryFile</code> has already been parsed and copied.
+- Format parsers reject more than 100,000 structural/output records, names over
+  4 KiB, or more than 32 MiB of aggregate copied names per parse. JAR metadata
+  has a separate 50,000-entry ceiling.
+- Unknown non-empty input is accepted as <code>Raw</code>.
+- Optional graph and heuristic stages can perform attacker-influenced work.
+- Archive/compression handling and memory mapping have additional constraints.
+- Memory-map construction is unsafe because callers must keep the backing file
+  stable for the mapping lifetime.
 
-### Known Security Considerations
+The high-level size limit is an important guard, but it is not a complete CPU,
+memory, allocation-count, recursion, archive-entry, or wall-time budget.
 
-1. **Malformed binaries**: The library is designed to handle malformed inputs gracefully without panicking
-2. **Resource consumption**: Large or specially crafted files may consume significant resources
-3. **Decompression bombs**: ZIP/compression support includes safeguards against decompression bombs
-4. **Path traversal**: File operations validate paths to prevent directory traversal attacks
+## Recommended deployment controls
 
-## Security Best Practices for Users
+For hostile or multi-tenant samples:
 
-When using this library in production:
+1. Enforce an upload/read limit before allocating the complete input.
+2. Set <code>AnalysisConfig::max_analysis_size</code> to the same or a lower
+   application limit.
+3. Set <code>AnalysisConfig::max_disassembly_instructions</code> to the maximum
+   result size your application can retain.
+4. Allowlist expected parsed formats and reject <code>Raw</code> unless it is
+   intentional.
+5. Run analysis in a disposable, low-privilege process with no network access,
+   a read-only filesystem, and OS-enforced CPU, memory, process, file, and wall
+   time limits.
+6. Disable parser and analysis features you do not need.
+7. Treat crashes, timeouts, and limit violations as analysis failures, not as a
+   property of the sample.
+8. Keep samples, error text, symbols, paths, and generated reports out of
+   client-visible responses and ordinary logs unless they are explicitly
+   sanitized.
 
-### 1. Resource Limits
+Example application-side limit:
+
 ```rust
-use threatflux_binary_analysis::AnalysisConfig;
+use std::{fs, io, path::Path};
+use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer, AnalysisResult};
 
-let config = AnalysisConfig {
-    max_analysis_size: 100 * 1024 * 1024, // 100MB limit
-    enable_control_flow: false, // Disable expensive operations if not needed
-    ..Default::default()
-};
-```
+const MAX_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 
-### 2. Sandboxing
-Consider running analysis in a sandboxed environment:
-- Use containers or VMs for untrusted binaries
-- Apply OS-level resource limits (ulimit, cgroups)
-- Run with minimal privileges
-
-### 3. Input Validation
-Always validate inputs before analysis:
-```rust
-// Check file size before analysis
-let metadata = std::fs::metadata(&path)?;
-if metadata.len() > MAX_FILE_SIZE {
-    return Err("File too large");
-}
-
-// Verify file type if expecting specific formats
-let data = std::fs::read(&path)?;
-let format = threatflux_binary_analysis::detect_format(&data)?;
-if !allowed_formats.contains(&format) {
-    return Err("Unsupported format");
-}
-```
-
-### 4. Error Handling
-Never expose detailed error messages to untrusted users:
-```rust
-match analyzer.analyze(&data) {
-    Ok(result) => process_result(result),
-    Err(e) => {
-        // Log detailed error internally
-        log::error!("Analysis failed: {:?}", e);
-        // Return generic error to user
-        return Err("Analysis failed");
+fn analyze_path(path: &Path) -> Result<AnalysisResult, Box<dyn std::error::Error>> {
+    let metadata = fs::metadata(path)?;
+    if metadata.len() > MAX_INPUT_BYTES {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "input too large").into());
     }
+
+    let bytes = fs::read(path)?;
+    if bytes.len() as u64 > MAX_INPUT_BYTES {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "input too large").into());
+    }
+
+    let config = AnalysisConfig {
+        max_analysis_size: MAX_INPUT_BYTES as usize,
+        max_disassembly_instructions: 10_000,
+        ..Default::default()
+    };
+    Ok(BinaryAnalyzer::with_config(config).analyze(&bytes)?)
 }
 ```
 
-## Security Features
+This reduces oversized-input risk but does not replace worker isolation.
 
-### Built-in Protections
+When invoking the low-level graph analyzers directly, set their
+<code>max_functions</code> and <code>max_total_instructions</code> fields to an
+application budget. <code>control_flow::AnalysisConfig::max_instructions</code>
+also rejects oversized per-function instruction results. When advanced loop
+analysis is enabled, set <code>max_loops</code> and
+<code>max_total_loop_body_blocks</code> as well. The graph defaults are 10,000
+functions, 1,000,000 total instructions, 10,000 retained loops, and 1,000,000
+aggregate loop-body memberships; they are safeguards, not a complete CPU or
+process-memory limit.
 
-- **Memory safety**: Rust's ownership system prevents common vulnerabilities
-- **Bounds checking**: All array/buffer accesses are bounds-checked
-- **Integer overflow protection**: Debug builds panic on overflow, release builds wrap
-- **No unsafe code in core paths**: Unsafe code is minimized and well-audited
-- **Dependency auditing**: Regular audits using `cargo audit`
+## Memory maps
 
-### Feature Flags for Security
+<code>MappedBinary</code> and <code>AdvancedMmap</code> use read-only memory
+maps internally. Keep the mapped file immutable and prevent an untrusted party
+from replacing, truncating, or mutating it while the mapping exists.
 
-Certain features can be disabled to reduce attack surface:
+Passing a mapped slice to <code>BinaryFile::parse</code> still creates an owned
+copy. <code>AdvancedMmap</code> rejects file-backed huge pages; populate is
+Linux/Android-only and memory locking is Unix-only. Unsupported requests return
+configuration errors, and an allowed memory-lock request can still fail under
+OS policy.
 
-```toml
-[dependencies]
-threatflux-binary-analysis = { 
-    version = "0.1", 
-    default-features = false,
-    features = ["elf", "pe"]  # Only enable needed formats
-}
+## Archives and compression
+
+Java archive detection opens ZIP metadata, iterates entries, and rejects
+archives with more than 50,000 entries. Apply the tighter limits required by
+your application even though class bodies are not decoded.
+
+For gzip/zlib data, <code>decompress</code> has a 64 MiB expanded-output limit;
+prefer <code>decompress_with_limit</code> when the application needs a smaller
+budget. Also validate the returned length. Do not rely on compressed input size
+as a bound on expanded output.
+
+## Format and heuristic limitations
+
+- Parsing does not verify Authenticode, Mach-O code signatures, or JAR
+  signatures.
+- Hardening flags are parser-derived observations and may be incomplete.
+- Thin Mach-O is supported; fat/universal Mach-O is not.
+- Java class parsing does not decode methods, constant pools, or bytecode.
+- WebAssembly parsing does not provide instruction semantics.
+- Disassembly and graph results can be partial because of function discovery,
+  checked file-range failures, unsupported instructions, and analysis budgets.
+- Security rules rely primarily on exact imports, selected names, section
+  permissions, and hardening metadata.
+
+Absence of an error or finding is not evidence that a sample is safe.
+
+## Dependency and supply-chain checks
+
+The repository uses Cargo feature gates to reduce optional attack surface.
+Useful local checks include:
+
+```console
+cargo audit
+cargo deny check
+cargo tree --all-features
 ```
 
-## Vulnerability Disclosure
+Pin and review dependencies according to your own threat model, monitor RustSec
+advisories, and rebuild promptly after a relevant parser or disassembler
+advisory.
 
-We follow responsible disclosure practices:
+## Disclosure and releases
 
-1. Security vulnerabilities are embargoed until a fix is available
-2. We will coordinate disclosure with reporters
-3. Credit will be given to reporters (unless they prefer to remain anonymous)
-4. CVEs will be requested for significant vulnerabilities
-
-## Security Updates
-
-Stay informed about security updates:
-
-- Watch the GitHub repository for security advisories
-- Monitor the CHANGELOG for security-related updates
-- Consider using tools like `cargo audit` in your CI/CD pipeline
-
-## Contact
-
-For security concerns, please contact:
-- GitHub Security Advisory (preferred): [Create private advisory](https://github.com/threatflux/threatflux-binary-analysis/security/advisories/new)
-- Email: security@threatflux.io (if available)
-
-## Acknowledgments
-
-We thank the security researchers and users who responsibly disclose vulnerabilities and help improve the security of this project.
-
-## References
-
-- [OWASP Secure Coding Practices](https://owasp.org/www-project-secure-coding-practices-quick-reference-guide/)
-- [Rust Security Guidelines](https://anssi-fr.github.io/rust-guide/)
-- [CVSS Calculator](https://www.first.org/cvss/calculator/3.1)
+We aim to coordinate disclosure after a fix is available. Significant issues
+may receive a GitHub advisory and CVE where appropriate. Release notes and the
+advisory will identify affected configurations, mitigations, and fixed
+versions.

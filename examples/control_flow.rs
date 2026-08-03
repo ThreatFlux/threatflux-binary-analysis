@@ -1,15 +1,17 @@
 //! Control flow analysis example
 //!
 //! This example demonstrates how to analyze control flow in binary files,
-//! including basic block identification and complexity metrics.
+//! including basic block identification and complexity metrics. Results are a
+//! best-effort reconstruction from discovered functions and checked ranges in
+//! the binary's full owned bytes, not proof of every runtime path.
 
 use threatflux_binary_analysis::{
-    analysis::control_flow::{AnalysisConfig, ControlFlowAnalyzer},
     BinaryFile,
+    analysis::control_flow::{AnalysisConfig, ControlFlowAnalyzer},
 };
 
 mod util;
-use util::{read_binary_from_args, Result};
+use util::{Result, read_binary_from_args};
 
 fn main() -> Result<()> {
     let data = read_binary_from_args()?;
@@ -21,13 +23,14 @@ fn main() -> Result<()> {
     // Create control flow analyzer
     let config = AnalysisConfig {
         max_instructions: 5000,
-        max_depth: 50,
+        max_functions: 2_000,
+        max_total_instructions: 100_000,
+        max_loops: 1_000,
+        max_total_loop_body_blocks: 100_000,
         detect_loops: true,
         calculate_metrics: true,
-        enable_call_graph: false,
         enable_cognitive_complexity: true,
         enable_advanced_loops: true,
-        call_graph_config: None,
     };
 
     let analyzer = ControlFlowAnalyzer::with_config(binary.architecture(), config);

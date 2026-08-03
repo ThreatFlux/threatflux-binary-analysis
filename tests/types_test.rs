@@ -41,7 +41,7 @@ fn test_binary_metadata_default() {
     assert!(metadata.base_address.is_none());
     assert!(metadata.timestamp.is_none());
     assert!(metadata.compiler_info.is_none());
-    assert_eq!(metadata.endian, Endianness::Little);
+    assert_eq!(metadata.endian, Endianness::Unknown);
 }
 
 #[test]
@@ -275,6 +275,7 @@ fn test_section_construction() {
         address: 0x1000,
         size: 2048,
         offset: 0x1000,
+        file_size: 2048,
         permissions: SectionPermissions {
             read: true,
             write: false,
@@ -288,6 +289,7 @@ fn test_section_construction() {
     assert_eq!(section.address, 0x1000);
     assert_eq!(section.size, 2048);
     assert_eq!(section.offset, 0x1000);
+    assert_eq!(section.file_size, 2048);
     assert!(section.permissions.read);
     assert!(!section.permissions.write);
     assert!(section.permissions.execute);

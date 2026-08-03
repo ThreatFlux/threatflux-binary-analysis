@@ -327,7 +327,7 @@ fn test_macho_platform_detection(
     }
 }
 
-/// Test Java version detection
+/// Class versions are not compiler identities.
 #[cfg(feature = "java")]
 #[rstest]
 #[case(52, 0, "Java 8", "Should detect Java 8")]
@@ -337,27 +337,16 @@ fn test_macho_platform_detection(
 fn test_java_version_detection(
     #[case] major: u16,
     #[case] minor: u16,
-    #[case] expected_version: &str,
+    #[case] _expected_version: &str,
     #[case] description: &str,
 ) {
     let data = create_java_class_with_version(major, minor);
     let result = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    let metadata = &result.metadata;
     assert!(
-        metadata.compiler_info.is_some(),
-        "Should have compiler info for: {}",
-        description
+        result.metadata.compiler_info.is_none(),
+        "Class version must not be mislabeled as compiler evidence: {description}"
     );
-
-    if let Some(ref compiler_info) = metadata.compiler_info {
-        assert!(
-            compiler_info.contains(&major.to_string()),
-            "Should contain major version for: {}, got: {}",
-            description,
-            compiler_info
-        );
-    }
 }
 
 /// Test Java compiler detection from class file attributes

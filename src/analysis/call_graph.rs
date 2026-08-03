@@ -4,14 +4,18 @@
 //! including call graph construction, cycle detection, and visualization export.
 
 use crate::{
-    disasm::Disassembler,
+    BinaryError, BinaryFile, Result,
+    disasm::{Disassembler, DisassemblyConfig, section_file_data},
     types::{
         CallContext, CallGraph, CallGraphConfig, CallGraphEdge, CallGraphNode, CallGraphStatistics,
         CallSite, CallType, Function, Instruction, NodeType,
     },
-    BinaryError, BinaryFile, Result,
 };
+use petgraph::{algo::kosaraju_scc, graphmap::DiGraphMap};
 use std::collections::{HashMap, HashSet, VecDeque};
+
+type AddressToNode = HashMap<u64, usize>;
+type CallAdjacency = HashMap<u64, Vec<u64>>;
 
 /// Call graph analyzer
 #[derive(Clone)]
@@ -41,6 +45,12 @@ impl CallGraphAnalyzer {
         // Build call graph nodes
         let mut nodes = Vec::new();
         let mut address_to_node: HashMap<u64, usize> = HashMap::new();
+        nodes
+            .try_reserve(functions.len())
+            .map_err(|error| Self::allocation_error("call-graph nodes", error))?;
+        address_to_node
+            .try_reserve(functions.len())
+            .map_err(|error| Self::allocation_error("call-graph address index", error))?;
 
         for (i, function) in functions.iter().enumerate() {
             let node = CallGraphNode {
@@ -58,7 +68,25 @@ impl CallGraphAnalyzer {
         }
 
         // Extract function calls and build edges
-        let edges = self.extract_function_calls(binary, &functions, &address_to_node)?;
+        let mut edges = self.extract_function_calls(binary, &functions, &address_to_node)?;
+        if !self.config.include_library_calls {
+            let mut library_addresses = HashSet::new();
+            library_addresses
+                .try_reserve(nodes.len())
+                .map_err(|error| Self::allocation_error("library address set", error))?;
+            library_addresses.extend(
+                nodes
+                    .iter()
+                    .filter(|node| matches!(node.node_type, NodeType::Library))
+                    .map(|node| node.function_address),
+            );
+            edges.retain(|edge| {
+                !library_addresses.contains(&edge.caller)
+                    && !edge
+                        .callee
+                        .is_some_and(|callee| library_addresses.contains(&callee))
+            });
+        }
 
         // Update node degrees
         self.update_node_degrees(&mut nodes, &edges);
@@ -81,7 +109,7 @@ impl CallGraphAnalyzer {
         self.compute_call_depths(&mut call_graph)?;
 
         // Find unreachable functions
-        call_graph.unreachable_functions = self.find_unreachable_functions(&call_graph);
+        call_graph.unreachable_functions = self.find_unreachable_functions(&call_graph)?;
 
         // Compute statistics
         call_graph.statistics = self.compute_statistics(&call_graph);
@@ -93,6 +121,16 @@ impl CallGraphAnalyzer {
     fn extract_functions(&self, binary: &BinaryFile) -> Result<Vec<Function>> {
         let mut functions = Vec::new();
         let mut seen_addresses = HashSet::new();
+        let reservation = binary
+            .symbols()
+            .len()
+            .min(self.config.max_functions.saturating_add(1));
+        functions
+            .try_reserve(reservation)
+            .map_err(|error| Self::allocation_error("discovered functions", error))?;
+        seen_addresses
+            .try_reserve(reservation)
+            .map_err(|error| Self::allocation_error("function address set", error))?;
 
         // Extract from symbols
         for symbol in binary.symbols() {
@@ -100,10 +138,16 @@ impl CallGraphAnalyzer {
                 && symbol.size > 0
                 && !seen_addresses.contains(&symbol.address)
             {
+                self.ensure_function_limit(functions.len().saturating_add(1))?;
                 let function = Function {
                     name: symbol.name.clone(),
                     start_address: symbol.address,
-                    end_address: symbol.address + symbol.size,
+                    end_address: symbol.address.checked_add(symbol.size).ok_or_else(|| {
+                        BinaryError::invalid_data(format!(
+                            "Function '{}' address range overflows",
+                            symbol.name
+                        ))
+                    })?,
                     size: symbol.size,
                     function_type: crate::types::FunctionType::Normal,
                     calling_convention: None,
@@ -116,22 +160,31 @@ impl CallGraphAnalyzer {
         }
 
         // Add entry point if not already present
-        if let Some(entry_point) = binary.entry_point() {
-            if !seen_addresses.contains(&entry_point) {
-                let function = Function {
-                    name: "_start".to_string(),
-                    start_address: entry_point,
-                    end_address: entry_point + 1000, // Estimate
-                    size: 1000,
-                    function_type: crate::types::FunctionType::Entrypoint,
-                    calling_convention: None,
-                    parameters: Vec::new(),
-                    return_type: None,
-                };
-                functions.push(function);
-            }
+        if let Some(entry_point) = binary
+            .entry_point()
+            .filter(|entry_point| !seen_addresses.contains(entry_point))
+        {
+            self.ensure_function_limit(functions.len().saturating_add(1))?;
+            let function = Function {
+                name: "_start".to_string(),
+                start_address: entry_point,
+                end_address: entry_point.checked_add(1000).ok_or_else(|| {
+                    BinaryError::invalid_data("Entry-point address range overflows")
+                })?, // Estimate when symbols are unavailable
+                size: 1000,
+                function_type: crate::types::FunctionType::Entrypoint,
+                calling_convention: None,
+                parameters: Vec::new(),
+                return_type: None,
+            };
+            functions.push(function);
         }
 
+        functions.sort_by(|left, right| {
+            left.start_address
+                .cmp(&right.start_address)
+                .then_with(|| left.name.cmp(&right.name))
+        });
         Ok(functions)
     }
 
@@ -151,10 +204,8 @@ impl CallGraphAnalyzer {
 
         // Check if it's an imported function
         for import in binary.imports() {
-            if let Some(addr) = import.address {
-                if addr == function.start_address {
-                    return NodeType::External;
-                }
+            if import.address == Some(function.start_address) {
+                return NodeType::External;
             }
         }
 
@@ -186,9 +237,10 @@ impl CallGraphAnalyzer {
             }
         }
 
-        // Check exact names or if they contain library module names
+        // Check exact function names. Substring matching (for example, "free")
+        // creates severe false positives for user-defined symbols.
         for lib_name in LIBRARY_NAMES {
-            if name == *lib_name || name.contains(lib_name) {
+            if name == *lib_name {
                 return true;
             }
         }
@@ -203,34 +255,79 @@ impl CallGraphAnalyzer {
         functions: &[Function],
         address_to_node: &HashMap<u64, usize>,
     ) -> Result<Vec<CallGraphEdge>> {
+        if functions.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let mut edges = Vec::new();
-        let disassembler = Disassembler::new(binary.architecture())?;
+        edges
+            .try_reserve(functions.len().min(self.config.max_total_instructions))
+            .map_err(|error| Self::allocation_error("call-graph edges", error))?;
+        let mut successful_functions = 0_usize;
+        let mut total_instructions = 0_usize;
+        let mut last_error = None;
 
         for function in functions {
+            let remaining_instructions = self
+                .config
+                .max_total_instructions
+                .saturating_sub(total_instructions);
+            let decode_limit = remaining_instructions.saturating_add(1);
+
             // Get instructions for this function
-            if let Ok(instructions) =
-                self.get_function_instructions(binary, function, &disassembler)
-            {
-                // Analyze instructions for calls
-                for instruction in &instructions {
-                    if let Some(edge) = self.analyze_call_instruction(
-                        instruction,
-                        function.start_address,
-                        address_to_node,
-                    ) {
+            match self.get_function_instructions(binary, function, decode_limit) {
+                Ok(instructions) => {
+                    let new_total = total_instructions
+                        .checked_add(instructions.len())
+                        .ok_or_else(|| {
+                            BinaryError::control_flow(
+                                "Call-graph instruction count overflowed usize",
+                            )
+                        })?;
+                    if new_total > self.config.max_total_instructions {
+                        return Err(BinaryError::control_flow(format!(
+                            "Decoded instruction count {new_total} exceeds configured CallGraphConfig::max_total_instructions {}",
+                            self.config.max_total_instructions
+                        )));
+                    }
+                    total_instructions = new_total;
+                    successful_functions += 1;
+
+                    // Analyze instructions for calls
+                    for instruction in &instructions {
+                        if let Some(edge) = self.analyze_call_instruction(
+                            instruction,
+                            function.start_address,
+                            address_to_node,
+                        ) {
+                            edges.try_reserve(1).map_err(|error| {
+                                Self::allocation_error("call-graph edge", error)
+                            })?;
+                            edges.push(edge);
+                        }
+                    }
+
+                    if self.config.detect_tail_calls
+                        && let Some(edge) =
+                            self.detect_tail_call(function, address_to_node, &instructions)
+                    {
+                        edges
+                            .try_reserve(1)
+                            .map_err(|error| Self::allocation_error("tail-call edge", error))?;
                         edges.push(edge);
                     }
                 }
+                Err(error) => last_error = Some(error),
             }
         }
 
-        // Detect tail calls if enabled
-        if self.config.detect_tail_calls {
-            let tail_call_edges = self.detect_tail_calls(binary, functions, address_to_node)?;
-            edges.extend(tail_call_edges);
+        if successful_functions == 0
+            && let Some(error) = last_error
+        {
+            return Err(error);
         }
 
-        Ok(edges)
+        Ok(Self::merge_edges(edges))
     }
 
     /// Get instructions for a function
@@ -238,35 +335,59 @@ impl CallGraphAnalyzer {
         &self,
         binary: &BinaryFile,
         function: &Function,
-        disassembler: &Disassembler,
+        max_instructions: usize,
     ) -> Result<Vec<Instruction>> {
         // Find the section containing this function
         for section in binary.sections() {
             let start = section.address;
-            let end = start + section.size;
+            let Some(end) = start.checked_add(section.size) else {
+                continue;
+            };
 
-            if function.start_address >= start && function.start_address < end {
-                let data = section.data.as_ref().ok_or_else(|| {
-                    BinaryError::invalid_data("Section data not available for disassembly")
-                })?;
-
-                let offset = (function.start_address - start) as usize;
-                if offset >= data.len() {
-                    return Ok(Vec::new());
-                }
-
-                let available = data.len() - offset;
-                let length = std::cmp::min(function.size as usize, available);
+            if section.permissions.execute
+                && function.start_address >= start
+                && function.start_address < end
+            {
+                let function_size = usize::try_from(function.size).unwrap_or(usize::MAX);
+                let data = section_file_data(
+                    binary,
+                    section,
+                    function.start_address - start,
+                    Some(function_size),
+                )?;
+                let length = data.len();
                 if length == 0 {
                     return Ok(Vec::new());
                 }
 
-                let slice = &data[offset..offset + length];
-                return disassembler.disassemble_at(slice, function.start_address, length);
+                let disassembler = Disassembler::with_config(
+                    binary.architecture(),
+                    DisassemblyConfig {
+                        max_instructions,
+                        ..DisassemblyConfig::default()
+                    },
+                )?;
+                return disassembler.disassemble_at(data, function.start_address, length);
             }
         }
 
-        Ok(Vec::new())
+        Err(BinaryError::invalid_data(
+            "Function bytes not found in any executable section",
+        ))
+    }
+
+    fn ensure_function_limit(&self, actual: usize) -> Result<()> {
+        if actual > self.config.max_functions {
+            return Err(BinaryError::control_flow(format!(
+                "Discovered function count {actual} exceeds configured CallGraphConfig::max_functions {}",
+                self.config.max_functions
+            )));
+        }
+        Ok(())
+    }
+
+    fn allocation_error(context: &str, error: std::collections::TryReserveError) -> BinaryError {
+        BinaryError::control_flow(format!("Unable to reserve {context}: {error}"))
     }
 
     /// Analyze a single instruction for call patterns
@@ -294,7 +415,7 @@ impl CallGraphAnalyzer {
 
                     return Some(CallGraphEdge {
                         caller: caller_address,
-                        callee: *target_address,
+                        callee: Some(*target_address),
                         call_type,
                         call_sites: vec![call_site],
                     });
@@ -303,9 +424,7 @@ impl CallGraphAnalyzer {
             _ => {
                 // Check for indirect calls if enabled
                 if self.config.analyze_indirect_calls {
-                    if let Some(edge) = self.analyze_indirect_call(instruction, caller_address) {
-                        return Some(edge);
-                    }
+                    return self.analyze_indirect_call(instruction, caller_address);
                 }
             }
         }
@@ -319,8 +438,13 @@ impl CallGraphAnalyzer {
         instruction: &Instruction,
         caller_address: u64,
     ) -> Option<CallGraphEdge> {
-        // Detect indirect call patterns (simplified)
-        if instruction.mnemonic.starts_with("call") && instruction.operands.contains('[') {
+        // Direct calls have already been represented by ControlFlow::Call. Remaining
+        // call-family instructions are indirect, including register operands.
+        let mnemonic = instruction.mnemonic.to_ascii_lowercase();
+        if matches!(
+            mnemonic.as_str(),
+            "call" | "callq" | "blr" | "blx" | "jalr" | "bctrl"
+        ) {
             // This is an indirect call through memory or register
             let call_site = CallSite {
                 address: instruction.address,
@@ -332,7 +456,7 @@ impl CallGraphAnalyzer {
             // In a real implementation, this would require more sophisticated analysis
             return Some(CallGraphEdge {
                 caller: caller_address,
-                callee: 0, // Unknown target
+                callee: None,
                 call_type: CallType::Indirect,
                 call_sites: vec![call_site],
             });
@@ -341,129 +465,123 @@ impl CallGraphAnalyzer {
         None
     }
 
-    /// Detect tail call optimizations
-    fn detect_tail_calls(
-        &self,
-        binary: &BinaryFile,
-        functions: &[Function],
-        address_to_node: &HashMap<u64, usize>,
-    ) -> Result<Vec<CallGraphEdge>> {
-        let mut tail_call_edges = Vec::new();
-        let disassembler = Disassembler::new(binary.architecture())?;
+    fn merge_edges(mut edges: Vec<CallGraphEdge>) -> Vec<CallGraphEdge> {
+        edges.sort_by(|left, right| {
+            left.caller
+                .cmp(&right.caller)
+                .then_with(|| left.callee.cmp(&right.callee))
+                .then_with(|| {
+                    Self::call_type_rank(&left.call_type)
+                        .cmp(&Self::call_type_rank(&right.call_type))
+                })
+        });
 
-        for function in functions {
-            if let Ok(instructions) =
-                self.get_function_instructions(binary, function, &disassembler)
-            {
-                // Look for jump instructions at the end of functions that target other functions
-                if let Some(last_instruction) = instructions.last() {
-                    if let crate::types::ControlFlow::Jump(target) = &last_instruction.flow {
-                        if address_to_node.contains_key(target) && *target != function.start_address
-                        {
-                            let call_site = CallSite {
-                                address: last_instruction.address,
-                                instruction_bytes: last_instruction.bytes.clone(),
-                                context: CallContext::Normal,
-                            };
-
-                            tail_call_edges.push(CallGraphEdge {
-                                caller: function.start_address,
-                                callee: *target,
-                                call_type: CallType::TailCall,
-                                call_sites: vec![call_site],
-                            });
-                        }
-                    }
-                }
+        let mut merged: Vec<CallGraphEdge> = Vec::with_capacity(edges.len());
+        for mut edge in edges {
+            if let Some(existing) = merged.last_mut().filter(|existing| {
+                existing.caller == edge.caller
+                    && existing.callee == edge.callee
+                    && existing.call_type == edge.call_type
+            }) {
+                existing.call_sites.append(&mut edge.call_sites);
+                continue;
             }
+            merged.push(edge);
         }
 
-        Ok(tail_call_edges)
+        for edge in &mut merged {
+            edge.call_sites.sort_by(|left, right| {
+                left.address
+                    .cmp(&right.address)
+                    .then_with(|| left.instruction_bytes.cmp(&right.instruction_bytes))
+            });
+            edge.call_sites.dedup_by(|left, right| {
+                left.address == right.address
+                    && left.instruction_bytes == right.instruction_bytes
+                    && left.context == right.context
+            });
+        }
+        merged
+    }
+
+    fn call_type_rank(call_type: &CallType) -> u8 {
+        match call_type {
+            CallType::Direct => 0,
+            CallType::Indirect => 1,
+            CallType::TailCall => 2,
+            CallType::Virtual => 3,
+            CallType::Recursive => 4,
+            CallType::Conditional => 5,
+        }
+    }
+
+    /// Detect a tail-call candidate from one already-decoded function.
+    fn detect_tail_call(
+        &self,
+        function: &Function,
+        address_to_node: &HashMap<u64, usize>,
+        instructions: &[Instruction],
+    ) -> Option<CallGraphEdge> {
+        // Look for a final direct jump to another discovered function.
+        instructions
+            .last()
+            .and_then(|last| {
+                if let crate::types::ControlFlow::Jump(target) = &last.flow {
+                    (*target != function.start_address && address_to_node.contains_key(target))
+                        .then_some((last, *target))
+                } else {
+                    None
+                }
+            })
+            .map(|(last_instruction, target)| {
+                let call_site = CallSite {
+                    address: last_instruction.address,
+                    instruction_bytes: last_instruction.bytes.clone(),
+                    context: CallContext::Normal,
+                };
+
+                CallGraphEdge {
+                    caller: function.start_address,
+                    callee: Some(target),
+                    call_type: CallType::TailCall,
+                    call_sites: vec![call_site],
+                }
+            })
     }
 
     /// Update node in-degree and out-degree based on edges
     fn update_node_degrees(&self, nodes: &mut [CallGraphNode], edges: &[CallGraphEdge]) {
-        // Count degrees
-        let mut in_degrees: HashMap<u64, u32> = HashMap::new();
-        let mut out_degrees: HashMap<u64, u32> = HashMap::new();
+        let mut callers: HashMap<u64, HashSet<u64>> = HashMap::new();
+        let mut callees: HashMap<u64, HashSet<Option<u64>>> = HashMap::new();
 
         for edge in edges {
-            *out_degrees.entry(edge.caller).or_insert(0) += 1;
-            *in_degrees.entry(edge.callee).or_insert(0) += 1;
+            callees.entry(edge.caller).or_default().insert(edge.callee);
+            if let Some(callee) = edge.callee {
+                callers.entry(callee).or_default().insert(edge.caller);
+            }
         }
 
-        // Update nodes
         for node in nodes {
-            node.in_degree = in_degrees.get(&node.function_address).copied().unwrap_or(0);
-            node.out_degree = out_degrees
+            node.in_degree = callers
                 .get(&node.function_address)
-                .copied()
-                .unwrap_or(0);
+                .map_or(0, |values| u32::try_from(values.len()).unwrap_or(u32::MAX));
+            node.out_degree = callees
+                .get(&node.function_address)
+                .map_or(0, |values| u32::try_from(values.len()).unwrap_or(u32::MAX));
         }
     }
 
     /// Detect recursive functions
     fn detect_recursion(&self, nodes: &mut [CallGraphNode], edges: &[CallGraphEdge]) {
-        let mut recursive_functions = HashSet::new();
-
-        // Direct recursion
-        for edge in edges {
-            if edge.caller == edge.callee {
-                recursive_functions.insert(edge.caller);
-            }
-        }
-
-        // Indirect recursion using DFS
-        let mut adjacency: HashMap<u64, Vec<u64>> = HashMap::new();
-        for edge in edges {
-            adjacency.entry(edge.caller).or_default().push(edge.callee);
-        }
-
-        for node in nodes.iter() {
-            if self.has_cycle_from_node(node.function_address, &adjacency) {
-                recursive_functions.insert(node.function_address);
-            }
-        }
+        let recursive_functions: HashSet<u64> = cyclic_components(nodes, edges)
+            .into_iter()
+            .flatten()
+            .collect();
 
         // Update nodes
         for node in nodes {
             node.is_recursive = recursive_functions.contains(&node.function_address);
         }
-    }
-
-    /// Check if there's a cycle starting from a specific node
-    fn has_cycle_from_node(&self, start: u64, adjacency: &HashMap<u64, Vec<u64>>) -> bool {
-        let mut visited = HashSet::new();
-        let mut rec_stack = HashSet::new();
-        self.dfs_has_cycle(start, &mut visited, &mut rec_stack, adjacency)
-    }
-
-    /// DFS helper for cycle detection
-    #[allow(clippy::only_used_in_recursion)]
-    fn dfs_has_cycle(
-        &self,
-        node: u64,
-        visited: &mut HashSet<u64>,
-        rec_stack: &mut HashSet<u64>,
-        adjacency: &HashMap<u64, Vec<u64>>,
-    ) -> bool {
-        visited.insert(node);
-        rec_stack.insert(node);
-
-        if let Some(neighbors) = adjacency.get(&node) {
-            for &neighbor in neighbors {
-                if !visited.contains(&neighbor) {
-                    if self.dfs_has_cycle(neighbor, visited, rec_stack, adjacency) {
-                        return true;
-                    }
-                } else if rec_stack.contains(&neighbor) {
-                    return true;
-                }
-            }
-        }
-
-        rec_stack.remove(&node);
-        false
     }
 
     /// Find entry points in the call graph
@@ -487,46 +605,49 @@ impl CallGraphAnalyzer {
             }
         }
 
+        entry_points.sort_unstable();
+        entry_points.dedup();
         entry_points
     }
 
     /// Compute call depths from entry points using BFS
     fn compute_call_depths(&self, call_graph: &mut CallGraph) -> Result<()> {
-        let mut address_to_node: HashMap<u64, usize> = HashMap::new();
-        for (i, node) in call_graph.nodes.iter().enumerate() {
-            address_to_node.insert(node.function_address, i);
+        let (address_to_node, adjacency) = Self::graph_index(call_graph)?;
+
+        for node in &mut call_graph.nodes {
+            node.call_depth = None;
         }
 
-        // Build adjacency list
-        let mut adjacency: HashMap<u64, Vec<u64>> = HashMap::new();
-        for edge in &call_graph.edges {
-            adjacency.entry(edge.caller).or_default().push(edge.callee);
-        }
-
-        // BFS from each entry point
+        // Multi-source BFS computes the shortest distance from any entry point.
+        let mut queue = VecDeque::new();
+        queue
+            .try_reserve(call_graph.entry_points.len().min(call_graph.nodes.len()))
+            .map_err(|error| Self::allocation_error("call-depth queue", error))?;
         for &entry_point in &call_graph.entry_points {
-            let mut queue = VecDeque::new();
-            let mut visited = HashSet::new();
+            if let Some(&node_index) = address_to_node.get(&entry_point) {
+                call_graph.nodes[node_index].call_depth = Some(0);
+                queue.push_back(entry_point);
+            }
+        }
 
-            queue.push_back((entry_point, 0));
-            visited.insert(entry_point);
+        while let Some(current_addr) = queue.pop_front() {
+            let node_index = address_to_node[&current_addr];
+            let depth = call_graph.nodes[node_index].call_depth.unwrap_or(0);
+            if self
+                .config
+                .max_labeled_call_depth
+                .is_some_and(|maximum| depth >= maximum)
+            {
+                continue;
+            }
 
-            while let Some((current_addr, depth)) = queue.pop_front() {
-                if let Some(&node_index) = address_to_node.get(&current_addr) {
-                    // Update call depth if not set or if we found a shorter path
-                    let current_depth = call_graph.nodes[node_index].call_depth;
-                    if current_depth.is_none() || current_depth.unwrap() > depth {
-                        call_graph.nodes[node_index].call_depth = Some(depth);
-                    }
-                }
-
-                // Add neighbors to queue
-                if let Some(neighbors) = adjacency.get(&current_addr) {
-                    for &neighbor in neighbors {
-                        if !visited.contains(&neighbor) {
-                            visited.insert(neighbor);
-                            queue.push_back((neighbor, depth + 1));
-                        }
+            let next_depth = depth.saturating_add(1);
+            if let Some(neighbors) = adjacency.get(&current_addr) {
+                for &neighbor in neighbors {
+                    let neighbor_index = address_to_node[&neighbor];
+                    if call_graph.nodes[neighbor_index].call_depth.is_none() {
+                        call_graph.nodes[neighbor_index].call_depth = Some(next_depth);
+                        queue.push_back(neighbor);
                     }
                 }
             }
@@ -535,39 +656,105 @@ impl CallGraphAnalyzer {
         Ok(())
     }
 
-    /// Find unreachable functions
-    fn find_unreachable_functions(&self, call_graph: &CallGraph) -> Vec<u64> {
-        let reachable: HashSet<u64> = call_graph
-            .nodes
-            .iter()
-            .filter(|node| node.call_depth.is_some())
-            .map(|node| node.function_address)
-            .collect();
+    /// Find unreachable functions independently of the call-depth labeling cap.
+    fn find_unreachable_functions(&self, call_graph: &CallGraph) -> Result<Vec<u64>> {
+        let (address_to_node, adjacency) = Self::graph_index(call_graph)?;
+        let mut reachable = HashSet::new();
+        reachable
+            .try_reserve(call_graph.nodes.len())
+            .map_err(|error| Self::allocation_error("reachable function set", error))?;
+        let mut queue = VecDeque::new();
+        queue
+            .try_reserve(call_graph.nodes.len())
+            .map_err(|error| Self::allocation_error("reachability queue", error))?;
 
-        call_graph
-            .nodes
-            .iter()
-            .filter(|node| !reachable.contains(&node.function_address))
-            .map(|node| node.function_address)
-            .collect()
+        for &entry_point in &call_graph.entry_points {
+            if address_to_node.contains_key(&entry_point) && reachable.insert(entry_point) {
+                queue.push_back(entry_point);
+            }
+        }
+
+        while let Some(current) = queue.pop_front() {
+            if let Some(neighbors) = adjacency.get(&current) {
+                for &neighbor in neighbors {
+                    if reachable.insert(neighbor) {
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+        }
+
+        let mut unreachable = Vec::new();
+        unreachable
+            .try_reserve(call_graph.nodes.len().saturating_sub(reachable.len()))
+            .map_err(|error| Self::allocation_error("unreachable function list", error))?;
+        unreachable.extend(
+            call_graph
+                .nodes
+                .iter()
+                .filter(|node| !reachable.contains(&node.function_address))
+                .map(|node| node.function_address),
+        );
+        Ok(unreachable)
+    }
+
+    fn graph_index(call_graph: &CallGraph) -> Result<(AddressToNode, CallAdjacency)> {
+        let mut address_to_node = HashMap::new();
+        address_to_node
+            .try_reserve(call_graph.nodes.len())
+            .map_err(|error| Self::allocation_error("call-graph address index", error))?;
+        for (index, node) in call_graph.nodes.iter().enumerate() {
+            address_to_node.insert(node.function_address, index);
+        }
+
+        let mut adjacency: HashMap<u64, Vec<u64>> = HashMap::new();
+        adjacency
+            .try_reserve(call_graph.nodes.len())
+            .map_err(|error| Self::allocation_error("call-graph adjacency", error))?;
+        for edge in &call_graph.edges {
+            if !matches!(edge.call_type, CallType::Indirect)
+                && address_to_node.contains_key(&edge.caller)
+                && let Some(callee) = edge
+                    .callee
+                    .filter(|callee| address_to_node.contains_key(callee))
+            {
+                let neighbors = adjacency.entry(edge.caller).or_default();
+                neighbors
+                    .try_reserve(1)
+                    .map_err(|error| Self::allocation_error("call-graph neighbor", error))?;
+                neighbors.push(callee);
+            }
+        }
+        for neighbors in adjacency.values_mut() {
+            neighbors.sort_unstable();
+            neighbors.dedup();
+        }
+
+        Ok((address_to_node, adjacency))
     }
 
     /// Compute call graph statistics
     fn compute_statistics(&self, call_graph: &CallGraph) -> CallGraphStatistics {
         let total_functions = call_graph.nodes.len();
-        let total_calls = call_graph.edges.len();
+        let total_calls = call_graph.edges.iter().fold(0_usize, |count, edge| {
+            count.saturating_add(edge.call_sites.len())
+        });
 
         let direct_calls = call_graph
             .edges
             .iter()
-            .filter(|edge| matches!(edge.call_type, CallType::Direct))
-            .count();
+            .filter(|edge| matches!(edge.call_type, CallType::Direct | CallType::Recursive))
+            .fold(0_usize, |count, edge| {
+                count.saturating_add(edge.call_sites.len())
+            });
 
         let indirect_calls = call_graph
             .edges
             .iter()
             .filter(|edge| matches!(edge.call_type, CallType::Indirect))
-            .count();
+            .fold(0_usize, |count, edge| {
+                count.saturating_add(edge.call_sites.len())
+            });
 
         let recursive_functions = call_graph
             .nodes
@@ -598,7 +785,7 @@ impl CallGraphAnalyzer {
             .collect();
 
         let average_call_depth = if !depths.is_empty() {
-            depths.iter().sum::<u32>() as f64 / depths.len() as f64
+            depths.iter().map(|&depth| f64::from(depth)).sum::<f64>() / depths.len() as f64
         } else {
             0.0
         };
@@ -622,13 +809,38 @@ impl CallGraphAnalyzer {
 
     /// Count strongly connected components (cyclic dependencies)
     fn count_cyclic_dependencies(&self, call_graph: &CallGraph) -> usize {
-        // Simplified cycle counting - counts functions involved in any cycle
-        call_graph
-            .nodes
-            .iter()
-            .filter(|node| node.is_recursive)
-            .count()
+        cyclic_components(&call_graph.nodes, &call_graph.edges).len()
     }
+}
+
+fn cyclic_components(nodes: &[CallGraphNode], edges: &[CallGraphEdge]) -> Vec<Vec<u64>> {
+    let mut graph = DiGraphMap::<u64, ()>::new();
+    for node in nodes {
+        graph.add_node(node.function_address);
+    }
+    for edge in edges {
+        if !matches!(edge.call_type, CallType::Indirect)
+            && graph.contains_node(edge.caller)
+            && let Some(callee) = edge.callee.filter(|callee| graph.contains_node(*callee))
+        {
+            graph.add_edge(edge.caller, callee, ());
+        }
+    }
+
+    let mut components: Vec<Vec<u64>> = kosaraju_scc(&graph)
+        .into_iter()
+        .filter(|component| {
+            component.len() > 1
+                || component
+                    .first()
+                    .is_some_and(|&node| graph.contains_edge(node, node))
+        })
+        .collect();
+    for component in &mut components {
+        component.sort_unstable();
+    }
+    components.sort();
+    components
 }
 
 /// Configuration for DOT export
@@ -685,6 +897,11 @@ impl DotExporter {
 
 impl CallGraphExporter for DotExporter {
     fn export(&self, graph: &CallGraph) -> Result<String> {
+        if self.config.cluster_by_module {
+            return Err(BinaryError::feature_not_available(
+                "DOT module clustering is not implemented",
+            ));
+        }
         let mut dot = String::new();
 
         // DOT header
@@ -702,10 +919,11 @@ impl CallGraphExporter for DotExporter {
 
         // Export nodes
         for node in nodes_to_include {
+            let escaped_name = escape_dot_label(&node.function_name);
             let label = if self.config.include_addresses {
-                format!("{}\\n0x{:x}", node.function_name, node.function_address)
+                format!("{}\\n0x{:x}", escaped_name, node.function_address)
             } else {
-                node.function_name.clone()
+                escaped_name
             };
 
             let color = if self.config.color_by_type {
@@ -735,35 +953,75 @@ impl CallGraphExporter for DotExporter {
             .iter()
             .map(|n| n.function_address)
             .collect();
+        if graph
+            .edges
+            .iter()
+            .any(|edge| edge.callee.is_none() && node_addresses.contains(&edge.caller))
+        {
+            dot.push_str(
+                "  \"__unknown_target\" [label=\"unknown target\", shape=ellipse, fillcolor=orange];\n",
+            );
+        }
 
         for edge in &graph.edges {
-            // Only include edges between included nodes
-            if node_addresses.contains(&edge.caller) && node_addresses.contains(&edge.callee) {
-                let style = match edge.call_type {
-                    CallType::Direct => "",
-                    CallType::Indirect => ", style=dashed",
-                    CallType::TailCall => ", color=red",
-                    CallType::Virtual => ", color=purple",
-                    CallType::Recursive => ", color=green, style=bold",
-                    CallType::Conditional => ", color=orange",
-                };
-
-                let label = if self.config.show_call_counts {
-                    format!(" [label=\"{}\"{}", edge.call_sites.len(), style)
-                } else {
-                    format!(" [{}]", &style[2..]) // Remove leading ", "
-                };
-
-                dot.push_str(&format!(
-                    "  \"0x{:x}\" -> \"0x{:x}\"{};\n",
-                    edge.caller, edge.callee, label
-                ));
+            if !node_addresses.contains(&edge.caller) {
+                continue;
             }
+
+            let target = match edge.callee {
+                Some(callee) if node_addresses.contains(&callee) => format!("\"0x{callee:x}\""),
+                None => "\"__unknown_target\"".to_string(),
+                Some(_) => continue,
+            };
+            let mut attributes = Vec::new();
+            if self.config.show_call_counts {
+                attributes.push(format!("label=\"{}\"", edge.call_sites.len()));
+            }
+            match edge.call_type {
+                CallType::Direct => {}
+                CallType::Indirect => attributes.push("style=dashed".to_string()),
+                CallType::TailCall => attributes.push("color=red".to_string()),
+                CallType::Virtual => attributes.push("color=purple".to_string()),
+                CallType::Recursive => {
+                    attributes.push("color=green".to_string());
+                    attributes.push("style=bold".to_string());
+                }
+                CallType::Conditional => attributes.push("color=orange".to_string()),
+            }
+            let attributes = if attributes.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", attributes.join(", "))
+            };
+
+            dot.push_str(&format!(
+                "  \"0x{:x}\" -> {target}{attributes};\n",
+                edge.caller
+            ));
         }
 
         dot.push_str("}\n");
         Ok(dot)
     }
+}
+
+fn escape_dot_label(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            character if character.is_control() => {
+                use std::fmt::Write as _;
+                let _ = write!(escaped, "\\u{:04x}", character as u32);
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped
 }
 
 /// JSON exporter for programmatic analysis
@@ -779,100 +1037,33 @@ impl CallGraphExporter for JsonExporter {
         #[cfg(not(feature = "serde-support"))]
         {
             let _ = graph; // Suppress unused warning
-            Err(BinaryError::invalid_data(
-                "JSON export requires 'serde-support' feature",
-            ))
+            Err(BinaryError::feature_not_available("serde-support"))
         }
     }
 }
 
 impl CallGraph {
     /// Export call graph to DOT format for Graphviz
-    pub fn to_dot(&self) -> String {
+    pub fn to_dot(&self) -> Result<String> {
         let exporter = DotExporter::new_default();
-        exporter.export(self).unwrap_or_default()
+        exporter.export(self)
     }
 
     /// Export call graph to DOT format with custom configuration
-    pub fn to_dot_with_config(&self, config: DotConfig) -> String {
+    pub fn to_dot_with_config(&self, config: DotConfig) -> Result<String> {
         let exporter = DotExporter::new(config);
-        exporter.export(self).unwrap_or_default()
+        exporter.export(self)
     }
 
     /// Export call graph to JSON format
-    pub fn to_json(&self) -> String {
+    pub fn to_json(&self) -> Result<String> {
         let exporter = JsonExporter;
-        exporter.export(self).unwrap_or_default()
+        exporter.export(self)
     }
 
-    /// Detect cycles in the call graph
+    /// Return cyclic strongly connected components in deterministic address order.
     pub fn detect_cycles(&self) -> Vec<Vec<u64>> {
-        let mut cycles = Vec::new();
-        let mut visited = HashSet::new();
-        let mut rec_stack = HashSet::new();
-        let mut current_path = Vec::new();
-
-        // Build adjacency list
-        let mut adjacency: HashMap<u64, Vec<u64>> = HashMap::new();
-        for edge in &self.edges {
-            adjacency.entry(edge.caller).or_default().push(edge.callee);
-        }
-
-        // DFS from each unvisited node
-        for node in &self.nodes {
-            if !visited.contains(&node.function_address) {
-                self.dfs_find_cycles(
-                    node.function_address,
-                    &mut visited,
-                    &mut rec_stack,
-                    &mut current_path,
-                    &mut cycles,
-                    &adjacency,
-                );
-            }
-        }
-
-        cycles
-    }
-
-    /// DFS helper for finding cycles
-    #[allow(clippy::only_used_in_recursion)]
-    fn dfs_find_cycles(
-        &self,
-        node: u64,
-        visited: &mut HashSet<u64>,
-        rec_stack: &mut HashSet<u64>,
-        current_path: &mut Vec<u64>,
-        cycles: &mut Vec<Vec<u64>>,
-        adjacency: &HashMap<u64, Vec<u64>>,
-    ) {
-        visited.insert(node);
-        rec_stack.insert(node);
-        current_path.push(node);
-
-        if let Some(neighbors) = adjacency.get(&node) {
-            for &neighbor in neighbors {
-                if !visited.contains(&neighbor) {
-                    self.dfs_find_cycles(
-                        neighbor,
-                        visited,
-                        rec_stack,
-                        current_path,
-                        cycles,
-                        adjacency,
-                    );
-                } else if rec_stack.contains(&neighbor) {
-                    // Found a cycle - extract the cycle path
-                    if let Some(cycle_start) = current_path.iter().position(|&x| x == neighbor) {
-                        let cycle = current_path[cycle_start..].to_vec();
-                        cycles.push(cycle);
-                    }
-                }
-            }
-        }
-
-        current_path.pop();
-        rec_stack.remove(&node);
+        cyclic_components(&self.nodes, &self.edges)
     }
 }
 
@@ -896,11 +1087,229 @@ mod tests {
     use super::*;
     use crate::types::*;
 
+    struct TestFormat {
+        sections: Vec<Section>,
+        symbols: Vec<Symbol>,
+        metadata: BinaryMetadata,
+    }
+
+    impl BinaryFormatTrait for TestFormat {
+        fn format_type(&self) -> BinaryFormat {
+            BinaryFormat::Raw
+        }
+
+        fn architecture(&self) -> Architecture {
+            Architecture::X86_64
+        }
+
+        fn entry_point(&self) -> Option<u64> {
+            None
+        }
+
+        fn sections(&self) -> &[Section] {
+            &self.sections
+        }
+
+        fn symbols(&self) -> &[Symbol] {
+            &self.symbols
+        }
+
+        fn imports(&self) -> &[Import] {
+            &[]
+        }
+
+        fn exports(&self) -> &[Export] {
+            &[]
+        }
+
+        fn metadata(&self) -> &BinaryMetadata {
+            &self.metadata
+        }
+    }
+
+    fn function_symbol(name: &str, address: u64) -> Symbol {
+        Symbol {
+            name: name.to_string(),
+            demangled_name: None,
+            address,
+            size: 1,
+            symbol_type: SymbolType::Function,
+            binding: SymbolBinding::Global,
+            visibility: SymbolVisibility::Default,
+            section_index: None,
+        }
+    }
+
+    fn test_binary(data: Vec<u8>, sections: Vec<Section>, symbols: Vec<Symbol>) -> BinaryFile {
+        let metadata = BinaryMetadata {
+            size: data.len(),
+            format: BinaryFormat::Raw,
+            architecture: Architecture::X86_64,
+            entry_point: None,
+            base_address: None,
+            timestamp: None,
+            compiler_info: None,
+            endian: Endianness::Little,
+            security_features: SecurityFeatures::default(),
+        };
+
+        BinaryFile {
+            data,
+            parsed: Box::new(TestFormat {
+                sections,
+                symbols,
+                metadata,
+            }),
+        }
+    }
+
+    fn function_analysis_binary(include_valid_function: bool) -> BinaryFile {
+        let data = vec![0xc3];
+        let mut sections = vec![Section {
+            name: ".invalid".to_string(),
+            address: 0x1000,
+            size: 1,
+            offset: 2,
+            file_size: 1,
+            permissions: SectionPermissions {
+                read: true,
+                write: false,
+                execute: true,
+            },
+            section_type: SectionType::Code,
+            data: None,
+        }];
+        let mut symbols = vec![function_symbol("invalid", 0x1000)];
+
+        if include_valid_function {
+            sections.push(Section {
+                name: ".valid".to_string(),
+                address: 0x2000,
+                size: 1,
+                offset: 0,
+                file_size: 1,
+                permissions: SectionPermissions {
+                    read: true,
+                    write: false,
+                    execute: true,
+                },
+                section_type: SectionType::Code,
+                data: Some(data.clone()),
+            });
+            symbols.push(function_symbol("valid", 0x2000));
+        }
+
+        test_binary(data, sections, symbols)
+    }
+
     #[test]
     fn test_analyzer_creation() {
         let analyzer = CallGraphAnalyzer::new_default();
         assert!(analyzer.config.analyze_indirect_calls);
         assert!(analyzer.config.detect_tail_calls);
+        assert_eq!(analyzer.config.max_functions, 10_000);
+        assert_eq!(analyzer.config.max_total_instructions, 1_000_000);
+    }
+
+    #[test]
+    fn analyze_binary_returns_error_when_every_function_fails() {
+        let binary = function_analysis_binary(false);
+        let analyzer = CallGraphAnalyzer::new_default();
+
+        let error = analyzer.analyze_binary(&binary).unwrap_err();
+
+        assert!(
+            matches!(error, BinaryError::InvalidData(message) if message.contains("beyond the end of the file"))
+        );
+    }
+
+    #[test]
+    fn analyze_binary_preserves_partial_function_success() {
+        let binary = function_analysis_binary(true);
+        let analyzer = CallGraphAnalyzer::new(CallGraphConfig {
+            max_functions: 2,
+            max_total_instructions: 1,
+            ..CallGraphConfig::default()
+        });
+
+        let graph = analyzer.analyze_binary(&binary).unwrap();
+
+        assert_eq!(graph.nodes.len(), 2);
+        assert!(graph.nodes.iter().any(|node| node.function_name == "valid"));
+    }
+
+    #[test]
+    fn analyze_binary_returns_error_when_function_has_no_executable_section() {
+        let binary = test_binary(
+            vec![0xc3],
+            Vec::new(),
+            vec![function_symbol("missing", 0x3000)],
+        );
+        let analyzer = CallGraphAnalyzer::new_default();
+
+        let error = analyzer.analyze_binary(&binary).unwrap_err();
+
+        assert!(
+            matches!(error, BinaryError::InvalidData(message) if message == "Function bytes not found in any executable section")
+        );
+    }
+
+    #[test]
+    fn containing_zero_length_file_range_counts_as_success() {
+        let binary = test_binary(
+            vec![0xc3],
+            vec![Section {
+                name: ".empty".to_string(),
+                address: 0x3000,
+                size: 1,
+                offset: 1,
+                file_size: 0,
+                permissions: SectionPermissions {
+                    read: true,
+                    write: false,
+                    execute: true,
+                },
+                section_type: SectionType::Code,
+                data: None,
+            }],
+            vec![function_symbol("empty", 0x3000)],
+        );
+        let analyzer = CallGraphAnalyzer::new_default();
+
+        let graph = analyzer.analyze_binary(&binary).unwrap();
+
+        assert_eq!(graph.nodes.len(), 1);
+        assert!(graph.edges.is_empty());
+    }
+
+    #[test]
+    fn analyze_binary_rejects_function_count_above_configured_cap() {
+        let binary = function_analysis_binary(true);
+        let analyzer = CallGraphAnalyzer::new(CallGraphConfig {
+            max_functions: 1,
+            ..CallGraphConfig::default()
+        });
+
+        let error = analyzer.analyze_binary(&binary).unwrap_err();
+
+        assert!(
+            matches!(error, BinaryError::ControlFlowError(message) if message.contains("max_functions 1"))
+        );
+    }
+
+    #[test]
+    fn analyze_binary_rejects_total_instructions_above_configured_cap() {
+        let binary = function_analysis_binary(true);
+        let analyzer = CallGraphAnalyzer::new(CallGraphConfig {
+            max_total_instructions: 0,
+            ..CallGraphConfig::default()
+        });
+
+        let error = analyzer.analyze_binary(&binary).unwrap_err();
+
+        assert!(
+            matches!(error, BinaryError::ControlFlowError(message) if message.contains("max_total_instructions 0"))
+        );
     }
 
     #[test]
@@ -910,7 +1319,36 @@ mod tests {
         assert!(analyzer.is_library_function("libc_start_main"));
         assert!(analyzer.is_library_function("__stack_chk_fail"));
         assert!(!analyzer.is_library_function("user_function"));
+        assert!(!analyzer.is_library_function("carefree_user"));
         assert!(!analyzer.is_library_function("main"));
+    }
+
+    #[test]
+    fn indirect_call_setting_gates_unknown_target_edges() {
+        let instruction = Instruction {
+            address: 0x1000,
+            bytes: vec![0xff, 0xd0],
+            mnemonic: "call".to_string(),
+            operands: "rax".to_string(),
+            category: InstructionCategory::Control,
+            flow: crate::types::ControlFlow::Sequential,
+            size: 2,
+        };
+        let enabled = CallGraphAnalyzer::new_default();
+        let disabled = CallGraphAnalyzer::new(CallGraphConfig {
+            analyze_indirect_calls: false,
+            ..CallGraphConfig::default()
+        });
+
+        let detected = enabled
+            .analyze_call_instruction(&instruction, 0x1000, &HashMap::new())
+            .unwrap();
+        assert_eq!(detected.callee, None);
+        assert!(
+            disabled
+                .analyze_call_instruction(&instruction, 0x1000, &HashMap::new())
+                .is_none()
+        );
     }
 
     #[test]
@@ -953,5 +1391,164 @@ mod tests {
                 assert_eq!(entry_function.function_type, FunctionType::Entrypoint);
             }
         }
+    }
+
+    fn node(address: u64, name: &str) -> CallGraphNode {
+        CallGraphNode {
+            function_address: address,
+            function_name: name.to_string(),
+            node_type: NodeType::Internal,
+            complexity: 0,
+            in_degree: 0,
+            out_degree: 0,
+            is_recursive: false,
+            call_depth: None,
+        }
+    }
+
+    fn edge(caller: u64, callee: u64, call_type: CallType, site: u64) -> CallGraphEdge {
+        CallGraphEdge {
+            caller,
+            callee: Some(callee),
+            call_type,
+            call_sites: vec![CallSite {
+                address: site,
+                instruction_bytes: vec![0xe8],
+                context: CallContext::Normal,
+            }],
+        }
+    }
+
+    fn unknown_edge(caller: u64, site: u64) -> CallGraphEdge {
+        CallGraphEdge {
+            caller,
+            callee: None,
+            call_type: CallType::Indirect,
+            call_sites: vec![CallSite {
+                address: site,
+                instruction_bytes: vec![0xff, 0xd0],
+                context: CallContext::Normal,
+            }],
+        }
+    }
+
+    fn graph(nodes: Vec<CallGraphNode>, edges: Vec<CallGraphEdge>) -> CallGraph {
+        CallGraph {
+            nodes,
+            edges,
+            entry_points: vec![1],
+            unreachable_functions: Vec::new(),
+            statistics: CallGraphStatistics::default(),
+        }
+    }
+
+    #[test]
+    fn dot_export_handles_plain_direct_edges_and_escapes_labels() {
+        let graph = graph(
+            vec![node(1, "quoted\"name\nline"), node(2, "callee")],
+            vec![edge(1, 2, CallType::Direct, 10)],
+        );
+
+        let dot = DotExporter::new_default().export(&graph).unwrap();
+
+        assert!(dot.contains("quoted\\\"name\\nline"));
+        assert!(dot.contains("\"0x1\" -> \"0x2\";"));
+    }
+
+    #[test]
+    fn repeated_calls_are_merged_with_sorted_call_sites() {
+        let edges = vec![
+            edge(1, 2, CallType::Direct, 20),
+            edge(1, 2, CallType::Direct, 10),
+            edge(1, 2, CallType::Direct, 10),
+        ];
+
+        let merged = CallGraphAnalyzer::merge_edges(edges);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].call_sites.len(), 2);
+        assert_eq!(merged[0].call_sites[0].address, 10);
+        assert_eq!(merged[0].call_sites[1].address, 20);
+    }
+
+    #[test]
+    fn unknown_target_does_not_conflate_with_function_at_zero() {
+        let analyzer = CallGraphAnalyzer::new_default();
+        let mut nodes = vec![node(0, "zero"), node(1, "caller")];
+        let edges = vec![unknown_edge(1, 10)];
+
+        analyzer.update_node_degrees(&mut nodes, &edges);
+        let dot = DotExporter::new_default()
+            .export(&graph(nodes.clone(), edges))
+            .unwrap();
+
+        assert_eq!(nodes[0].in_degree, 0);
+        assert_eq!(nodes[1].out_degree, 1);
+        assert!(dot.contains("\"__unknown_target\""));
+        assert!(dot.contains("\"0x1\" -> \"__unknown_target\""));
+        assert!(!dot.contains("\"0x1\" -> \"0x0\""));
+    }
+
+    #[test]
+    fn cycle_detection_returns_deterministic_components() {
+        let graph = graph(
+            vec![node(1, "one"), node(2, "two"), node(3, "three")],
+            vec![
+                edge(2, 1, CallType::Direct, 20),
+                edge(1, 2, CallType::Direct, 10),
+                unknown_edge(3, 30),
+            ],
+        );
+
+        assert_eq!(graph.detect_cycles(), vec![vec![1, 2]]);
+    }
+
+    #[cfg(not(feature = "serde-support"))]
+    #[test]
+    fn json_export_reports_missing_serde_feature() {
+        let graph = graph(Vec::new(), Vec::new());
+
+        assert!(matches!(
+            graph.to_json(),
+            Err(BinaryError::FeatureNotAvailable(feature)) if feature == "serde-support"
+        ));
+    }
+
+    #[cfg(feature = "serde-support")]
+    #[test]
+    fn json_export_uses_null_for_unknown_call_target() {
+        let graph = graph(vec![node(1, "caller")], vec![unknown_edge(1, 10)]);
+
+        let json = graph.to_json().unwrap();
+
+        assert!(json.contains("\"callee\": null"));
+    }
+
+    #[test]
+    fn maximum_labeled_call_depth_is_enforced() {
+        let config = CallGraphConfig {
+            max_labeled_call_depth: Some(1),
+            ..CallGraphConfig::default()
+        };
+        let analyzer = CallGraphAnalyzer::new(config);
+        let mut graph = graph(
+            vec![node(1, "one"), node(2, "two"), node(3, "three")],
+            vec![
+                edge(1, 2, CallType::Direct, 10),
+                edge(2, 3, CallType::Direct, 20),
+            ],
+        );
+
+        analyzer.compute_call_depths(&mut graph).unwrap();
+
+        assert_eq!(graph.nodes[0].call_depth, Some(0));
+        assert_eq!(graph.nodes[1].call_depth, Some(1));
+        assert_eq!(graph.nodes[2].call_depth, None);
+        assert!(
+            analyzer
+                .find_unreachable_functions(&graph)
+                .unwrap()
+                .is_empty()
+        );
     }
 }

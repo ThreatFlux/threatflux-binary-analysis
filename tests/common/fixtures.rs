@@ -80,6 +80,65 @@ pub fn create_realistic_elf_64() -> Vec<u8> {
     data
 }
 
+/// Minimal ELF64 executable with a file-backed `.text` section.
+///
+/// Use this fixture for disassembly and graph-analysis tests. The older
+/// `create_realistic_elf_64` fixture intentionally exercises parser tolerance
+/// and does not describe its entry point with an executable section.
+pub fn create_analysis_elf_64() -> Vec<u8> {
+    const TEXT_OFFSET: usize = 0x100;
+    const TEXT_ADDRESS: u64 = 0x401000;
+    const STRING_TABLE_OFFSET: usize = 0x180;
+    const SECTION_TABLE_OFFSET: usize = 0x200;
+
+    let instructions = [
+        0x48, 0x89, 0xe5, // mov rbp, rsp
+        0xe8, 0x05, 0x00, 0x00, 0x00, // call a nearby function
+        0xc3, // ret
+        0x48, 0x89, 0xe5, // mov rbp, rsp
+        0xb8, 0x00, 0x00, 0x00, 0x00, // mov eax, 0
+        0xc3, // ret
+    ];
+    let section_names = b"\0.text\0.shstrtab\0";
+    let mut data = vec![0_u8; SECTION_TABLE_OFFSET + 3 * 64];
+
+    data[..16].copy_from_slice(&[0x7f, b'E', b'L', b'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    data[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    data[18..20].copy_from_slice(&0x3e_u16.to_le_bytes());
+    data[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    data[24..32].copy_from_slice(&TEXT_ADDRESS.to_le_bytes());
+    data[40..48].copy_from_slice(&(SECTION_TABLE_OFFSET as u64).to_le_bytes());
+    data[52..54].copy_from_slice(&64_u16.to_le_bytes());
+    data[58..60].copy_from_slice(&64_u16.to_le_bytes());
+    data[60..62].copy_from_slice(&3_u16.to_le_bytes());
+    data[62..64].copy_from_slice(&2_u16.to_le_bytes());
+
+    data[TEXT_OFFSET..TEXT_OFFSET + instructions.len()].copy_from_slice(&instructions);
+    data[STRING_TABLE_OFFSET..STRING_TABLE_OFFSET + section_names.len()]
+        .copy_from_slice(section_names);
+
+    let text_header = SECTION_TABLE_OFFSET + 64;
+    data[text_header..text_header + 4].copy_from_slice(&1_u32.to_le_bytes());
+    data[text_header + 4..text_header + 8].copy_from_slice(&1_u32.to_le_bytes());
+    data[text_header + 8..text_header + 16].copy_from_slice(&6_u64.to_le_bytes());
+    data[text_header + 16..text_header + 24].copy_from_slice(&TEXT_ADDRESS.to_le_bytes());
+    data[text_header + 24..text_header + 32].copy_from_slice(&(TEXT_OFFSET as u64).to_le_bytes());
+    data[text_header + 32..text_header + 40]
+        .copy_from_slice(&(instructions.len() as u64).to_le_bytes());
+    data[text_header + 48..text_header + 56].copy_from_slice(&16_u64.to_le_bytes());
+
+    let string_header = SECTION_TABLE_OFFSET + 128;
+    data[string_header..string_header + 4].copy_from_slice(&7_u32.to_le_bytes());
+    data[string_header + 4..string_header + 8].copy_from_slice(&3_u32.to_le_bytes());
+    data[string_header + 24..string_header + 32]
+        .copy_from_slice(&(STRING_TABLE_OFFSET as u64).to_le_bytes());
+    data[string_header + 32..string_header + 40]
+        .copy_from_slice(&(section_names.len() as u64).to_le_bytes());
+    data[string_header + 48..string_header + 56].copy_from_slice(&1_u64.to_le_bytes());
+
+    data
+}
+
 /// Complete PE binary fixture with DOS header, PE header, and sections
 pub fn create_realistic_pe_64() -> Vec<u8> {
     let mut data = vec![0; 8192]; // 8KB binary
@@ -165,6 +224,8 @@ pub fn create_realistic_pe_64() -> Vec<u8> {
     let image_base: u64 = 0x140000000;
     data[0xb0..0xb8].copy_from_slice(&image_base.to_le_bytes());
 
+    write_test_pe_sections(&mut data, 0x188);
+
     // Add some x86-64 instructions at entry point
     let instructions = [
         0x48, 0x83, 0xec, 0x28, // sub rsp, 40
@@ -183,7 +244,7 @@ pub fn create_realistic_pe_64() -> Vec<u8> {
 
 /// Complete PE 32-bit binary fixture with DOS header, PE header, and sections
 pub fn create_realistic_pe_32() -> Vec<u8> {
-    let mut data = vec![0; 4096]; // 4KB binary
+    let mut data = vec![0; 8192]; // 8KB binary
 
     // DOS Header
     data[0] = 0x4d; // 'M'
@@ -270,6 +331,8 @@ pub fn create_realistic_pe_32() -> Vec<u8> {
     let image_base: u32 = 0x400000;
     data[0xb4..0xb8].copy_from_slice(&image_base.to_le_bytes());
 
+    write_test_pe_sections(&mut data, 0x178);
+
     // Add some x86 instructions at entry point
     let instructions = [
         0x55, // push ebp
@@ -288,13 +351,36 @@ pub fn create_realistic_pe_32() -> Vec<u8> {
     data
 }
 
+fn write_test_pe_sections(data: &mut [u8], table_offset: usize) {
+    fn write_header(
+        target: &mut [u8],
+        name: &[u8],
+        virtual_address: u32,
+        raw_offset: u32,
+        characteristics: u32,
+    ) {
+        const SECTION_SIZE: u32 = 0x200;
+
+        target[..name.len()].copy_from_slice(name);
+        target[8..12].copy_from_slice(&SECTION_SIZE.to_le_bytes());
+        target[12..16].copy_from_slice(&virtual_address.to_le_bytes());
+        target[16..20].copy_from_slice(&SECTION_SIZE.to_le_bytes());
+        target[20..24].copy_from_slice(&raw_offset.to_le_bytes());
+        target[36..40].copy_from_slice(&characteristics.to_le_bytes());
+    }
+
+    let (text, data_section) = data[table_offset..table_offset + 80].split_at_mut(40);
+    write_header(text, b".text", 0x1000, 0x1000, 0x6000_0020);
+    write_header(data_section, b".data", 0x2000, 0x1200, 0xc000_0040);
+}
+
 /// Complete Mach-O binary fixture
 pub fn create_realistic_macho_64() -> Vec<u8> {
     let mut data = vec![0; 4096];
 
     // Mach-O Header (32 bytes for 64-bit)
     let header = [
-        0xfe, 0xed, 0xfa, 0xcf, // magic (MH_MAGIC_64)
+        0xcf, 0xfa, 0xed, 0xfe, // magic (MH_MAGIC_64, little-endian bytes)
         0x07, 0x00, 0x00, 0x01, // cputype (CPU_TYPE_X86_64)
         0x03, 0x00, 0x00, 0x00, // cpusubtype (CPU_SUBTYPE_X86_64_ALL)
         0x02, 0x00, 0x00, 0x00, // filetype (MH_EXECUTE)
@@ -531,6 +617,7 @@ pub fn create_sample_sections() -> Vec<Section> {
             address: 0x1000,
             size: 2048,
             offset: 0x1000,
+            file_size: 2048,
             permissions: SectionPermissions {
                 read: true,
                 write: false,
@@ -544,6 +631,7 @@ pub fn create_sample_sections() -> Vec<Section> {
             address: 0x2000,
             size: 1024,
             offset: 0x2000,
+            file_size: 1024,
             permissions: SectionPermissions {
                 read: true,
                 write: true,
@@ -557,6 +645,7 @@ pub fn create_sample_sections() -> Vec<Section> {
             address: 0x3000,
             size: 512,
             offset: 0,
+            file_size: 0,
             permissions: SectionPermissions {
                 read: true,
                 write: true,
@@ -1202,9 +1291,7 @@ pub fn create_elf_with_build_id_note() -> Vec<u8> {
 // PE compiler detection fixture functions
 
 pub fn create_pe_with_rich_header() -> Vec<u8> {
-    let mut data = create_realistic_pe_64();
-    data.resize(4096, 0);
-    data
+    create_realistic_pe_64()
 }
 
 pub fn create_pe_with_msvc_2022() -> Vec<u8> {

@@ -5,7 +5,7 @@
 //! serialization/deserialization, and new structure fields added in Phase 1.
 
 use pretty_assertions::assert_eq;
-use threatflux_binary_analysis::{types::*, AnalysisConfig, BinaryAnalyzer};
+use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer, types::*};
 
 // Parser imports removed - using BinaryAnalyzer API
 
@@ -439,40 +439,14 @@ fn test_analysis_result_structure() {
     assert_eq!(result.metadata.architecture, Architecture::X86_64);
     assert!(result.metadata.size > 0);
 
-    // Test optional analysis results
-    #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
-    {
-        // Disassembly may be empty if no executable code sections are found
-        // or if the test data doesn't contain valid instructions
-        if let Some(ref disassembly) = result.disassembly {
-            // Just check that disassembly structure exists, content may be empty for test data
-            assert!(disassembly.is_empty() || !disassembly.is_empty());
-        }
-    }
-
-    #[cfg(feature = "control-flow")]
-    {
-        // Control flow analysis may be empty if no functions are found
-        // or if the test data doesn't contain valid function patterns
-        if let Some(ref control_flow) = result.control_flow {
-            // Just check that control flow structure exists, content may be empty for test data
-            assert!(control_flow.is_empty() || !control_flow.is_empty());
-        }
-    }
-
-    #[cfg(feature = "entropy-analysis")]
-    {
-        if let Some(ref entropy) = result.entropy {
-            assert!(
-                entropy.overall_entropy >= 0.0,
-                "Entropy should be non-negative"
-            );
-            assert!(
-                entropy.overall_entropy <= 8.0,
-                "Entropy should not exceed theoretical maximum"
-            );
-        }
-    }
+    // Parser-only defaults must not populate optional analysis output merely
+    // because its Cargo feature was compiled.
+    assert!(result.disassembly.is_none());
+    assert!(result.control_flow.is_none());
+    assert!(result.call_graph.is_none());
+    assert!(result.enhanced_control_flow.is_none());
+    assert!(result.entropy.is_none());
+    assert!(result.security.is_none());
 }
 
 /// Test backward compatibility with existing structures

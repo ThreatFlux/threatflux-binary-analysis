@@ -17,35 +17,34 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 unmaintained = "all"
 yanked = "deny"
-ignore = [
-    "RUSTSEC-2024-0436", # paste crate unmaintained - used indirectly via nalgebra/statrs
-]
+ignore = []
 
 [licenses]
 allow = [
     "MIT",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
     "Unicode-3.0",
     "Zlib",
-    "CC0-1.0",
 ]
 confidence-threshold = 0.8
 exceptions = []
 
 [bans]
-multiple-versions = "allow"
-wildcards = "allow"
+# Deny new transitive duplication. The exact exceptions below are reviewed and
+# can be removed as their upstream dependency graphs converge.
+multiple-versions = "deny"
+wildcards = "deny"
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
-skip = []
+skip = [
+    { name = "syn", version = "2.0.119", reason = "goblin/rstest proc macros use syn 2 while thiserror 2 uses syn 3" },
+]
 skip-tree = []
 
 [sources]
-unknown-registry = "warn"
-unknown-git = "warn"
+unknown-registry = "deny"
+unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []

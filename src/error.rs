@@ -7,6 +7,7 @@ pub type Result<T> = std::result::Result<T, BinaryError>;
 
 /// Errors that can occur during binary analysis
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum BinaryError {
     /// Failed to parse binary format
     #[error("Failed to parse binary format: {0}")]
@@ -23,6 +24,15 @@ pub enum BinaryError {
     /// Invalid binary data
     #[error("Invalid binary data: {0}")]
     InvalidData(String),
+
+    /// Input exceeds the configured analysis limit
+    #[error("Input size {actual} bytes exceeds the configured limit of {limit} bytes")]
+    InputTooLarge {
+        /// Size of the supplied input, in bytes
+        actual: usize,
+        /// Configured maximum input size, in bytes
+        limit: usize,
+    },
 
     /// Disassembly error
     #[error("Disassembly failed: {0}")]
@@ -61,6 +71,7 @@ pub enum BinaryError {
     Internal(String),
 }
 
+#[cfg(any(feature = "elf", feature = "macho", feature = "pe"))]
 impl From<goblin::error::Error> for BinaryError {
     fn from(err: goblin::error::Error) -> Self {
         BinaryError::ParseError(err.to_string())
@@ -74,7 +85,7 @@ impl From<capstone::Error> for BinaryError {
     }
 }
 
-#[cfg(feature = "wasmparser")]
+#[cfg(feature = "wasm")]
 impl From<wasmparser::BinaryReaderError> for BinaryError {
     fn from(err: wasmparser::BinaryReaderError) -> Self {
         BinaryError::ParseError(format!("WASM parse error: {}", err))
@@ -100,6 +111,11 @@ impl BinaryError {
     /// Create a new invalid data error
     pub fn invalid_data<S: Into<String>>(msg: S) -> Self {
         Self::InvalidData(msg.into())
+    }
+
+    /// Create a new input-size limit error
+    pub fn input_too_large(actual: usize, limit: usize) -> Self {
+        Self::InputTooLarge { actual, limit }
     }
 
     /// Create a new disassembly error
@@ -341,15 +357,18 @@ mod tests {
         assert!(binary_err.to_string().contains("file not found"));
     }
 
+    #[cfg(any(feature = "elf", feature = "macho", feature = "pe"))]
     #[test]
     fn test_from_goblin_error() {
         let goblin_err = goblin::error::Error::Malformed("invalid header".to_string());
         let binary_err: BinaryError = goblin_err.into();
 
         assert!(matches!(binary_err, BinaryError::ParseError(_)));
-        assert!(binary_err
-            .to_string()
-            .contains("Failed to parse binary format"));
+        assert!(
+            binary_err
+                .to_string()
+                .contains("Failed to parse binary format")
+        );
         assert!(binary_err.to_string().contains("invalid header"));
     }
 
@@ -406,7 +425,7 @@ mod tests {
         assert!(binary_err.to_string().contains("Disassembly failed"));
     }
 
-    #[cfg(feature = "wasmparser")]
+    #[cfg(feature = "wasm")]
     #[test]
     fn test_from_wasmparser_error() {
         use wasmparser::BinaryReader;
@@ -423,9 +442,11 @@ mod tests {
         let binary_err: BinaryError = wasm_err.into();
 
         assert!(matches!(binary_err, BinaryError::ParseError(_)));
-        assert!(binary_err
-            .to_string()
-            .contains("Failed to parse binary format"));
+        assert!(
+            binary_err
+                .to_string()
+                .contains("Failed to parse binary format")
+        );
         assert!(binary_err.to_string().contains("WASM parse error"));
     }
 

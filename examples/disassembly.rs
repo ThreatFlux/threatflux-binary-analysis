@@ -1,16 +1,19 @@
 //! Disassembly example
 //!
 //! This example demonstrates how to disassemble binary code using
-//! the integrated disassembly engines (Capstone or iced-x86).
+//! the integrated disassembly engines (Capstone or iced-x86). This example
+//! deliberately prints each section's small inline data preview, so its output
+//! can be partial; `Disassembler::disassemble_section` resolves the checked
+//! full file-backed range when complete section bytes are needed.
 
 use threatflux_binary_analysis::{
+    BinaryFile,
     disasm::{Disassembler, DisassemblyConfig, DisassemblyEngine},
     types::ControlFlow,
-    BinaryFile,
 };
 
 mod util;
-use util::{read_binary_from_args, Result};
+use util::{Result, read_binary_from_args};
 
 fn main() -> Result<()> {
     let data = read_binary_from_args()?;
@@ -86,11 +89,17 @@ fn main() -> Result<()> {
 
         // Find the section containing the entry point
         for section in binary.sections() {
-            if entry_point >= section.address && entry_point < section.address + section.size {
+            let Some(section_end) = section.address.checked_add(section.size) else {
+                continue;
+            };
+            if entry_point >= section.address && entry_point < section_end {
                 println!("Entry point is in section: {}", section.name);
 
                 if let Some(section_data) = &section.data {
-                    let offset = (entry_point - section.address) as usize;
+                    let Ok(offset) = usize::try_from(entry_point - section.address) else {
+                        eprintln!("Entry-point offset does not fit in memory");
+                        break;
+                    };
                     if offset < section_data.len() {
                         let entry_data = &section_data[offset..];
                         let limited_data = &entry_data[..entry_data.len().min(100)]; // First 100 bytes

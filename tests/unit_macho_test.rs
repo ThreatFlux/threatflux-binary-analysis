@@ -9,7 +9,7 @@
 use pretty_assertions::assert_eq;
 use rstest::*;
 use threatflux_binary_analysis::types::*;
-use threatflux_binary_analysis::BinaryAnalyzer;
+use threatflux_binary_analysis::{BinaryAnalyzer, BinaryError};
 
 mod common;
 use common::fixtures::*;
@@ -648,24 +648,17 @@ fn test_macho_error_handling(
 #[test]
 fn test_macho_fat_binary_parsing() {
     let data = create_fat_macho_binary();
-    let analyzer = BinaryAnalyzer::new();
-    let result = analyzer.analyze(&data);
+    assert_eq!(
+        threatflux_binary_analysis::formats::detect_format(&data).unwrap(),
+        BinaryFormat::MachO
+    );
 
-    // Fat binaries might be supported or might error gracefully
-    if let Ok(parsed) = result {
-        // Fat binaries with FAT_MAGIC are detected as Java due to magic byte overlap
-        assert!(
-            parsed.format == BinaryFormat::MachO || parsed.format == BinaryFormat::Java,
-            "Expected MachO or Java format, got: {:?}",
-            parsed.format
-        );
-        // Should pick one architecture from the fat binary
-    } else {
-        // If not supported, should error gracefully
-        let error = result.err().unwrap();
-        let error_msg = format!("{error}");
-        assert!(!error_msg.is_empty());
-    }
+    let error = BinaryAnalyzer::new().analyze(&data).unwrap_err();
+    assert!(matches!(
+        error,
+        BinaryError::UnsupportedFormat(reason)
+            if reason == "Universal (fat) Mach-O binaries are not supported"
+    ));
 }
 
 /// Test Mach-O performance with large files
@@ -724,10 +717,8 @@ fn test_macho_concurrent_parsing() {
 // Helper functions to create test Mach-O data
 
 fn create_macho_with_load_commands() -> Vec<u8> {
-    let mut data = create_realistic_macho_64();
+    let mut data = create_macho_with_section_attribute(0);
     data.resize(16384, 0);
-
-    // Add various load commands: LC_SEGMENT_64, LC_SYMTAB, LC_DYSYMTAB, etc.
 
     data
 }
@@ -781,7 +772,13 @@ fn create_macho_with_code_signature() -> Vec<u8> {
     let mut data = create_realistic_macho_64();
     data.resize(196608, 0);
 
-    // Add LC_CODE_SIGNATURE command and signature data
+    // Append LC_CODE_SIGNATURE after the existing segment and main commands.
+    data[16..20].copy_from_slice(&3_u32.to_le_bytes()); // ncmds
+    data[20..24].copy_from_slice(&112_u32.to_le_bytes()); // sizeofcmds
+    data[128..132].copy_from_slice(&0x1d_u32.to_le_bytes()); // LC_CODE_SIGNATURE
+    data[132..136].copy_from_slice(&16_u32.to_le_bytes()); // cmdsize
+    data[136..140].copy_from_slice(&0x1000_u32.to_le_bytes()); // dataoff
+    data[140..144].copy_from_slice(&16_u32.to_le_bytes()); // datasize
 
     data
 }
@@ -804,11 +801,27 @@ fn create_macho_with_section_type(_section_type: u32) -> Vec<u8> {
     data
 }
 
-fn create_macho_with_section_attribute(_attribute: u32) -> Vec<u8> {
+fn create_macho_with_section_attribute(attribute: u32) -> Vec<u8> {
     let mut data = create_realistic_macho_64();
     data.resize(20480, 0);
 
-    // Create section with specific attributes
+    // Expand LC_SEGMENT_64 and add one valid section_64. Move LC_MAIN so
+    // the load-command stream remains contiguous and internally consistent.
+    let main_command: [u8; 24] = data[104..128].try_into().unwrap();
+    data[20..24].copy_from_slice(&176_u32.to_le_bytes()); // sizeofcmds
+    data[36..40].copy_from_slice(&152_u32.to_le_bytes()); // segment cmdsize
+    data[96..100].copy_from_slice(&1_u32.to_le_bytes()); // nsects
+    data[104..208].fill(0);
+
+    let section = &mut data[104..184];
+    section[..6].copy_from_slice(b"__text");
+    section[16..22].copy_from_slice(b"__TEXT");
+    section[32..40].copy_from_slice(&0x1_0000_0800_u64.to_le_bytes()); // addr
+    section[40..48].copy_from_slice(&16_u64.to_le_bytes()); // size
+    section[48..52].copy_from_slice(&0x800_u32.to_le_bytes()); // offset
+    section[52..56].copy_from_slice(&4_u32.to_le_bytes()); // align (2^4)
+    section[64..68].copy_from_slice(&attribute.to_le_bytes()); // flags
+    data[184..208].copy_from_slice(&main_command);
 
     data
 }

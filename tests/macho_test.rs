@@ -3,7 +3,7 @@
 #![cfg(feature = "macho")]
 
 use threatflux_binary_analysis::types::*;
-use threatflux_binary_analysis::BinaryAnalyzer;
+use threatflux_binary_analysis::{BinaryAnalyzer, BinaryError};
 
 // Helper function to check if data is Mach-O format
 fn is_macho(data: &[u8]) -> bool {
@@ -175,6 +175,19 @@ mod macho_test_data {
         data
     }
 
+    /// Create a bounded 64-bit universal Mach-O header.
+    pub fn create_fat64_binary() -> Vec<u8> {
+        let mut data = vec![0_u8; 40];
+        data[0..4].copy_from_slice(&[0xca, 0xfe, 0xba, 0xbf]); // FAT_MAGIC_64 (BE)
+        data[4..8].copy_from_slice(&[0x00, 0x00, 0x00, 0x01]); // nfat_arch = 1
+        data[8..12].copy_from_slice(&[0x01, 0x00, 0x00, 0x07]); // CPU_TYPE_X86_64
+        data[12..16].copy_from_slice(&[0x00, 0x00, 0x00, 0x03]); // CPU subtype
+        data[16..24].copy_from_slice(&0x1000_u64.to_be_bytes()); // offset
+        data[24..32].copy_from_slice(&0x2000_u64.to_be_bytes()); // size
+        data[32..36].copy_from_slice(&12_u32.to_be_bytes()); // align
+        data
+    }
+
     /// Create malformed Mach-O data (truncated header)
     pub fn create_truncated_header() -> Vec<u8> {
         vec![0xcf, 0xfa, 0xed, 0xfe, 0x07, 0x00] // Only 6 bytes instead of 32
@@ -253,16 +266,21 @@ fn test_macho_parser_can_parse_valid_magic_numbers() {
     let magic_64_be = vec![0xfe, 0xed, 0xfa, 0xcf];
     assert!(is_macho(&magic_64_be));
 
-    // Test FAT_MAGIC - Note: FAT_MAGIC (0xcafebabe) has same bytes as Java class magic
-    // so it gets detected as Java format instead of Mach-O. This is acceptable behavior.
-    let fat_magic = vec![0xca, 0xfe, 0xba, 0xbe];
-    // FAT_MAGIC is detected as Java, not Mach-O due to magic byte overlap
-    assert!(!is_macho(&fat_magic));
+    // Bounded 32- and 64-bit universal headers are Mach-O, despite the FAT_MAGIC
+    // overlap with Java's class-file magic.
+    let fat_magic = macho_test_data::create_fat_binary();
+    assert!(is_macho(&fat_magic));
+    assert!(is_macho(&macho_test_data::create_fat64_binary()));
 
-    // Test FAT_CIGAM - this should be detected as Raw since it's not in the format detection
-    let fat_cigam = vec![0xbe, 0xba, 0xfe, 0xca];
-    // FAT_CIGAM is not handled by format detection, so it falls back to Raw
-    assert!(!is_macho(&fat_cigam));
+    // Byte-swapped universal headers are recognized using their little-endian
+    // architecture count.
+    let mut fat_cigam = fat_magic;
+    fat_cigam[0..4].copy_from_slice(&[0xbe, 0xba, 0xfe, 0xca]);
+    fat_cigam[4..8].copy_from_slice(&2_u32.to_le_bytes());
+    assert!(is_macho(&fat_cigam));
+
+    // Magic alone is not enough to claim a universal binary.
+    assert!(!is_macho(&[0xca, 0xfe, 0xba, 0xbe]));
 }
 
 #[test]
@@ -390,14 +408,33 @@ fn test_macho_parser_parse_with_sections() {
 #[test]
 fn test_macho_parser_fat_binary_rejection() {
     let data = macho_test_data::create_fat_binary();
-    let result = BinaryAnalyzer::new().analyze(&data);
+    assert_eq!(
+        threatflux_binary_analysis::formats::detect_format(&data).unwrap(),
+        BinaryFormat::MachO
+    );
 
-    // Fat binaries with FAT_MAGIC (0xcafebabe) are now detected as Java format
-    // and successfully parsed. This is acceptable fallback behavior.
-    assert!(result.is_ok());
-    let analysis = result.unwrap();
-    // The fat binary should be detected as Java format due to magic byte overlap
-    assert_eq!(analysis.format, BinaryFormat::Java);
+    let error = BinaryAnalyzer::new().analyze(&data).unwrap_err();
+    assert!(matches!(
+        error,
+        BinaryError::UnsupportedFormat(reason)
+            if reason == "Universal (fat) Mach-O binaries are not supported"
+    ));
+}
+
+#[test]
+fn test_macho_parser_fat64_binary_rejection() {
+    let data = macho_test_data::create_fat64_binary();
+    assert_eq!(
+        threatflux_binary_analysis::formats::detect_format(&data).unwrap(),
+        BinaryFormat::MachO
+    );
+
+    let error = BinaryAnalyzer::new().analyze(&data).unwrap_err();
+    assert!(matches!(
+        error,
+        BinaryError::UnsupportedFormat(reason)
+            if reason == "Universal (fat) Mach-O binaries are not supported"
+    ));
 }
 
 #[test]
@@ -423,39 +460,28 @@ fn test_macho_parser_error_handling() {
 }
 
 #[test]
-fn test_macho_binary_format_trait_methods() {
+fn test_minimal_macho_analysis_fields() {
     let data = macho_test_data::create_macho_64_x86_64_le();
     let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
 
-    // Test format_type()
     assert_eq!(binary.format, BinaryFormat::MachO);
-
-    // Test architecture()
     assert_eq!(binary.architecture, Architecture::X86_64);
 
-    // Test entry_point() (currently returns None due to unimplemented load command parsing)
+    // This fixture has LC_SEGMENT_64 only; without LC_MAIN it has no entry point.
     assert!(binary.entry_point.is_none());
 
-    // Test sections()
-    let sections = &binary.sections;
-    assert!(sections.is_empty() || !sections.is_empty()); // May be empty for minimal binary
+    // The segment declares zero sections and the fixture has no symbol or dyld
+    // metadata load commands.
+    assert!(binary.sections.is_empty());
+    assert!(binary.symbols.is_empty());
+    assert!(binary.imports.is_empty());
+    assert!(binary.exports.is_empty());
 
-    // Test symbols() (currently returns empty due to unimplemented symbol parsing)
-    let symbols = &binary.symbols;
-    assert!(symbols.is_empty());
-
-    // Test imports() (currently returns empty)
-    let imports = &binary.imports;
-    assert!(imports.is_empty());
-
-    // Test exports() (currently returns empty)
-    let exports = &binary.exports;
-    assert!(exports.is_empty());
-
-    // Test metadata()
     let metadata = &binary.metadata;
     assert_eq!(metadata.format, BinaryFormat::MachO);
     assert_eq!(metadata.architecture, Architecture::X86_64);
+    assert_eq!(metadata.entry_point, binary.entry_point);
+    assert_eq!(metadata.size, data.len());
 }
 
 #[test]
@@ -503,10 +529,9 @@ fn test_macho_compiler_info_extraction() {
     let binary = BinaryAnalyzer::new().analyze(&data).unwrap();
     let metadata = &binary.metadata;
 
-    // Currently returns a placeholder
-    assert!(metadata.compiler_info.is_some());
-    let compiler_info = metadata.compiler_info.as_ref().unwrap();
-    assert!(compiler_info.contains("Apple toolchain"));
+    // A minimal Mach-O header contains no reliable compiler identity. Platform
+    // and SDK load commands must not be mislabeled as compiler evidence.
+    assert!(metadata.compiler_info.is_none());
 }
 
 #[test]

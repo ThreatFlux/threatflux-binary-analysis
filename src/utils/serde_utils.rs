@@ -1,6 +1,6 @@
-use crate::{error::BinaryError, Result};
+use crate::{Result, error::BinaryError};
 #[cfg(feature = "serde-support")]
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 /// Serialize a value to a JSON string.
 #[cfg(feature = "serde-support")]

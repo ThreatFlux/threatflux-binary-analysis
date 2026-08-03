@@ -2,12 +2,14 @@
 //! Basic binary analysis example
 //!
 //! This example demonstrates how to use the threatflux-binary-analysis library
-//! to perform basic analysis of binary files.
+//! to parse structural metadata from a binary file. Parsed hardening fields are
+//! observations from the active format parser, not signature verification or a
+//! safety verdict.
 
 use threatflux_binary_analysis::{AnalysisConfig, BinaryAnalyzer, BinaryFile};
 
 mod util;
-use util::{read_binary_from_args, Result};
+use util::{Result, read_binary_from_args};
 
 fn main() -> Result<()> {
     let data = read_binary_from_args()?;
@@ -112,7 +114,7 @@ fn main() -> Result<()> {
         println!("... and {} more exports", binary.exports().len() - 10);
     }
 
-    // Perform comprehensive analysis
+    // Perform a small, feature-aware high-level analysis
     println!("\n=== Performing Analysis ===");
     let config = AnalysisConfig {
         enable_disassembly: false, // Disable for basic example
@@ -123,8 +125,11 @@ fn main() -> Result<()> {
         enable_cognitive_complexity: false,
         enable_advanced_loops: false,
         enable_entropy: false,
-        enable_symbols: true,
-        max_analysis_size: 1024 * 1024, // 1MB limit
+        enable_symbols: cfg!(feature = "symbol-resolution"),
+        // High-level BinaryAnalyzer input and disassembly byte budget.
+        max_analysis_size: 1024 * 1024,
+        // Independent cap on the returned high-level disassembly instructions.
+        max_disassembly_instructions: 10_000,
         architecture_hint: None,
         call_graph_config: None,
     };

@@ -9,8 +9,8 @@
 
 use pretty_assertions::assert_eq;
 use rstest::*;
-use threatflux_binary_analysis::types::*;
 use threatflux_binary_analysis::BinaryAnalyzer;
+use threatflux_binary_analysis::types::*;
 
 mod common;
 use common::fixtures::*;
@@ -115,8 +115,8 @@ fn test_elf_endianness(
 #[case(0x03, 0x00, Architecture::X86, "i386")]
 #[case(0xb7, 0x00, Architecture::Arm64, "AArch64")]
 #[case(0x28, 0x00, Architecture::Arm, "ARM")]
-#[case(0xf3, 0x00, Architecture::RiscV, "RISC-V")]
-#[case(0x08, 0x00, Architecture::Mips, "MIPS")]
+#[case(0xf3, 0x00, Architecture::RiscV64, "RISC-V 64")]
+#[case(0x08, 0x00, Architecture::Mips64, "MIPS64")]
 #[case(0x14, 0x00, Architecture::PowerPC, "PowerPC")]
 #[case(0x15, 0x00, Architecture::PowerPC64, "PowerPC 64")]
 #[case(0x00, 0x00, Architecture::Unknown, "No machine")]
@@ -481,7 +481,10 @@ fn test_elf_concurrent_parsing() {
 
 fn create_comprehensive_elf_with_sections() -> Vec<u8> {
     let mut data = create_realistic_elf_64();
-    data.resize(8192, 0);
+    // The .data section below occupies 0x2000..0x2400. Keep the fixture
+    // internally consistent so bounds-checking parsers do not accept a
+    // section whose declared file range extends beyond the input.
+    data.resize(0x2400, 0);
 
     // Section header table at offset 3072 (as set in the basic ELF)
     let shoff = 3072;

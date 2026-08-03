@@ -1,7 +1,3 @@
-#[cfg(feature = "visualization")]
-#[allow(unused_imports)]
-use dot_generator as _dot_generator;
-
 use crate::types::ControlFlowGraph;
 
 /// Generate a DOT representation of a control flow graph.

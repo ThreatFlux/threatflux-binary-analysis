@@ -1,1263 +1,391 @@
-# ThreatFlux Binary Analysis API Reference
+# ThreatFlux Binary Analysis API Guide
 
-This document provides a comprehensive reference for the ThreatFlux Binary Analysis library API.
+This guide describes the public API on the upcoming 0.3.0 development line. The
+current crates.io release remains 0.2.0 until 0.3.0 is published. See
+[Migrating to 0.3](docs/MIGRATING_TO_0.3.md) for intentional API changes.
+Generated Rust documentation remains the item-by-item reference:
 
-## Table of Contents
+```console
+RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps --open
+```
 
-- [Core API](#core-api)
-- [Binary Analysis](#binary-analysis)
-- [Format-Specific APIs](#format-specific-apis)
-- [Disassembly APIs](#disassembly-apis)
-- [Analysis Modules](#analysis-modules)
-- [Utility APIs](#utility-apis)
-- [Error Handling](#error-handling)
-- [Configuration](#configuration)
-- [Feature Flags](#feature-flags)
+All primary operations are synchronous. The crate accepts byte slices; file
+loading, input allowlists, complete resource isolation, timeouts, and task
+scheduling belong to the caller.
 
-## Core API
+## Choose an entry point
+
+| Goal                                                  | API                                                                     | Feature                                                  |
+| ----------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------- |
+| Detect and parse structural metadata                  | <code>BinaryFile::parse</code>                                          | Relevant format parser                                   |
+| Detect a format without parsing it                    | <code>formats::detect_format</code>                                     | Relevant format parser                                   |
+| Parse as an explicitly selected format                | <code>formats::parse_binary</code>                                      | Relevant format parser                                   |
+| Collect parser output plus compiled optional analyses | <code>BinaryAnalyzer</code>                                             | Depends on requested analyses                            |
+| Disassemble caller-selected bytes                     | <code>disasm::Disassembler</code>                                       | <code>disasm-capstone</code> or <code>disasm-iced</code> |
+| Reconstruct control flow or a call graph              | <code>analysis::control_flow</code> / <code>analysis::call_graph</code> | <code>control-flow</code>                                |
+| Generate heuristic security findings                  | <code>analysis::security::SecurityAnalyzer</code>                       | Always available                                         |
+| Measure entropy and packing indicators                | <code>analysis::entropy</code>                                          | <code>entropy-analysis</code>                            |
+
+## Core parsing API
+
+### BinaryFile
+
+<code>BinaryFile::parse(&[u8]) -> Result&lt;BinaryFile&gt;</code> detects a format,
+selects its parser, and retains owned data. The resulting accessors borrow
+parsed data:
+
+- <code>format()</code> and <code>architecture()</code>
+- <code>entry_point()</code>
+- <code>metadata()</code>
+- <code>sections()</code>
+- <code>symbols()</code>
+- <code>imports()</code>
+- <code>exports()</code>
+- <code>data()</code>
+
+```rust
+use threatflux_binary_analysis::{BinaryFile, Result};
+
+fn summarize(bytes: &[u8]) -> Result<()> {
+    let binary = BinaryFile::parse(bytes)?;
+    println!("{} {}", binary.format(), binary.architecture());
+
+    for section in binary.sections() {
+        println!(
+            "{} address=0x{:x} virtual_size={} file_size={} r={} w={} x={}",
+            section.name,
+            section.address,
+            section.size,
+            section.file_size,
+            section.permissions.read,
+            section.permissions.write,
+            section.permissions.execute,
+        );
+    }
+
+    Ok(())
+}
+```
+
+Parsing is not zero-copy: <code>BinaryFile</code> owns a copy of the full input,
+and individual format implementations may keep additional owned data.
+<code>Section::size</code> is the virtual or in-memory span;
+<code>Section::file_size</code> is the number of bytes backed by the file at
+<code>Section::offset</code>. ELF, PE, thin Mach-O, and raw parsers populate
+<code>Section::data</code> only for eligible file-backed sections no larger than
+1 KiB (with format-specific offset checks). Java and WebAssembly sections do
+not retain section payloads.
+
+Parser-owned structural output is bounded. ELF, PE, Mach-O, Java/JAR, and
+WebAssembly parsing share public hard ceilings of
+<code>formats::MAX_PARSED_RECORDS</code> (100,000 structural/output records),
+<code>formats::MAX_NAME_BYTES</code> (4 KiB per name), and
+<code>formats::MAX_OWNED_NAME_BYTES</code> (32 MiB of copied names per parse).
+Inputs above a ceiling return <code>InvalidData</code>. JAR preflight separately
+limits the central directory to 50,000 entries before <code>zip</code> builds its
+file table.
+
+### Format detection
+
+<code>formats::detect_format</code> uses leading magic values, a checked PE
+header offset/signature, and a ZIP scan for class-containing JAR files when the
+Java feature is enabled.
+
+- Empty input returns <code>BinaryError::InvalidData</code>.
+- Unknown non-empty input becomes <code>BinaryFormat::Raw</code>.
+- Valid Java class headers, bounded universal Mach-O headers, and WebAssembly
+  magic can be detected without their parser feature; a subsequent parse then
+  returns <code>UnsupportedFormat</code>.
+- A ZIP is treated as Java only when a <code>.class</code> entry is found.
+- JAR inspection rejects archives with more than 50,000 entries.
+- An MZ prefix without a valid checked PE signature falls through to raw data.
+
+Use an explicit application allowlist after parsing. Classification as raw data
+is a valid parse result, not a rejection.
+
+### Format-specific scope
+
+| Format      | Parsed today                                                                                              | Important omissions                                                                                                           |
+| ----------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| ELF         | Sections, static symbols, dynamic imports/exports, entry point, selected hardening/compiler metadata      | Not a full loader, linker, debug-info reader, or signature verifier                                                           |
+| PE          | Sections, COFF symbols when present, imports, exports, entry point, selected hardening/compiler metadata  | Authenticode is not verified; stripped images may expose no symbols                                                           |
+| Mach-O      | Thin-image sections, nlist symbols when present, imports, exports, entry point when supplied by the image | Fat/universal images unsupported; malformed or unsupported dyld streams fail closed; code-signature presence is not verified  |
+| Java class  | Fixed-header validation and a synthetic whole-file section                                                | The validated version is not exposed; no constant-pool, field, method, attribute, or bytecode decoding                        |
+| JAR         | Class-entry names and sizes                                                                               | No class extraction/decoding, manifest semantics, or signature verification                                                   |
+| WebAssembly | Validated module plus selected sections, imports, and exports                                             | A start-function index is not exposed as the virtual-address entry point; no instruction disassembly or symbol reconstruction |
+| Raw         | Synthetic <code>.data</code> section                                                                      | Architecture and entry point unknown                                                                                          |
+
+## Unified analysis
 
 ### BinaryAnalyzer
 
-The main entry point for binary analysis operations.
+<code>BinaryAnalyzer::new()</code> uses a parser-only
+<code>AnalysisConfig::default()</code>: every optional analysis/demangling
+switch is false and the input limit is 100 MiB.
+<code>BinaryAnalyzer::with_config(config)</code> accepts an explicit
+configuration. Analyze raw bytes with <code>analyze</code>, or reuse a parsed
+<code>BinaryFile</code> with <code>analyze_binary</code>.
 
-```rust
-pub struct BinaryAnalyzer {
-    config: AnalysisConfig,
-}
+The base fields of <code>AnalysisResult</code> mirror parser output. Optional
+fields are populated only when their Cargo feature is compiled and the
+corresponding configuration is enabled.
 
-impl BinaryAnalyzer {
-    /// Create a new analyzer with the given configuration
-    pub fn new(config: AnalysisConfig) -> Self;
-    
-    /// Analyze a file by path
-    pub async fn analyze_file<P: AsRef<Path>>(&self, path: P) -> Result<BinaryAnalysis>;
-    
-    /// Analyze raw binary data
-    pub async fn analyze_bytes(&self, data: &[u8]) -> Result<BinaryAnalysis>;
-    
-    /// Analyze using memory-mapped file
-    pub async fn analyze_mmap<P: AsRef<Path>>(&self, path: P) -> Result<BinaryAnalysis>;
-    
-    /// Get supported formats
-    pub fn supported_formats(&self) -> Vec<BinaryFormat>;
-    
-    /// Detect binary format without full analysis
-    pub fn detect_format(&self, data: &[u8]) -> Result<BinaryFormat>;
-    
-    /// Quick analysis with minimal parsing
-    pub async fn quick_analyze<P: AsRef<Path>>(&self, path: P) -> Result<QuickAnalysis>;
-}
-```
+| AnalysisConfig field                      | Implemented behavior                                                                                                                                                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <code>enable_disassembly</code>           | Runs high-level executable-section disassembly when a backend is compiled                                                                                                                                                      |
+| <code>disassembly_engine</code>           | Selects Auto, Capstone, or iced when a disassembly backend is compiled                                                                                                                                                         |
+| <code>enable_control_flow</code>          | Populates base control-flow graphs with <code>control-flow</code>; it does not implicitly enable cognitive-complexity or advanced-loop output                                                                                  |
+| <code>enable_call_graph</code>            | Populates a call graph with <code>control-flow</code>                                                                                                                                                                          |
+| <code>enable_cognitive_complexity</code>  | Requests cognitive metrics and enhanced control-flow output with <code>control-flow</code>                                                                                                                                     |
+| <code>enable_advanced_loops</code>        | Requests retained loop details and enhanced control-flow output with <code>control-flow</code>                                                                                                                                 |
+| <code>enable_entropy</code>               | Populates entropy output with <code>entropy-analysis</code>                                                                                                                                                                    |
+| <code>enable_symbols</code>               | Demangles names already returned by a parser with <code>symbol-resolution</code>                                                                                                                                               |
+| <code>max_analysis_size</code>            | Rejects oversized input in <code>analyze</code>/<code>analyze_binary</code> with <code>InputTooLarge</code> and supplies the high-level disassembly byte budget; direct <code>BinaryFile::parse</code> has no configured limit |
+| <code>max_disassembly_instructions</code> | Caps the total instructions returned by high-level disassembly; defaults to 10,000 and is independent of the input-size limit                                                                                                  |
+| <code>architecture_hint</code>            | Overrides the architecture used by high-level disassembly                                                                                                                                                                      |
+| <code>call_graph_config</code>            | Supplies call-graph options when call-graph analysis is enabled                                                                                                                                                                |
 
-### BinaryAnalysis
+Feature flags are compile-time capabilities. Configuration cannot enable code
+that was not compiled. <code>AnalysisConfig::validate</code> is called
+automatically by both analyzer entry points; explicitly requesting a missing
+capability returns <code>FeatureNotAvailable</code>. A compiled optional module
+still runs only when its runtime switch is true.
 
-The main result structure containing comprehensive analysis results.
+<code>BinaryAnalyzer</code> does not currently invoke
+<code>SecurityAnalyzer</code>; <code>AnalysisResult::security</code> therefore
+remains unset through this path. Call the security module directly when needed.
 
-```rust
-pub struct BinaryAnalysis {
-    /// Basic file information
-    pub format: BinaryFormat,
-    pub architecture: Architecture,
-    pub endianness: Endianness,
-    pub entry_point: u64,
-    pub base_address: u64,
-    pub file_size: u64,
-    pub file_path: Option<PathBuf>,
-    
-    /// Parsed structures
-    pub headers: Headers,
-    pub sections: Vec<Section>,
-    pub segments: Vec<Segment>,
-    pub symbols: Vec<Symbol>,
-    pub imports: Vec<Import>,
-    pub exports: Vec<Export>,
-    pub relocations: Vec<Relocation>,
-    
-    /// Analysis results
-    pub strings: Vec<ExtractedString>,
-    pub metadata: BinaryMetadata,
-    pub security_features: SecurityFeatures,
-    pub entropy_analysis: Option<EntropyAnalysis>,
-    pub disassembly: Option<DisassemblyResults>,
-    pub control_flow: Option<ControlFlowGraph>,
-    
-    /// Timing information
-    pub analysis_duration: Duration,
-    pub timestamp: SystemTime,
-}
+## Disassembly
 
-impl BinaryAnalysis {
-    /// Get section by name
-    pub fn get_section(&self, name: &str) -> Option<&Section>;
-    
-    /// Get section by virtual address
-    pub fn get_section_at_va(&self, va: u64) -> Option<&Section>;
-    
-    /// Get symbol by name
-    pub fn get_symbol(&self, name: &str) -> Option<&Symbol>;
-    
-    /// Get symbol by address
-    pub fn get_symbol_at(&self, address: u64) -> Option<&Symbol>;
-    
-    /// Check if address is executable
-    pub fn is_executable_address(&self, address: u64) -> bool;
-    
-    /// Translate virtual address to file offset
-    pub fn va_to_file_offset(&self, va: u64) -> Option<u64>;
-    
-    /// Translate file offset to virtual address
-    pub fn file_offset_to_va(&self, offset: u64) -> Option<u64>;
-    
-    /// Get data at virtual address
-    pub fn get_data_at_va(&self, va: u64, size: usize) -> Option<&[u8]>;
-    
-    /// Get imports by library
-    pub fn get_imports_by_library(&self, library: &str) -> Vec<&Import>;
-    
-    /// Get all imported libraries
-    pub fn get_imported_libraries(&self) -> Vec<String>;
-    
-    /// Check for specific security features
-    pub fn has_security_feature(&self, feature: SecurityFeature) -> bool;
-    
-    /// Export to JSON
-    #[cfg(feature = "serde-support")]
-    pub fn to_json(&self) -> Result<String>;
-    
-    /// Export to pretty JSON
-    #[cfg(feature = "serde-support")]
-    pub fn to_json_pretty(&self) -> Result<String>;
+Enable one or both engines:
+
+```toml
+threatflux-binary-analysis = {
+    version = "0.3",
+    features = ["disasm-capstone", "disasm-iced"]
 }
 ```
 
-## Format-Specific APIs
+<code>Disassembler</code> provides:
 
-### PE (Portable Executable) Analysis
+- <code>new(architecture)</code>
+- <code>with_config(architecture, config)</code>
+- <code>disassemble(data, base_address)</code>
+- <code>disassemble_at(data, base_address, length)</code>
+- <code>disassemble_section(binary, section_name)</code>
 
-```rust
-use threatflux_binary_analysis::formats::pe::*;
+<code>DisassemblyConfig</code> controls engine selection, maximum instruction
+count, operand detail, simplified flow classification, and invalid-instruction
+skipping. Disassembly rejects a base-address plus byte-length range whose
+end-exclusive address cannot be represented by <code>u64</code>.
 
-pub struct PeAnalyzer {
-    config: PeAnalysisConfig,
-}
+In Auto mode, x86/x86-64 prefers iced when it is compiled; otherwise it uses
+Capstone. Non-x86 input requires Capstone. The current Capstone adapter supports
+x86, x86-64, ARM, ARM64, MIPS32/64, and PowerPC32/64. The iced adapter supports
+x86 and x86-64.
 
-impl PeAnalyzer {
-    pub fn new() -> Self;
-    pub fn with_config(config: PeAnalysisConfig) -> Self;
-    
-    /// Parse PE file
-    pub async fn analyze<P: AsRef<Path>>(&self, path: P) -> Result<PeAnalysis>;
-    
-    /// Parse PE from bytes
-    pub fn parse_bytes(&self, data: &[u8]) -> Result<PeAnalysis>;
-    
-    /// Quick header-only parsing
-    pub fn parse_headers(&self, data: &[u8]) -> Result<PeHeaders>;
-    
-    /// Validate PE structure
-    pub fn validate(&self, data: &[u8]) -> Result<ValidationResult>;
-}
+<code>disassemble_section</code> and the high-level binary helper resolve
+checked file-backed section ranges against <code>BinaryFile</code>'s full owned
+bytes; <code>Section::data</code> is not used as the analysis source. The
+high-level helper visits executable sections until either its byte budget or
+independent instruction-count budget is exhausted and can skip a section that
+fails range validation.
 
-pub struct PeAnalysis {
-    /// PE-specific headers
-    pub dos_header: DosHeader,
-    pub pe_header: PeHeader,
-    pub optional_header: OptionalHeader,
-    pub section_headers: Vec<SectionHeader>,
-    
-    /// PE-specific structures
-    pub import_directory: Vec<ImportDescriptor>,
-    pub export_directory: Option<ExportDirectory>,
-    pub resource_directory: Option<ResourceDirectory>,
-    pub security_directory: Option<SecurityDirectory>,
-    pub relocation_directory: Vec<RelocationBlock>,
-    pub debug_directory: Vec<DebugEntry>,
-    pub tls_directory: Option<TlsDirectory>,
-    pub load_config: Option<LoadConfig>,
-    
-    /// Analysis results
-    pub timestamp: SystemTime,
-    pub subsystem: Subsystem,
-    pub dll_characteristics: DllCharacteristics,
-    pub machine_type: MachineType,
-    pub checksum_valid: bool,
-    pub digital_signatures: Vec<DigitalSignature>,
-    pub version_info: Option<VersionInfo>,
-    pub manifest: Option<Manifest>,
-    
-    /// Security features
-    pub aslr_enabled: bool,
-    pub dep_enabled: bool,
-    pub seh_enabled: bool,
-    pub cfg_enabled: bool,
-    pub authenticode_signed: bool,
-}
+Instruction category and control-flow target fields are derived from mnemonic
+and operand text. They are convenient annotations, not a complete instruction
+semantics model.
 
-impl PeAnalysis {
-    /// Get import by name
-    pub fn get_import(&self, name: &str) -> Option<&ImportedFunction>;
-    
-    /// Get imports from specific DLL
-    pub fn get_dll_imports(&self, dll: &str) -> Vec<&ImportedFunction>;
-    
-    /// Get export by name
-    pub fn get_export(&self, name: &str) -> Option<&ExportedFunction>;
-    
-    /// Get resource by type and name
-    pub fn get_resource(&self, res_type: ResourceType, name: &str) -> Option<&Resource>;
-    
-    /// Check if packed
-    pub fn is_packed(&self) -> bool;
-    
-    /// Detect packer
-    pub fn detect_packer(&self) -> Option<PackerType>;
-    
-    /// Get overlay data
-    pub fn get_overlay(&self) -> Option<&[u8]>;
-}
-```
+## Control flow and call graphs
 
-### ELF Analysis
+The <code>control-flow</code> feature enables Capstone as well as the two
+analysis modules.
 
-```rust
-use threatflux_binary_analysis::formats::elf::*;
+<code>ControlFlowAnalyzer</code> discovers functions from parsed function
+symbols, falling back to an estimated entry-point function in limited cases. It
+then disassembles checked ranges from the full owned bytes, splits basic blocks,
+and computes graph and complexity fields. <code>CallGraphAnalyzer</code> uses
+similar function discovery and direct-call extraction.
 
-pub struct ElfAnalyzer {
-    config: ElfAnalysisConfig,
-}
+The low-level analyzers reject work above explicit aggregate limits rather than
+returning a truncated graph:
 
-impl ElfAnalyzer {
-    pub fn new() -> Self;
-    pub fn with_config(config: ElfAnalysisConfig) -> Self;
-    
-    /// Parse ELF file
-    pub async fn analyze<P: AsRef<Path>>(&self, path: P) -> Result<ElfAnalysis>;
-    
-    /// Parse ELF from bytes
-    pub fn parse_bytes(&self, data: &[u8]) -> Result<ElfAnalysis>;
-    
-    /// Parse headers only
-    pub fn parse_headers(&self, data: &[u8]) -> Result<ElfHeaders>;
-    
-    /// Validate ELF structure
-    pub fn validate(&self, data: &[u8]) -> Result<ValidationResult>;
-}
+| Configuration                                                         |   Default | Meaning                                                                       |
+| --------------------------------------------------------------------- | --------: | ----------------------------------------------------------------------------- |
+| <code>control_flow::AnalysisConfig::max_instructions</code>           |    10,000 | Per-function decoded-instruction maximum                                      |
+| <code>control_flow::AnalysisConfig::max_functions</code>              |    10,000 | Maximum discovered functions                                                  |
+| <code>control_flow::AnalysisConfig::max_total_instructions</code>     | 1,000,000 | Aggregate decoded-instruction maximum                                         |
+| <code>control_flow::AnalysisConfig::max_loops</code>                  |    10,000 | Aggregate retained advanced-loop maximum                                      |
+| <code>control_flow::AnalysisConfig::max_total_loop_body_blocks</code> | 1,000,000 | Aggregate retained loop-body memberships; one block in two loops counts twice |
+| <code>CallGraphConfig::max_functions</code>                           |    10,000 | Maximum discovered functions                                                  |
+| <code>CallGraphConfig::max_total_instructions</code>                  | 1,000,000 | Aggregate decoded-instruction maximum                                         |
 
-pub struct ElfAnalysis {
-    /// ELF headers
-    pub elf_header: ElfHeader,
-    pub program_headers: Vec<ProgramHeader>,
-    pub section_headers: Vec<SectionHeader>,
-    
-    /// Symbol tables
-    pub symbol_table: Vec<Symbol>,
-    pub dynamic_symbols: Vec<DynamicSymbol>,
-    
-    /// Dynamic information
-    pub dynamic_entries: Vec<DynamicEntry>,
-    pub needed_libraries: Vec<String>,
-    pub rpath: Option<String>,
-    pub runpath: Option<String>,
-    pub soname: Option<String>,
-    
-    /// Relocations
-    pub relocations: Vec<Relocation>,
-    pub plt_relocations: Vec<PltRelocation>,
-    
-    /// Debug information
-    pub debug_info: Option<DebugInfo>,
-    pub build_id: Option<Vec<u8>>,
-    pub gnu_hash: Option<GnuHash>,
-    
-    /// Analysis results
-    pub elf_type: ElfType,
-    pub machine: Machine,
-    pub is_stripped: bool,
-    pub is_pie: bool,
-    pub has_stack_canary: bool,
-    pub has_nx_bit: bool,
-    pub has_relro: bool,
-    pub fortify_source: bool,
-}
+<code>CallGraphConfig::analyze_indirect_calls</code> records recognized indirect
+call-family instructions with <code>CallGraphEdge::callee == None</code>; it does
+not resolve the target. A real function at address zero is represented as
+<code>Some(0)</code>. DOT export uses a distinct unknown-target node, while JSON
+serializes the unknown target as <code>null</code>.
+<code>detect_tail_calls</code> recognizes direct final jumps,
+<code>include_library_calls</code> controls the library-name filter, and
+<code>max_labeled_call_depth</code> limits only breadth-first depth labels.
+Reachability and edge extraction still examine the bounded reconstructed graph.
 
-impl ElfAnalysis {
-    /// Get section by name
-    pub fn get_section(&self, name: &str) -> Option<&ElfSection>;
-    
-    /// Get segment by type
-    pub fn get_segment(&self, seg_type: SegmentType) -> Option<&ProgramHeader>;
-    
-    /// Get symbol by name
-    pub fn get_symbol(&self, name: &str) -> Option<&Symbol>;
-    
-    /// Get dynamic symbol by name
-    pub fn get_dynamic_symbol(&self, name: &str) -> Option<&DynamicSymbol>;
-    
-    /// Check for specific protection
-    pub fn has_protection(&self, protection: ElfProtection) -> bool;
-    
-    /// Get interpreter
-    pub fn get_interpreter(&self) -> Option<&str>;
-    
-    /// Get all notes
-    pub fn get_notes(&self) -> Vec<&Note>;
-}
-```
+These analyses are heuristic:
 
-### Mach-O Analysis
+- stripped binaries can produce few or no functions;
+- invalid or non-file-backed section ranges can produce skipped/empty results;
+- indirect calls, virtual dispatch, tail calls, and import thunks are not
+  exhaustively resolved;
+- the synthetic entry-point function uses an estimated size;
+- per-function analysis failures may be skipped while other functions continue,
+  but an error is returned when every discovered function fails;
+- a discovered function outside every executable section is a failure; a
+  containing section that legitimately resolves zero file-backed bytes is an
+  empty successful disassembly;
+- exceeding a function or aggregate instruction cap fails the operation instead
+  of returning a silently truncated result;
+- exceeding an advanced-loop count or aggregate body-membership cap likewise
+  fails instead of omitting loops;
+- graph reachability and complexity apply only to the reconstructed graph.
+
+Do not interpret a graph as proof of all executable paths.
+
+When high-level base and enhanced control-flow outputs are requested together,
+<code>BinaryAnalyzer</code> decodes and constructs the graphs once, then derives
+both result views from that pass. The high-level flags are passed explicitly to
+the low-level analyzer, so base control flow alone leaves cognitive complexity
+and retained advanced loops disabled.
+
+## Security analysis
+
+<code>SecurityAnalyzer::analyze(&BinaryFile)</code> returns:
+
+- categorized import, section, and symbol indicators;
+- parser-derived hardening flags for native ELF, PE, and Mach-O inputs;
+- detailed findings with a category and severity;
+- a deterministic weighted score from 0 to 100.
+
+The analyzer uses exact import-name lists, selected suspicious-name substrings,
+read/write/execute section checks, and parser-provided hardening metadata. The
+score is a project heuristic, not CVSS, exploitability, maliciousness, or a
+probability.
+
+Each <code>SecurityConfig</code> category boolean independently gates its import
+rule set. <code>min_string_length</code> filters import, section-name, and
+symbol-name rules. Section-permission checks still run regardless of the
+import-category switches. Missing native-hardening findings and score penalties
+apply only to ELF, PE, and Mach-O; false flags on Java, WebAssembly, and raw
+inputs are treated as unknown or inapplicable.
 
 ```rust
-use threatflux_binary_analysis::formats::macho::*;
-
-pub struct MachOAnalyzer {
-    config: MachOAnalysisConfig,
-}
-
-impl MachOAnalyzer {
-    pub fn new() -> Self;
-    pub fn with_config(config: MachOAnalysisConfig) -> Self;
-    
-    /// Parse Mach-O file
-    pub async fn analyze<P: AsRef<Path>>(&self, path: P) -> Result<MachOAnalysis>;
-    
-    /// Parse Mach-O from bytes
-    pub fn parse_bytes(&self, data: &[u8]) -> Result<MachOAnalysis>;
-    
-    /// Parse fat binary
-    pub fn parse_fat_binary(&self, data: &[u8]) -> Result<FatBinary>;
-    
-    /// Validate Mach-O structure
-    pub fn validate(&self, data: &[u8]) -> Result<ValidationResult>;
-}
-
-pub struct MachOAnalysis {
-    /// Mach-O header
-    pub mach_header: MachHeader,
-    pub load_commands: Vec<LoadCommand>,
-    
-    /// Segments and sections
-    pub segments: Vec<Segment>,
-    pub sections: Vec<MachOSection>,
-    
-    /// Symbol information
-    pub symbol_table: Vec<Symbol>,
-    pub string_table: Vec<u8>,
-    pub dynamic_symbol_table: Vec<DynamicSymbol>,
-    
-    /// Dynamic information
-    pub dylib_dependencies: Vec<DylibDependency>,
-    pub dyld_info: Option<DyldInfo>,
-    pub code_signature: Option<CodeSignature>,
-    pub entitlements: Option<Entitlements>,
-    
-    /// Analysis results
-    pub cpu_type: CpuType,
-    pub cpu_subtype: CpuSubtype,
-    pub file_type: FileType,
-    pub flags: HeaderFlags,
-    pub is_fat_binary: bool,
-    pub architectures: Vec<Architecture>,
-    pub min_os_version: Option<Version>,
-    pub sdk_version: Option<Version>,
-    pub code_signed: bool,
-    pub is_encrypted: bool,
-}
-
-impl MachOAnalysis {
-    /// Get load command by type
-    pub fn get_load_command(&self, cmd_type: LoadCommandType) -> Option<&LoadCommand>;
-    
-    /// Get segment by name
-    pub fn get_segment(&self, name: &str) -> Option<&Segment>;
-    
-    /// Get section by name
-    pub fn get_section(&self, segment: &str, section: &str) -> Option<&MachOSection>;
-    
-    /// Get symbol by name
-    pub fn get_symbol(&self, name: &str) -> Option<&Symbol>;
-    
-    /// Check code signing
-    pub fn verify_code_signature(&self) -> Result<SignatureVerification>;
-    
-    /// Get entitlements
-    pub fn get_entitlements(&self) -> Option<&Entitlements>;
-    
-    /// Check if library
-    pub fn is_dynamic_library(&self) -> bool;
-    
-    /// Get linked frameworks
-    pub fn get_frameworks(&self) -> Vec<&str>;
-}
-```
-
-## Disassembly APIs
-
-### Disassembler
-
-```rust
-use threatflux_binary_analysis::disasm::*;
-
-pub struct Disassembler {
-    engine: Box<dyn DisassemblyEngine>,
-    config: DisassemblyConfig,
-}
-
-impl Disassembler {
-    /// Create with Capstone engine
-    #[cfg(feature = "disasm-capstone")]
-    pub fn new_capstone(arch: Architecture) -> Result<Self>;
-    
-    /// Create with iced-x86 engine
-    #[cfg(feature = "disasm-iced")]
-    pub fn new_iced(arch: Architecture) -> Result<Self>;
-    
-    /// Create with configuration
-    pub fn with_config(engine: DisassemblyEngine, config: DisassemblyConfig) -> Result<Self>;
-    
-    /// Disassemble bytes at address
-    pub fn disassemble(&self, data: &[u8], address: u64) -> Result<Vec<Instruction>>;
-    
-    /// Disassemble single instruction
-    pub fn disassemble_one(&self, data: &[u8], address: u64) -> Result<Instruction>;
-    
-    /// Disassemble function
-    pub async fn disassemble_function(
-        &self,
-        data: &[u8],
-        entry_point: u64,
-        max_instructions: usize,
-    ) -> Result<Vec<Instruction>>;
-    
-    /// Disassemble with control flow following
-    pub async fn disassemble_with_flow(
-        &self,
-        binary: &BinaryAnalysis,
-        entry_point: u64,
-        options: FlowOptions,
-    ) -> Result<DisassemblyGraph>;
-}
-
-pub struct Instruction {
-    pub address: u64,
-    pub bytes: Vec<u8>,
-    pub mnemonic: String,
-    pub operands: String,
-    pub size: usize,
-    pub groups: Vec<InstructionGroup>,
-    pub branch_target: Option<u64>,
-    pub operand_details: Vec<Operand>,
-    pub is_call: bool,
-    pub is_jump: bool,
-    pub is_conditional: bool,
-    pub is_return: bool,
-    pub reads_memory: bool,
-    pub writes_memory: bool,
-}
-
-impl Instruction {
-    /// Get instruction bytes as hex
-    pub fn bytes_hex(&self) -> String;
-    
-    /// Get full instruction text
-    pub fn to_string(&self) -> String;
-    
-    /// Check if instruction is a branch
-    pub fn is_branch(&self) -> bool;
-    
-    /// Get memory operands
-    pub fn memory_operands(&self) -> Vec<&MemoryOperand>;
-    
-    /// Get register operands
-    pub fn register_operands(&self) -> Vec<&RegisterOperand>;
-    
-    /// Get immediate operands
-    pub fn immediate_operands(&self) -> Vec<&ImmediateOperand>;
-}
-```
-
-### Capstone Engine
-
-```rust
-#[cfg(feature = "disasm-capstone")]
-pub use threatflux_binary_analysis::disasm::capstone::*;
-
-pub struct CapstoneEngine {
-    cs: Capstone,
-    arch: Architecture,
-}
-
-impl CapstoneEngine {
-    pub fn new(arch: Architecture) -> Result<Self>;
-    
-    /// Enable detailed instruction information
-    pub fn enable_details(&mut self) -> Result<()>;
-    
-    /// Set disassembly options
-    pub fn set_options(&mut self, options: CapstoneOptions) -> Result<()>;
-    
-    /// Set AT&T syntax (x86 only)
-    pub fn set_att_syntax(&mut self) -> Result<()>;
-    
-    /// Set Intel syntax (x86 only)  
-    pub fn set_intel_syntax(&mut self) -> Result<()>;
-}
-
-impl DisassemblyEngine for CapstoneEngine {
-    fn disassemble(&self, data: &[u8], address: u64) -> Result<Vec<Instruction>>;
-    fn architecture(&self) -> Architecture;
-    fn name(&self) -> &'static str { "Capstone" }
-}
-```
-
-### iced-x86 Engine
-
-```rust
-#[cfg(feature = "disasm-iced")]
-pub use threatflux_binary_analysis::disasm::iced::*;
-
-pub struct IcedEngine {
-    decoder: Decoder,
-    arch: Architecture,
-}
-
-impl IcedEngine {
-    pub fn new(arch: Architecture) -> Result<Self>;
-    
-    /// Set decoder options
-    pub fn set_options(&mut self, options: IcedOptions);
-    
-    /// Enable instruction info
-    pub fn enable_info(&mut self);
-}
-
-impl DisassemblyEngine for IcedEngine {
-    fn disassemble(&self, data: &[u8], address: u64) -> Result<Vec<Instruction>>;
-    fn architecture(&self) -> Architecture;
-    fn name(&self) -> &'static str { "iced-x86" }
-}
-```
-
-## Analysis Modules
-
-### Control Flow Analysis
-
-```rust
-use threatflux_binary_analysis::analysis::control_flow::*;
-
-pub struct ControlFlowAnalyzer {
-    config: ControlFlowConfig,
-}
-
-impl ControlFlowAnalyzer {
-    pub fn new() -> Self;
-    pub fn with_config(config: ControlFlowConfig) -> Self;
-    
-    /// Build control flow graph for a function
-    pub async fn build_cfg(
-        &self,
-        binary: &BinaryAnalysis,
-        function_address: u64,
-    ) -> Result<ControlFlowGraph>;
-    
-    /// Build call graph for the entire binary
-    pub async fn build_call_graph(&self, binary: &BinaryAnalysis) -> Result<CallGraph>;
-    
-    /// Identify basic blocks
-    pub fn identify_basic_blocks(&self, instructions: &[Instruction]) -> Vec<BasicBlock>;
-    
-    /// Find function boundaries
-    pub async fn find_functions(&self, binary: &BinaryAnalysis) -> Result<Vec<Function>>;
-    
-    /// Analyze function complexity
-    pub fn analyze_complexity(&self, cfg: &ControlFlowGraph) -> ComplexityMetrics;
-    
-    /// Find loops in control flow
-    pub fn find_loops(&self, cfg: &ControlFlowGraph) -> Vec<Loop>;
-    
-    /// Detect tail calls
-    pub fn detect_tail_calls(&self, instructions: &[Instruction]) -> Vec<TailCall>;
-}
-
-pub struct ControlFlowGraph {
-    pub basic_blocks: Vec<BasicBlock>,
-    pub edges: Vec<Edge>,
-    pub entry_block: BlockId,
-    pub exit_blocks: Vec<BlockId>,
-    pub function_address: u64,
-}
-
-impl ControlFlowGraph {
-    /// Get basic block by ID
-    pub fn get_block(&self, id: BlockId) -> Option<&BasicBlock>;
-    
-    /// Get predecessors of a block
-    pub fn predecessors(&self, block_id: BlockId) -> Vec<BlockId>;
-    
-    /// Get successors of a block
-    pub fn successors(&self, block_id: BlockId) -> Vec<BlockId>;
-    
-    /// Check if graph is reducible
-    pub fn is_reducible(&self) -> bool;
-    
-    /// Get dominator tree
-    pub fn dominator_tree(&self) -> DominatorTree;
-    
-    /// Export to DOT format
-    #[cfg(feature = "visualization")]
-    pub fn to_dot(&self) -> String;
-}
-
-pub struct BasicBlock {
-    pub id: BlockId,
-    pub start_address: u64,
-    pub end_address: u64,
-    pub instructions: Vec<Instruction>,
-    pub successors: Vec<BlockId>,
-    pub predecessors: Vec<BlockId>,
-}
-
-impl BasicBlock {
-    /// Get block size in bytes
-    pub fn size(&self) -> usize;
-    
-    /// Get instruction count
-    pub fn instruction_count(&self) -> usize;
-    
-    /// Check if block is a loop header
-    pub fn is_loop_header(&self) -> bool;
-    
-    /// Get terminator instruction
-    pub fn terminator(&self) -> Option<&Instruction>;
-}
-```
-
-### Security Analysis
-
-```rust
-use threatflux_binary_analysis::analysis::security::*;
-
-pub struct SecurityAnalyzer {
-    config: SecurityConfig,
-}
-
-impl SecurityAnalyzer {
-    pub fn new() -> Self;
-    pub fn with_config(config: SecurityConfig) -> Self;
-    
-    /// Perform comprehensive security analysis
-    pub async fn analyze(&self, binary: &BinaryAnalysis) -> Result<SecurityReport>;
-    
-    /// Check for specific vulnerability types
-    pub fn check_vulnerabilities(&self, binary: &BinaryAnalysis) -> Vec<Vulnerability>;
-    
-    /// Analyze API usage for suspicious patterns
-    pub fn analyze_api_usage(&self, binary: &BinaryAnalysis) -> ApiAnalysis;
-    
-    /// Detect anti-analysis techniques
-    pub fn detect_anti_analysis(&self, binary: &BinaryAnalysis) -> Vec<AntiAnalysisTechnique>;
-    
-    /// Check for code injection indicators
-    pub fn detect_code_injection(&self, binary: &BinaryAnalysis) -> Vec<CodeInjectionIndicator>;
-    
-    /// Analyze privilege escalation potential
-    pub fn analyze_privilege_escalation(&self, binary: &BinaryAnalysis) -> PrivilegeReport;
-    
-    /// Detect persistence mechanisms
-    pub fn detect_persistence(&self, binary: &BinaryAnalysis) -> Vec<PersistenceMechanism>;
-    
-    /// Check for data exfiltration indicators
-    pub fn detect_data_exfiltration(&self, binary: &BinaryAnalysis) -> Vec<ExfiltrationIndicator>;
-}
-
-pub struct SecurityReport {
-    pub security_features: Vec<SecurityFeature>,
-    pub vulnerabilities: Vec<Vulnerability>,
-    pub suspicious_indicators: Vec<SuspiciousIndicator>,
-    pub api_analysis: ApiAnalysis,
-    pub anti_analysis: Vec<AntiAnalysisTechnique>,
-    pub risk_score: f64,
-    pub risk_level: RiskLevel,
-    pub recommendations: Vec<SecurityRecommendation>,
-}
-
-impl SecurityReport {
-    /// Get vulnerabilities by severity
-    pub fn vulnerabilities_by_severity(&self, severity: Severity) -> Vec<&Vulnerability>;
-    
-    /// Check if specific feature is enabled
-    pub fn has_security_feature(&self, feature: SecurityFeatureType) -> bool;
-    
-    /// Get overall security score (0-100)
-    pub fn security_score(&self) -> u8;
-    
-    /// Generate summary report
-    pub fn summary(&self) -> SecuritySummary;
-    
-    /// Export to JSON
-    #[cfg(feature = "serde-support")]
-    pub fn to_json(&self) -> Result<String>;
-}
-
-pub struct Vulnerability {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub severity: Severity,
-    pub category: VulnerabilityCategory,
-    pub cwe_id: Option<u32>,
-    pub location: Option<u64>,
-    pub evidence: Vec<Evidence>,
-    pub mitigation: Option<String>,
-}
-```
-
-### Entropy Analysis
-
-```rust
-use threatflux_binary_analysis::analysis::entropy::*;
-
-pub struct EntropyAnalyzer {
-    config: EntropyConfig,
-}
-
-impl EntropyAnalyzer {
-    pub fn new() -> Self;
-    pub fn with_config(config: EntropyConfig) -> Self;
-    
-    /// Calculate entropy for entire file
-    pub fn calculate_file_entropy(&self, binary: &BinaryAnalysis) -> Result<f64>;
-    
-    /// Calculate entropy for specific data
-    pub fn calculate_entropy(&self, data: &[u8]) -> f64;
-    
-    /// Calculate windowed entropy
-    pub fn calculate_windowed_entropy(&self, data: &[u8], window_size: usize) -> Vec<f64>;
-    
-    /// Analyze entropy patterns
-    pub fn analyze_patterns(&self, binary: &BinaryAnalysis) -> Result<EntropyAnalysis>;
-    
-    /// Find entropy anomalies
-    pub fn find_anomalies(&self, binary: &BinaryAnalysis) -> Result<Vec<EntropyAnomaly>>;
-    
-    /// Detect packed sections
-    pub fn detect_packed_sections(&self, binary: &BinaryAnalysis) -> Vec<PackedSection>;
-    
-    /// Calculate byte frequency distribution
-    pub fn byte_frequency(&self, data: &[u8]) -> [f64; 256];
-    
-    /// Perform chi-square test
-    pub fn chi_square_test(&self, data: &[u8]) -> f64;
-}
-
-pub struct EntropyAnalysis {
-    pub overall_entropy: f64,
-    pub section_entropy: Vec<SectionEntropy>,
-    pub windowed_entropy: Vec<f64>,
-    pub anomalies: Vec<EntropyAnomaly>,
-    pub compression_ratio: f64,
-    pub randomness_score: f64,
-}
-
-impl EntropyAnalysis {
-    /// Get sections with high entropy
-    pub fn high_entropy_sections(&self, threshold: f64) -> Vec<&SectionEntropy>;
-    
-    /// Detect likely packed sections
-    pub fn packed_sections(&self) -> Vec<&SectionEntropy>;
-    
-    /// Get entropy statistics
-    pub fn statistics(&self) -> EntropyStatistics;
-    
-    /// Generate entropy visualization data
-    #[cfg(feature = "visualization")]
-    pub fn visualization_data(&self) -> EntropyVisualization;
-}
-
-pub struct EntropyAnomaly {
-    pub offset: u64,
-    pub length: usize,
-    pub entropy: f64,
-    pub expected_entropy: f64,
-    pub anomaly_type: AnomalyType,
-    pub confidence: f64,
-    pub description: String,
-}
-```
-
-### Packer Detection
-
-```rust
-use threatflux_binary_analysis::analysis::packer::*;
-
-pub struct PackerDetector {
-    signatures: Vec<PackerSignature>,
-    config: PackerDetectionConfig,
-}
-
-impl PackerDetector {
-    pub fn new() -> Self;
-    pub fn with_signatures(signatures: Vec<PackerSignature>) -> Self;
-    pub fn with_config(config: PackerDetectionConfig) -> Self;
-    
-    /// Detect packer using multiple methods
-    pub fn detect(&self, binary: &BinaryAnalysis) -> Result<PackerDetectionResult>;
-    
-    /// Detect using signature matching
-    pub fn detect_by_signature(&self, binary: &BinaryAnalysis) -> Option<PackerType>;
-    
-    /// Detect using entropy analysis
-    pub fn detect_by_entropy(&self, binary: &BinaryAnalysis) -> PackerProbability;
-    
-    /// Detect using import table analysis
-    pub fn detect_by_imports(&self, binary: &BinaryAnalysis) -> PackerProbability;
-    
-    /// Detect using section characteristics
-    pub fn detect_by_sections(&self, binary: &BinaryAnalysis) -> PackerProbability;
-    
-    /// Update signature database
-    pub fn update_signatures(&mut self, signatures: Vec<PackerSignature>);
-    
-    /// Load signatures from file
-    pub fn load_signatures<P: AsRef<Path>>(&mut self, path: P) -> Result<()>;
-}
-
-pub struct PackerDetectionResult {
-    pub is_packed: bool,
-    pub detected_packer: Option<PackerType>,
-    pub confidence: f64,
-    pub evidence: Vec<PackerEvidence>,
-    pub methods_used: Vec<DetectionMethod>,
-}
-
-impl PackerDetectionResult {
-    /// Get confidence as percentage
-    pub fn confidence_percentage(&self) -> u8;
-    
-    /// Check if high confidence detection
-    pub fn is_high_confidence(&self) -> bool;
-    
-    /// Get strongest evidence
-    pub fn strongest_evidence(&self) -> Option<&PackerEvidence>;
-    
-    /// Get detection summary
-    pub fn summary(&self) -> String;
-}
-
-pub enum PackerType {
-    Upx,
-    Aspack,
-    Fsg,
-    Petite,
-    Nspack,
-    Mpress,
-    Themida,
-    Vmprotect,
-    Unknown(String),
-}
-
-pub struct PackerSignature {
-    pub name: String,
-    pub packer_type: PackerType,
-    pub patterns: Vec<BytePattern>,
-    pub ep_only: bool,
-    pub min_confidence: f64,
-}
-```
-
-## Utility APIs
-
-### Memory Mapping
-
-```rust
-use threatflux_binary_analysis::utils::mmap::*;
-
-pub struct MemoryMap {
-    mmap: Mmap,
-    path: PathBuf,
-}
-
-impl MemoryMap {
-    /// Create memory map from file
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self>;
-    
-    /// Create read-only memory map
-    pub fn read_only<P: AsRef<Path>>(path: P) -> Result<Self>;
-    
-    /// Get file size
-    pub fn len(&self) -> usize;
-    
-    /// Check if empty
-    pub fn is_empty(&self) -> bool;
-    
-    /// Get data at offset
-    pub fn get_data(&self, offset: usize, size: usize) -> Option<&[u8]>;
-    
-    /// Get slice from offset to end
-    pub fn get_slice_from(&self, offset: usize) -> Option<&[u8]>;
-    
-    /// Read exact bytes at offset
-    pub fn read_exact(&self, offset: usize, size: usize) -> Result<&[u8]>;
-    
-    /// Read u32 at offset (little endian)
-    pub fn read_u32_le(&self, offset: usize) -> Result<u32>;
-    
-    /// Read u64 at offset (little endian)
-    pub fn read_u64_le(&self, offset: usize) -> Result<u64>;
-    
-    /// Read null-terminated string
-    pub fn read_cstring(&self, offset: usize, max_len: usize) -> Result<String>;
-}
-
-impl AsRef<[u8]> for MemoryMap {
-    fn as_ref(&self) -> &[u8];
-}
-
-impl Deref for MemoryMap {
-    type Target = [u8];
-    fn deref(&self) -> &[u8];
-}
-```
-
-### Pattern Matching
-
-```rust
-use threatflux_binary_analysis::utils::patterns::*;
-
-pub struct PatternMatcher {
-    patterns: Vec<Pattern>,
-}
-
-impl PatternMatcher {
-    pub fn new() -> Self;
-    pub fn with_patterns(patterns: Vec<Pattern>) -> Self;
-    
-    /// Add pattern to matcher
-    pub fn add_pattern(&mut self, pattern: Pattern);
-    
-    /// Find all pattern matches
-    pub fn find_all(&self, data: &[u8]) -> Vec<PatternMatch>;
-    
-    /// Find first pattern match
-    pub fn find_first(&self, data: &[u8]) -> Option<PatternMatch>;
-    
-    /// Check if any pattern matches
-    pub fn matches(&self, data: &[u8]) -> bool;
-    
-    /// Find matches with context
-    pub fn find_with_context(&self, data: &[u8], context_size: usize) -> Vec<ContextualMatch>;
-}
-
-pub struct Pattern {
-    pub name: String,
-    pub pattern: Vec<PatternByte>,
-    pub description: String,
-    pub category: PatternCategory,
-}
-
-impl Pattern {
-    /// Create from hex string
-    pub fn from_hex(name: &str, hex: &str) -> Result<Self>;
-    
-    /// Create from bytes with wildcards
-    pub fn from_bytes_with_wildcards(name: &str, pattern: &str) -> Result<Self>;
-    
-    /// Create regex pattern
-    pub fn regex(name: &str, regex: &str) -> Result<Self>;
-}
-
-pub enum PatternByte {
-    Exact(u8),
-    Wildcard,
-    Range(u8, u8),
-}
-
-pub struct PatternMatch {
-    pub pattern_name: String,
-    pub offset: usize,
-    pub length: usize,
-    pub matched_bytes: Vec<u8>,
-}
-```
-
-### Data Extraction
-
-```rust
-use threatflux_binary_analysis::utils::extractor::*;
-
-pub struct DataExtractor;
-
-impl DataExtractor {
-    /// Extract strings from binary data
-    pub fn extract_strings(
-        data: &[u8],
-        min_length: usize,
-        encodings: &[StringEncoding],
-    ) -> Vec<ExtractedString>;
-    
-    /// Extract ASCII strings
-    pub fn extract_ascii_strings(data: &[u8], min_length: usize) -> Vec<ExtractedString>;
-    
-    /// Extract Unicode strings
-    pub fn extract_unicode_strings(data: &[u8], min_length: usize) -> Vec<ExtractedString>;
-    
-    /// Extract URLs from strings
-    pub fn extract_urls(strings: &[ExtractedString]) -> Vec<Url>;
-    
-    /// Extract file paths
-    pub fn extract_file_paths(strings: &[ExtractedString]) -> Vec<FilePath>;
-    
-    /// Extract IP addresses
-    pub fn extract_ip_addresses(strings: &[ExtractedString]) -> Vec<IpAddr>;
-    
-    /// Extract email addresses
-    pub fn extract_email_addresses(strings: &[ExtractedString]) -> Vec<EmailAddress>;
-    
-    /// Extract base64 encoded data
-    pub fn extract_base64(data: &[u8]) -> Vec<Base64Data>;
-    
-    /// Extract embedded executables
-    pub fn extract_embedded_executables(data: &[u8]) -> Vec<EmbeddedExecutable>;
-    
-    /// Extract cryptographic constants
-    pub fn extract_crypto_constants(data: &[u8]) -> Vec<CryptoConstant>;
-}
-
-pub struct ExtractedString {
-    pub value: String,
-    pub offset: u64,
-    pub length: usize,
-    pub encoding: StringEncoding,
-    pub category: StringCategory,
-    pub confidence: f64,
-}
-
-impl ExtractedString {
-    /// Check if string is suspicious
-    pub fn is_suspicious(&self) -> bool;
-    
-    /// Get entropy of string
-    pub fn entropy(&self) -> f64;
-    
-    /// Check if string is printable
-    pub fn is_printable(&self) -> bool;
-    
-    /// Get character distribution
-    pub fn char_distribution(&self) -> CharDistribution;
-}
-```
-
-## Error Handling
-
-### Error Types
-
-```rust
-use threatflux_binary_analysis::error::*;
-
-#[derive(Error, Debug)]
-pub enum BinaryAnalysisError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    
-    #[error("Invalid binary format: {0}")]
-    InvalidFormat(String),
-    
-    #[error("Unsupported architecture: {0}")]
-    UnsupportedArchitecture(String),
-    
-    #[error("Parse error at offset {offset}: {message}")]
-    ParseError { offset: u64, message: String },
-    
-    #[error("Analysis timeout after {seconds} seconds")]
-    Timeout { seconds: u64 },
-    
-    #[error("File too large: {size} bytes (limit: {limit})")]
-    FileTooLarge { size: u64, limit: u64 },
-    
-    #[error("Memory allocation failed: {message}")]
-    MemoryError { message: String },
-    
-    #[error("Feature not available: {feature}")]
-    FeatureNotAvailable { feature: String },
-    
-    #[error("Invalid configuration: {message}")]
-    InvalidConfig { message: String },
-    
-    #[error("Disassembly error: {0}")]
-    DisassemblyError(String),
-    
-    #[error("Analysis error: {0}")]
-    AnalysisError(String),
-}
-
-pub type Result<T> = std::result::Result<T, BinaryAnalysisError>;
-```
-
-### Error Context
-
-```rust
-impl BinaryAnalysisError {
-    /// Add context to error
-    pub fn with_context(self, context: &str) -> Self;
-    
-    /// Get error category
-    pub fn category(&self) -> ErrorCategory;
-    
-    /// Check if error is recoverable
-    pub fn is_recoverable(&self) -> bool;
-    
-    /// Get error code
-    pub fn error_code(&self) -> u32;
-    
-    /// Get user-friendly message
-    pub fn user_message(&self) -> String;
-}
-
-pub enum ErrorCategory {
-    Io,
-    Format,
-    Parse,
-    Analysis,
-    Configuration,
-    Resource,
-    Feature,
-}
-```
-
-## Configuration
-
-### AnalysisConfig
-
-```rust
-#[derive(Debug, Clone)]
-pub struct AnalysisConfig {
-    // Parsing options
-    pub parse_headers: bool,
-    pub parse_sections: bool,
-    pub parse_symbols: bool,
-    pub parse_imports: bool,
-    pub parse_exports: bool,
-    pub parse_relocations: bool,
-    pub parse_debug_info: bool,
-    
-    // Analysis options
-    pub detect_packers: bool,
-    pub analyze_entropy: bool,
-    pub extract_strings: bool,
-    pub check_signatures: bool,
-    pub analyze_control_flow: bool,
-    pub detect_vulnerabilities: bool,
-    
-    // Performance options
-    pub use_memory_mapping: bool,
-    pub max_file_size: u64,
-    pub timeout: Duration,
-    pub parallel_processing: bool,
-    pub cache_results: bool,
-    
-    // String extraction options
-    pub string_config: StringExtractionConfig,
-    
-    // Disassembly options
-    pub disassembly: Option<DisassemblyConfig>,
-    
-    // Security analysis options
-    pub security: SecurityConfig,
-    
-    // Format-specific options
-    pub pe_config: Option<PeAnalysisConfig>,
-    pub elf_config: Option<ElfAnalysisConfig>,
-    pub macho_config: Option<MachOAnalysisConfig>,
-}
-
-impl AnalysisConfig {
-    /// Create minimal configuration for basic analysis
-    pub fn minimal() -> Self;
-    
-    /// Create comprehensive configuration with all features
-    pub fn comprehensive() -> Self;
-    
-    /// Create fast configuration optimized for speed
-    pub fn fast() -> Self;
-    
-    /// Create security-focused configuration
-    pub fn security_focused() -> Self;
-    
-    /// Enable specific feature
-    pub fn enable_feature(mut self, feature: AnalysisFeature) -> Self;
-    
-    /// Disable specific feature
-    pub fn disable_feature(mut self, feature: AnalysisFeature) -> Self;
-    
-    /// Set timeout
-    pub fn with_timeout(mut self, timeout: Duration) -> Self;
-    
-    /// Set max file size
-    pub fn with_max_file_size(mut self, size: u64) -> Self;
-    
-    /// Enable memory mapping
-    pub fn with_memory_mapping(mut self, enabled: bool) -> Self;
-    
-    /// Validate configuration
-    pub fn validate(&self) -> Result<()>;
-}
-
-impl Default for AnalysisConfig {
-    fn default() -> Self {
-        Self {
-            parse_headers: true,
-            parse_sections: true,
-            parse_symbols: false,
-            parse_imports: true,
-            parse_exports: false,
-            parse_relocations: false,
-            parse_debug_info: false,
-            
-            detect_packers: false,
-            analyze_entropy: false,
-            extract_strings: false,
-            check_signatures: false,
-            analyze_control_flow: false,
-            detect_vulnerabilities: false,
-            
-            use_memory_mapping: true,
-            max_file_size: 100 * 1024 * 1024, // 100MB
-            timeout: Duration::from_secs(300), // 5 minutes
-            parallel_processing: true,
-            cache_results: true,
-            
-            string_config: StringExtractionConfig::default(),
-            disassembly: None,
-            security: SecurityConfig::default(),
-            pe_config: None,
-            elf_config: None,
-            macho_config: None,
-        }
+use threatflux_binary_analysis::{
+    analysis::security::SecurityAnalyzer,
+    BinaryFile,
+    Result,
+};
+
+fn triage(bytes: &[u8]) -> Result<()> {
+    let binary = BinaryFile::parse(bytes)?;
+    let result = SecurityAnalyzer::new(binary.architecture()).analyze(&binary)?;
+
+    println!("heuristic score: {:.1}", result.risk_score);
+    for finding in result.findings {
+        println!("{:?}: {}", finding.severity, finding.description);
     }
+    Ok(())
 }
 ```
 
-This comprehensive API reference covers all major components of the ThreatFlux Binary Analysis library. For more specific usage examples and implementation details, refer to the individual module documentation and example code.
+Absence of a finding is not evidence that input is benign. See
+[Analysis boundaries](docs/ANALYSIS_BOUNDARIES.md).
 
-## Feature Flags
+## Entropy and symbol helpers
 
-| Feature | Description | Default |
-|---------|-------------|---------|
-| `elf` | ELF format support | ✅ |
-| `pe` | PE format support | ✅ |
-| `macho` | Mach-O format support | ✅ |
-| `java` | JAR/class file support | ✅ |
-| `wasm` | WebAssembly support | ❌ |
-| `disasm-capstone` | Capstone disassembly | ✅ |
-| `disasm-iced` | iced-x86 disassembly | ❌ |
-| `control-flow` | Control flow analysis | ❌ |
-| `entropy-analysis` | Entropy calculation | ✅ |
-| `symbol-resolution` | Debug symbol support | ✅ |
-| `compression` | Compressed section support | ✅ |
-| `visualization` | Graph visualization | ✅ |
-| `serde-support` | JSON serialization | ✅ |
+With <code>entropy-analysis</code>,
+<code>analysis::entropy::analyze_binary</code> computes Shannon entropy for the
+full input and in-bounds file-backed section ranges addressed by parser offsets
+and <code>file_size</code> (capped by the virtual <code>size</code>). It
+scans fixed-size regions and uses thresholds plus a short list of strings to
+produce packing indicators. Those indicators are triage hints, not packer
+identification proof.
 
-Enable optional capabilities using Cargo feature flags, for example:
+With <code>symbol-resolution</code>,
+<code>analysis::symbols::demangle_symbols</code> fills missing demangled names
+for symbols the parser already returned. It does not parse debug information or
+recover absent symbols.
 
-```bash
-cargo build --features "wasm,control-flow"
-```
+## Utilities
+
+### PatternMatcher
+
+<code>utils::patterns::PatternMatcher</code> supports byte, string, magic, and
+hex-wildcard searches with a global match-count limit and an aggregate owned
+output limit. <code>MatchConfig::max_output_bytes</code> defaults to 16 MiB and
+accounts for cloned pattern metadata and matched bytes in both the flat result
+and category buckets. Exceeding it returns <code>InvalidData</code> rather than a
+partial result. Built-in sets are available for a subset of categories. Regex
+and structural pattern variants currently return
+<code>BinaryError::FeatureNotAvailable</code>; they are not implemented
+regex/structural engines. Pattern names such as malware or packer are signatures
+only and do not constitute a verdict.
+
+### Memory mapping
+
+<code>utils::mmap::MappedBinary</code> exposes bounded slices, endian-aware
+integer reads, C-string reads, pattern lookup, hexdumps, and borrowed views.
+Its <code>new</code>/<code>from_file</code> constructors are unsafe: the caller
+must guarantee that no handle or process mutates or truncates the file while the
+map is alive.
+
+<code>AdvancedMmap::new</code> is unsafe for the same reason. File-backed huge
+pages are rejected. Populate is supported on Linux/Android and rejected
+elsewhere; memory locking is supported on Unix and rejected elsewhere. A
+requested lock can still fail at runtime due to OS policy or resource limits.
+Passing mapped bytes to <code>BinaryFile::parse</code> creates an owned copy.
+
+### Compression
+
+With <code>compression</code>, <code>utils::compression::decompress</code>
+accepts gzip (including concatenated members) and valid zlib headers, with a
+64 MiB default expanded-output limit.
+<code>utils::compression::decompress_with_limit</code> accepts a caller-chosen
+ceiling and enforces it while streaming, before appending excess bytes.
+
+### Serde and visualization
+
+With <code>serde-support</code>, public data types gain Serde derives where
+implemented, and <code>utils::serde_utils</code> provides pretty JSON
+serialization/deserialization helpers.
+
+With <code>visualization</code>,
+<code>analysis::visualization::cfg_to_dot</code> exports basic block nodes and
+successor edges as DOT. Call-graph DOT and JSON exporters live in
+<code>analysis::call_graph</code> under <code>control-flow</code>.
+
+## Errors
+
+The crate-wide <code>Result&lt;T&gt;</code> alias uses the non-exhaustive
+<code>BinaryError</code> enum. Variants cover parsing, unsupported formats and
+architectures, invalid/oversized data, disassembly/control-flow/symbol/entropy
+failures, I/O, memory maps, configuration, unavailable features, and internal
+failures. Match with a wildcard so future variants remain source compatible.
+
+Error strings are useful for diagnostics but are not a stable machine-readable
+protocol. Match variants when behavior depends on the error category.
+
+## Feature reference
+
+| Feature                        | Public modules or behavior                   |
+| ------------------------------ | -------------------------------------------- |
+| <code>elf</code>               | <code>formats::elf</code>                    |
+| <code>pe</code>                | <code>formats::pe</code>                     |
+| <code>macho</code>             | <code>formats::macho</code>                  |
+| <code>java</code>              | <code>formats::java</code> and JAR detection |
+| <code>wasm</code>              | <code>formats::wasm</code>                   |
+| <code>disasm-capstone</code>   | <code>disasm</code> with Capstone            |
+| <code>disasm-iced</code>       | <code>disasm</code> with iced-x86            |
+| <code>control-flow</code>      | CFG and call-graph modules; implies Capstone |
+| <code>entropy-analysis</code>  | Entropy module                               |
+| <code>symbol-resolution</code> | Symbol demangling module                     |
+| <code>compression</code>       | Compression helper                           |
+| <code>visualization</code>     | CFG DOT helper                               |
+| <code>serde-support</code>     | Serde derives and JSON helpers               |

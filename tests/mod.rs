@@ -5,21 +5,6 @@ pub mod common;
 
 // Test utilities and fixtures
 pub mod test_utils {
-    use std::sync::Once;
-
-    static INIT: Once = Once::new();
-
-    /// Initialize test environment (call once per test process)
-    pub fn init_test_env() {
-        INIT.call_once(|| {
-            // Initialize logging for tests
-            let _ = env_logger::builder()
-                .filter_level(log::LevelFilter::Debug)
-                .is_test(true)
-                .try_init();
-        });
-    }
-
     /// Create test binary data with specific characteristics
     pub fn create_test_binary(
         format: threatflux_binary_analysis::types::BinaryFormat,
@@ -45,6 +30,10 @@ pub mod test_utils {
         };
 
         data.resize(size, 0);
+        if format == threatflux_binary_analysis::types::BinaryFormat::Java && data.len() >= 10 {
+            data[6..8].copy_from_slice(&52_u16.to_be_bytes());
+            data[8..10].copy_from_slice(&1_u16.to_be_bytes());
+        }
         data
     }
 
@@ -256,8 +245,6 @@ mod module_tests {
 
     #[test]
     fn test_module_utilities() {
-        test_utils::init_test_env();
-
         let data = test_utils::create_test_binary(
             threatflux_binary_analysis::types::BinaryFormat::Elf,
             1024,

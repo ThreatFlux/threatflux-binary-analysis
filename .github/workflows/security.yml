@@ -2,356 +2,87 @@ name: Security
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main]
   schedule:
-    # Run security checks daily at 2 AM UTC
-    - cron: '0 2 * * *'
+    - cron: "17 3 * * 1"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_STABLE: 1.97.1
 
 jobs:
-  security-audit:
-    name: Security Audit
+  supply-chain:
+    name: Dependency policy
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 20
     steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
-      with:
-        toolchain: stable
-    
-    - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
-    
-    - name: Install cargo-audit
-      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
-      with:
-        tool: cargo-audit
-    
-    - name: Run cargo audit
-      run: cargo audit --json --output-format json > audit-results.json || true
-    
-    - name: Check audit results
-      run: |
-        if [ -f audit-results.json ]; then
-          cat audit-results.json
-          # Check if there are any vulnerabilities
-          VULN_COUNT=$(cat audit-results.json | jq -r '.vulnerabilities.count // 0')
-          if [ "$VULN_COUNT" -gt 0 ]; then
-            echo "🚨 Found $VULN_COUNT security vulnerabilities!"
-            cat audit-results.json | jq -r '.vulnerabilities.list[]? | "- \(.advisory.title) (\(.advisory.id))"'
-            exit 1
-          else
-            echo "✅ No security vulnerabilities found"
-          fi
-        fi
-    
-    - name: Upload audit results
-      if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-      with:
-        name: security-audit-results
-        path: audit-results.json
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-  security-clippy:
-    name: Security Lints
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Install security tools
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-audit@0.22.2,cargo-deny@0.20.2
+
+      - name: Audit advisories
+        run: cargo audit --deny warnings
+
+      - name: Enforce dependency policy
+        run: cargo deny check
+
+  semver:
+    name: Public API compatibility
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 30
     steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
-      with:
-        toolchain: stable
-        components: clippy
-    
-    - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcapstone-dev pkg-config
-    
-    - name: Run security-focused clippy lints
-      run: |
-        cargo clippy --all-features --all-targets -- \
-          -W clippy::integer_overflow \
-          -W clippy::panic \
-          -W clippy::unwrap_used \
-          -W clippy::expect_used \
-          -W clippy::indexing_slicing \
-          -W clippy::panic_in_result_fn \
-          -W clippy::string_slice \
-          -W clippy::float_arithmetic \
-          -W clippy::integer_arithmetic \
-          -W clippy::cast_possible_truncation \
-          -W clippy::cast_possible_wrap \
-          -W clippy::cast_sign_loss \
-          -W clippy::lossy_float_literal \
-          -W clippy::imprecise_flops \
-          -W clippy::suboptimal_flops \
-          -W clippy::fn_to_numeric_cast_with_truncation \
-          -W clippy::unseparated_literal_suffix \
-          -W clippy::mem_forget \
-          -W clippy::print_stdout \
-          -W clippy::print_stderr \
-          -W clippy::use_debug \
-          -W clippy::todo \
-          -W clippy::unimplemented \
-          -W clippy::unreachable \
-          -W clippy::exit \
-          -W clippy::get_unwrap \
-          -W clippy::shadow_unrelated \
-          -W clippy::shadow_reuse \
-          -W clippy::shadow_same \
-          -W clippy::multiple_unsafe_ops_per_block \
-          -W clippy::undocumented_unsafe_blocks
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Install cargo-semver-checks
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-semver-checks@0.49.0
+
+      - name: Check public API compatibility
+        run: cargo semver-checks check-release --all-features
 
   dependency-review:
-    name: Dependency Review
-    runs-on: ubuntu-latest
+    name: Dependency review
     if: github.event_name == 'pull_request'
-    
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-    
-    - name: Dependency Review
-      uses: actions/dependency-review-action@da24556b548a50705dd671f47852072ea4c105d9  # v4.7.1
-      with:
-        base-ref: ${{ github.event.pull_request.base.sha }}
-        head-ref: ${{ github.event.pull_request.head.sha }}
-        fail-on-severity: moderate
-
-  cargo-deny:
-    name: Cargo Deny
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 10
     steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-    
-    - name: Install cargo-deny
-      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
-      with:
-        tool: cargo-deny@0.20.2
-    
-    - name: Check deny.toml exists
-      id: check_deny
-      run: |
-        if [ -f deny.toml ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
-        else
-          echo "exists=false" >> $GITHUB_OUTPUT
-        fi
-    
-    - name: Create deny.toml if not exists
-      if: steps.check_deny.outputs.exists == 'false'
-      run: |
-        cat > deny.toml << 'EOF'
-        [graph]
-        targets = [
-            { triple = "x86_64-unknown-linux-gnu" },
-            { triple = "x86_64-unknown-linux-musl" },
-            { triple = "x86_64-pc-windows-msvc" },
-            { triple = "x86_64-apple-darwin" },
-            { triple = "aarch64-apple-darwin" },
-        ]
-        all-features = true
-        
-        [output]
-        feature-depth = 1
-        
-        [advisories]
-        version = 2
-        db-path = "~/.cargo/advisory-db"
-        db-urls = ["https://github.com/rustsec/advisory-db"]
-        unmaintained = "all"
-        yanked = "deny"
-        ignore = []
-        
-        [licenses]
-        allow = [
-            "MIT",
-            "Apache-2.0",
-            "Apache-2.0 WITH LLVM-exception",
-            "BSD-2-Clause",
-            "BSD-3-Clause",
-            "ISC",
-            "Unicode-DFS-2016",
-        ]
-        confidence-threshold = 0.8
-        exceptions = []
-        
-        [bans]
-        multiple-versions = "warn"
-        wildcards = "allow"
-        highlight = "all"
-        workspace-default-features = "allow"
-        external-default-features = "allow"
-        skip = []
-        skip-tree = []
-        
-        [sources]
-        unknown-registry = "warn"
-        unknown-git = "warn"
-        allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-        allow-git = []
-        EOF
-    
-    - name: Run cargo deny
-      run: cargo deny check
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-  semver-checks:
-    name: Semantic Versioning
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    
-    steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-      with:
-        fetch-depth: 0
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
-      with:
-        toolchain: stable
-    
-    - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcapstone-dev pkg-config
-    
-    - name: Install cargo-semver-checks
-      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
-      with:
-        tool: cargo-semver-checks
-    
-    - name: Check semantic versioning
-      run: |
-        # Check if this is a breaking change
-        if cargo semver-checks check-release --baseline-root ${{ github.event.pull_request.base.sha }}; then
-          echo "✅ No breaking changes detected"
-        else
-          echo "⚠️ Potential breaking changes detected"
-          echo "Please review the changes and update version accordingly:"
-          echo "- Patch version (0.1.x) for bug fixes"
-          echo "- Minor version (0.x.0) for new features"
-          echo "- Major version (x.0.0) for breaking changes"
-          # Don't fail the build, just warn
-        fi
-
-  unsafe-code-review:
-    name: Unsafe Code Review
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # v1
-      with:
-        toolchain: nightly
-        components: rust-src
-    
-    - name: Setup Rust cache
-      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcapstone-dev pkg-config
-    
-    - name: Install cargo-geiger
-      uses: taiki-e/install-action@4351b0c7eac445cb6f5a730526fcaef1473d3ea6  # v2.58.12
-      with:
-        tool: cargo-geiger
-    
-    - name: Run cargo geiger
-      run: |
-        echo "🔍 Analyzing unsafe code usage..."
-        cargo geiger --format json --output-format json > geiger-report.json || true
-        
-        if [ -f geiger-report.json ]; then
-          echo "📊 Unsafe code statistics:"
-          cat geiger-report.json | jq -r '
-            .packages[] | 
-            select(.unsafeties.used.functions > 0 or .unsafeties.used.exprs > 0 or .unsafeties.used.item_impls > 0 or .unsafeties.used.item_traits > 0 or .unsafeties.used.methods > 0) |
-            "Package: \(.package.name) v\(.package.version)
-             - Unsafe functions: \(.unsafeties.used.functions)
-             - Unsafe expressions: \(.unsafeties.used.exprs)  
-             - Unsafe implementations: \(.unsafeties.used.item_impls)
-             - Unsafe traits: \(.unsafeties.used.item_traits)
-             - Unsafe methods: \(.unsafeties.used.methods)"
-          '
-        fi
-    
-    - name: Upload geiger report
-      if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-      with:
-        name: unsafe-code-report
-        path: geiger-report.json
-
-  security-summary:
-    name: Security Summary
-    runs-on: ubuntu-latest
-    needs: [security-audit, security-clippy, cargo-deny, unsafe-code-review]
-    if: always()
-    
-    steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0  # v5.0.0
-      with:
-        path: security-reports
-    
-    - name: Generate security summary
-      run: |
-        echo "## 🔒 Security Analysis Summary" > security-summary.md
-        echo "" >> security-summary.md
-        
-        # Check each job result
-        if [ "${{ needs.security-audit.result }}" = "success" ]; then
-          echo "✅ **Security Audit**: Passed" >> security-summary.md
-        else
-          echo "❌ **Security Audit**: Failed" >> security-summary.md
-        fi
-        
-        if [ "${{ needs.security-clippy.result }}" = "success" ]; then
-          echo "✅ **Security Lints**: Passed" >> security-summary.md
-        else
-          echo "❌ **Security Lints**: Failed" >> security-summary.md
-        fi
-        
-        if [ "${{ needs.cargo-deny.result }}" = "success" ]; then
-          echo "✅ **Dependency Policy**: Passed" >> security-summary.md
-        else
-          echo "❌ **Dependency Policy**: Failed" >> security-summary.md
-        fi
-        
-        if [ "${{ needs.unsafe-code-review.result }}" = "success" ]; then
-          echo "✅ **Unsafe Code Review**: Passed" >> security-summary.md
-        else
-          echo "❌ **Unsafe Code Review**: Failed" >> security-summary.md
-        fi
-        
-        echo "" >> security-summary.md
-        echo "📊 **Detailed Reports**: Check the artifacts for complete analysis results" >> security-summary.md
-        
-        cat security-summary.md
-    
-    - name: Upload security summary
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-      with:
-        name: security-summary
-        path: security-summary.md
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@da24556b548a50705dd671f47852072ea4c105d9 # v4.7.1
+        with:
+          fail-on-severity: moderate

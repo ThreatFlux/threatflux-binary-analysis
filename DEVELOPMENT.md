@@ -1,205 +1,206 @@
-# ThreatFlux Development Guide
+# Development Guide
 
-This document explains how to set up your development environment to run the same quality checks locally that are performed in CI/CD.
+This guide covers local development for ThreatFlux Binary Analysis. For change
+submission and review expectations, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Quick Setup
+## Prerequisites
 
-1. **Install all developer tooling:**
-   ```bash
-   make dev-setup
-   ```
+- Rust 1.95.0 or newer; the repository toolchain file pins 1.97.1 with rustfmt
+  and Clippy for reproducible local/CI checks
+- Git
+- A C build environment when compiling the Capstone backend
 
-2. **That's it!** This will install all necessary tools and set up pre-commit hooks.
+The Makefile uses these optional Cargo tools:
 
-## What Gets Installed
+- <code>cargo-audit</code> for RustSec advisories
+- <code>cargo-deny</code> for dependency policy
+- <code>cargo-hack</code> for feature combinations
+- <code>cargo-llvm-cov</code> for coverage
 
-### Rust Components
-- **rustfmt** - Code formatting
-- **clippy** - Rust linter with security-focused rules
+Install the standard Rust components:
 
-### Cargo Tools
-- **cargo-audit** - Security vulnerability scanning
-- **cargo-deny** - License and dependency policy enforcement
-- **cargo-semver-checks** - Semantic versioning validation (optional)
-- **cargo-outdated** - Dependency update checking (optional)
+```console
+rustup component add rustfmt clippy
+```
 
-### System Dependencies
-- **libcapstone** - Disassembly engine (needed for binary-analysis)
-- **pkg-config** - Build system helper
+Install the pinned Cargo tools used by the full local contract with:
 
-## Pre-commit Hooks
+```console
+make tools
+```
 
-The setup script installs a comprehensive pre-commit hook that runs:
+This installs Cargo binaries into your normal Cargo bin directory. System
+packages remain an explicit platform setup step.
 
-### 1. Code Quality Checks
-- ✅ **Format Check** - `cargo fmt --check`
-- ✅ **Linting** - `cargo clippy` with security-focused rules
-- ✅ **Build Test** - `cargo build --all-features`
-- ✅ **Unit Tests** - `cargo test --all-features`
-- ✅ **Documentation** - `cargo doc --all-features`
+## Build
 
-### 2. Security Checks
-- ✅ **Vulnerability Scan** - `cargo audit`
-- ✅ **Dependency Policy** - `cargo deny check`
-- ✅ **Secret Detection** - Basic pattern matching for secrets
-- ✅ **TODO/FIXME Check** - Prevents uncommitted TODO comments
-
-### 3. Repository Health
-- ✅ **Large File Detection** - Prevents committing files >10MB
-- ✅ **License Validation** - Ensures all dependencies use approved licenses
-
-## Manual Commands
-
-You can run these checks manually at any time:
-
-```bash
-# Format your code
-cargo fmt
-
-# Run security-focused linting
-cargo clippy --all-targets --all-features -- -D warnings
-
-# Run tests
-cargo test --all-features
-
-# Check for security vulnerabilities
-cargo audit
-
-# Validate dependencies and licenses
-cargo deny check
-
-# Build with all features
+```console
+cargo build
 cargo build --all-features
-
-# Generate documentation
-cargo doc --all-features --no-deps
+cargo build --no-default-features
 ```
 
-## Bypassing Pre-commit Hooks
+Default features are <code>elf</code>, <code>pe</code>,
+<code>macho</code>, and <code>java</code>. Optional analysis code must remain
+correctly gated so that the no-default-features build continues to work.
+Runtime <code>AnalysisConfig</code> defaults are parser-only; enabling an
+optional runtime switch without its Cargo feature must return
+<code>FeatureNotAvailable</code>.
 
-In rare cases, you may need to bypass the pre-commit hooks:
+Focused builds are useful while changing a module:
 
-```bash
-# Skip pre-commit hooks for a single commit
-git commit --no-verify -m "emergency fix"
-
-# Temporarily disable pre-commit hook
-chmod -x .git/hooks/pre-commit
-
-# Re-enable pre-commit hook
-chmod +x .git/hooks/pre-commit
+```console
+cargo check --no-default-features --features elf
+cargo check --no-default-features --features wasm
+cargo check --no-default-features --features disasm-iced
+cargo check --no-default-features --features control-flow
 ```
 
-## Repository-Specific Notes
+The <code>control-flow</code> feature implies <code>disasm-capstone</code>.
 
-### Binary Analysis Repository
-Requires system dependencies for disassembly:
-- **macOS**: `brew install capstone pkg-config`
-- **Ubuntu/Debian**: `sudo apt-get install libcapstone-dev pkg-config`
-- **CentOS/RHEL**: `sudo yum install capstone-devel pkg-config`
+## Validation contracts
 
-### Package Security Repositories
-May require additional network access for vulnerability database updates.
+Use the Makefile as the supported local interface:
+
+```console
+make check
+make test
+make security
+make feature-check
+```
+
+<code>make check</code> verifies formatting, all-feature Clippy, rustdoc, and
+default/no-default all-target compilation. <code>make test</code> runs the
+all-feature suite. <code>make security</code> runs RustSec and dependency policy
+checks. <code>make feature-check</code> exercises the Cargo feature power set.
+
+Before opening a pull request, run the complete contract:
+
+```console
+make ci
+```
+
+This also verifies the crates.io package. All Make targets use
+<code>--locked</code> where Cargo supports it, so commit lockfile updates with
+intentional dependency changes. Use <code>make help</code> for the concise
+target list.
+
+## Repository layout
+
+| Path                       | Responsibility                                                                     |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| <code>src/lib.rs</code>    | Top-level parser/analyzer entry points and feature dispatch                        |
+| <code>src/types.rs</code>  | Shared public result and graph types                                               |
+| <code>src/formats/</code>  | Format detection and individual parsers                                            |
+| <code>src/disasm/</code>   | Capstone and iced-x86 adapters                                                     |
+| <code>src/analysis/</code> | Control-flow, call-graph, entropy, symbols, visualization, and security heuristics |
+| <code>src/utils/</code>    | Memory maps, byte patterns, bounded compression, and JSON                          |
+| <code>examples/</code>     | Command-line examples built against public APIs                                    |
+| <code>tests/</code>        | Integration, feature, property, and performance-oriented tests                     |
+| <code>test_samples/</code> | Manual fixtures and generators; not consumed by the automated Rust tests           |
+
+<code>Cargo.lock</code> is tracked so CI, security checks, and releases validate
+the same dependency resolution.
+
+## Design boundaries
+
+Keep the layers explicit:
+
+- Parsers describe implemented file structure. They do not execute, emulate,
+  verify signatures, or decide whether a file is malicious.
+- Disassemblers decode the exact bytes and architecture supplied to them.
+- Graph analyses reconstruct a partial model from symbols, entry points, and
+  checked file-backed ranges in the binary's full owned bytes.
+- Security and entropy modules produce heuristic triage signals, not verdicts.
+
+When changing behavior, update [API.md](API.md) and
+[Analysis boundaries](docs/ANALYSIS_BOUNDARIES.md) in the same pull request.
+Avoid using terms such as comprehensive, safe, validated, vulnerability, or
+malware detection unless the implementation and tests establish that precise
+claim.
+
+## Adding or changing a parser
+
+1. Gate optional format code consistently in module declarations, format
+   detection, dispatch, and tests.
+2. Implement <code>BinaryFormatParser</code> and
+   <code>BinaryFormatTrait</code>.
+3. Validate every offset, size, conversion, and addition before slicing.
+4. Define how unknown architecture, entry point, unavailable tables, and
+   malformed metadata are represented.
+5. Add valid, truncated, boundary, and random-input tests.
+6. Test the feature alone, with defaults, with all features, and with no
+   default features.
+7. Document omissions as clearly as supported fields.
+
+Never execute a fixture as part of parser validation. Prefer small,
+programmatically generated bytes with documented provenance.
+
+## Optional-analysis changes
+
+For disassembly and graphs, test both direct byte APIs and the
+<code>BinaryAnalyzer</code> integration path. Built-in analysis reads checked
+ranges from the full <code>BinaryFile</code>; <code>Section::data</code> is
+preview-only. Test large sections, invalid ranges, non-file-backed sections, and
+budget exhaustion as well as tiny synthetic bytes.
+
+For heuristic security changes:
+
+- document the exact signal and expected false positives/negatives;
+- keep scores deterministic;
+- avoid labels that imply maliciousness or exploitability;
+- test normal software patterns as well as suspicious-looking fixtures.
+
+## Tests and fixtures
+
+See [TESTING.md](TESTING.md) and [tests/README.md](tests/README.md). Automated
+tests primarily construct synthetic bytes in memory. The files under
+<code>test_samples/</code> are manual fixtures, and some are intentionally
+suspicious or unsafe to execute.
+
+Generated outputs do not belong in commits. The ignore rules cover Cargo
+targets, coverage output, profiler files, test output, and temporary Rust test
+copies. If a regression needs a binary fixture, keep it minimal, document its
+source/generator and license, and add it intentionally.
+
+## Documentation
+
+Public items should have accurate rustdoc. Examples must build with the feature
+set documented next to them. Markdown snippets should use real type and method
+names, and limitations should be adjacent to capability claims.
+
+Validate docs and examples through:
+
+```console
+make check
+make test
+```
 
 ## Troubleshooting
 
-### "command not found: cargo-audit"
-```bash
-cargo install cargo-audit
-```
+### Capstone fails to compile
 
-### "command not found: cargo-deny"
-```bash
-cargo install cargo-deny
-```
+Confirm that the platform C compiler and build tools are available, then
+reproduce with
+<code>cargo check --locked --no-default-features --features disasm-capstone</code>.
+Include the compiler and target triple in a bug report.
 
-### "libcapstone not found" (Binary Analysis)
-**macOS:**
-```bash
-brew install capstone
-```
+### An optional result is None
 
-**Linux:**
-```bash
-sudo apt-get install libcapstone-dev pkg-config
-```
+Confirm both the Cargo feature and the runtime configuration. Runtime booleans
+do not compile optional modules into the crate.
 
-### Pre-commit Hook Not Running
-Check that the hook is executable:
-```bash
-ls -la .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit
-```
+### Disassembly or graphs are empty
 
-### Slow Pre-commit Checks
-The first run may be slow due to dependency compilation. Subsequent runs use cached builds and are much faster.
+Check the detected architecture, selected backend, function symbols/entry
+point, checked section file ranges, <code>max_analysis_size</code>, and
+<code>max_disassembly_instructions</code>. Graph instruction limits apply per
+function.
+<code>Section::data</code> is only a preview and is not the built-in analysis
+source.
 
-You can also run individual checks:
-```bash
-# Just format and lint (fastest)
-cargo fmt --check && cargo clippy
+### A Make target reports a missing command
 
-# Skip tests in pre-commit by editing .git/hooks/pre-commit
-# Comment out the test section if needed for rapid iteration
-```
-
-## CI/CD Parity
-
-The pre-commit hooks are designed to run the same checks as CI/CD:
-
-| Check | Local Command | CI/CD Workflow |
-|-------|---------------|----------------|
-| Format | `cargo fmt --check` | `cargo fmt --all -- --check` |
-| Lint | `cargo clippy` | Security-focused clippy rules |
-| Test | `cargo test` | `cargo test --all-features` |
-| Audit | `cargo audit` | Security audit workflow |
-| Deny | `cargo deny check` | Dependency validation |
-| Build | `cargo build` | Multi-target builds |
-
-## Updating Tools
-
-Keep your tools up to date:
-
-```bash
-# Update Rust toolchain
-rustup update
-
-# Update cargo tools
-cargo install cargo-audit --force
-cargo install cargo-deny --force
-cargo install cargo-semver-checks --force --locked
-cargo install cargo-outdated --force
-
-# Update advisory database
-cargo audit --update
-```
-
-## Configuration Files
-
-### `.clippy.toml` (if present)
-Repository-specific clippy configuration.
-
-### `deny.toml`
-Dependency and license policy configuration. See individual repositories for specific policies.
-
-### `.rustfmt.toml` (if present)
-Code formatting configuration.
-
-## Getting Help
-
-- **Pre-commit issues**: Check this guide and repository issues
-- **Rust toolchain**: https://rustup.rs/
-- **Cargo tools**: Individual tool documentation
-- **CI/CD workflows**: See `.github/workflows/` in each repository
-
-## Contributing
-
-When contributing:
-
-1. ✅ Ensure all pre-commit checks pass
-2. ✅ Add tests for new functionality  
-3. ✅ Update documentation as needed
-4. ✅ Follow existing code style and patterns
-5. ✅ Keep commits focused and atomic
-
-The pre-commit hooks help ensure code quality and consistency across all ThreatFlux repositories.
+Run <code>make help</code>, inspect the target, and install the named optional
+tool. <code>make tools</code> installs the pinned Cargo utilities used by the
+full contract.

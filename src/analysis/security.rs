@@ -1,15 +1,18 @@
-//! Security analysis for binary files
+//! Heuristic security-triage signals for parsed binaries.
 //!
-//! This module provides comprehensive security analysis capabilities for binary files,
-//! including vulnerability detection, malware indicators, and security feature analysis.
+//! Rules inspect selected imports, names, section permissions, and parser-derived
+//! hardening metadata. Findings can be incomplete or incorrect and must not be
+//! interpreted as vulnerability detection, a malware verdict, or proof of safety.
 
 use crate::{
-    types::{Architecture, Import, Section, SecurityFeatures, SecurityIndicators, Symbol},
     BinaryFile, Result,
+    types::{
+        Architecture, BinaryFormat, Import, Section, SecurityFeatures, SecurityIndicators, Symbol,
+    },
 };
 use std::collections::HashSet;
 
-/// Security analyzer for binary files
+/// Best-effort security-triage analyzer for binary files
 pub struct SecurityAnalyzer {
     /// Architecture being analyzed
     #[allow(dead_code)]
@@ -61,7 +64,7 @@ pub struct SecurityAnalysisResult {
     pub indicators: SecurityIndicators,
     /// Security features present
     pub features: SecurityFeatures,
-    /// Risk score (0-100)
+    /// Crate-local heuristic score (0-100), not CVSS or a probability
     pub risk_score: f64,
     /// Detailed findings
     pub findings: Vec<SecurityFinding>,
@@ -141,13 +144,20 @@ impl SecurityAnalyzer {
         }
     }
 
-    /// Perform comprehensive security analysis
+    /// Run the configured heuristic security checks
     pub fn analyze(&self, binary: &BinaryFile) -> Result<SecurityAnalysisResult> {
         let mut indicators = SecurityIndicators::default();
         let mut findings = Vec::new();
 
         // Analyze imports for suspicious APIs
-        if self.config.detect_suspicious_apis {
+        if self.config.detect_suspicious_apis
+            || self.config.detect_anti_debug
+            || self.config.detect_anti_vm
+            || self.config.detect_crypto
+            || self.config.detect_network
+            || self.config.detect_filesystem
+            || self.config.detect_registry
+        {
             self.analyze_imports(binary.imports(), &mut indicators, &mut findings);
         }
 
@@ -161,10 +171,13 @@ impl SecurityAnalyzer {
         let features = binary.metadata().security_features.clone();
 
         // Analyze security features
-        self.analyze_security_features(&features, &mut findings);
+        self.analyze_security_features(binary.format(), &features, &mut findings);
+
+        Self::canonicalize_indicators(&mut indicators);
 
         // Calculate risk score
-        let risk_score = self.calculate_risk_score(&indicators, &features, &findings);
+        let risk_score =
+            self.calculate_risk_score(binary.format(), &indicators, &features, &findings);
 
         Ok(SecurityAnalysisResult {
             indicators,
@@ -188,11 +201,27 @@ impl SecurityAnalyzer {
         let network_apis = self.get_network_apis();
         let filesystem_apis = self.get_filesystem_apis();
         let registry_apis = self.get_registry_apis();
+        let mut seen_api_names = HashSet::new();
 
         for import in imports {
             let api_name = &import.name;
+            if api_name.len() < self.config.min_string_length {
+                continue;
+            }
 
-            if suspicious_apis.contains(api_name.as_str()) {
+            let enabled_match = (self.config.detect_suspicious_apis
+                && suspicious_apis.contains(api_name.as_str()))
+                || (self.config.detect_anti_debug && anti_debug_apis.contains(api_name.as_str()))
+                || (self.config.detect_anti_vm && anti_vm_apis.contains(api_name.as_str()))
+                || (self.config.detect_crypto && crypto_apis.contains(api_name.as_str()))
+                || (self.config.detect_network && network_apis.contains(api_name.as_str()))
+                || (self.config.detect_filesystem && filesystem_apis.contains(api_name.as_str()))
+                || (self.config.detect_registry && registry_apis.contains(api_name.as_str()));
+            if !enabled_match || !seen_api_names.insert(api_name.as_str()) {
+                continue;
+            }
+
+            if self.config.detect_suspicious_apis && suspicious_apis.contains(api_name.as_str()) {
                 indicators.suspicious_apis.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::SuspiciousApi,
@@ -203,7 +232,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if anti_debug_apis.contains(api_name.as_str()) {
+            if self.config.detect_anti_debug && anti_debug_apis.contains(api_name.as_str()) {
                 indicators.anti_debug.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::AntiDebug,
@@ -214,7 +243,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if anti_vm_apis.contains(api_name.as_str()) {
+            if self.config.detect_anti_vm && anti_vm_apis.contains(api_name.as_str()) {
                 indicators.anti_vm.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::AntiVm,
@@ -225,7 +254,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if crypto_apis.contains(api_name.as_str()) {
+            if self.config.detect_crypto && crypto_apis.contains(api_name.as_str()) {
                 indicators.crypto_indicators.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::Cryptographic,
@@ -236,7 +265,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if network_apis.contains(api_name.as_str()) {
+            if self.config.detect_network && network_apis.contains(api_name.as_str()) {
                 indicators.network_indicators.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::Network,
@@ -247,7 +276,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if filesystem_apis.contains(api_name.as_str()) {
+            if self.config.detect_filesystem && filesystem_apis.contains(api_name.as_str()) {
                 indicators.filesystem_indicators.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::Filesystem,
@@ -258,7 +287,7 @@ impl SecurityAnalyzer {
                 });
             }
 
-            if registry_apis.contains(api_name.as_str()) {
+            if self.config.detect_registry && registry_apis.contains(api_name.as_str()) {
                 indicators.registry_indicators.push(api_name.clone());
                 findings.push(SecurityFinding {
                     category: FindingCategory::Registry,
@@ -271,6 +300,21 @@ impl SecurityAnalyzer {
         }
     }
 
+    fn canonicalize_indicators(indicators: &mut SecurityIndicators) {
+        for values in [
+            &mut indicators.suspicious_apis,
+            &mut indicators.anti_debug,
+            &mut indicators.anti_vm,
+            &mut indicators.crypto_indicators,
+            &mut indicators.network_indicators,
+            &mut indicators.filesystem_indicators,
+            &mut indicators.registry_indicators,
+        ] {
+            values.sort_unstable();
+            values.dedup();
+        }
+    }
+
     /// Analyze sections for security indicators
     fn analyze_sections(
         &self,
@@ -278,9 +322,15 @@ impl SecurityAnalyzer {
         _indicators: &mut SecurityIndicators,
         findings: &mut Vec<SecurityFinding>,
     ) {
+        let mut seen_rwx_sections = HashSet::new();
+        let mut seen_suspicious_names = HashSet::new();
+
         for section in sections {
             // Check for executable and writable sections (potential code injection)
-            if section.permissions.execute && section.permissions.write {
+            if section.permissions.execute
+                && section.permissions.write
+                && seen_rwx_sections.insert((section.name.as_str(), section.address))
+            {
                 findings.push(SecurityFinding {
                     category: FindingCategory::CodeInjection,
                     severity: Severity::High,
@@ -294,7 +344,10 @@ impl SecurityAnalyzer {
             }
 
             // Check for suspicious section names
-            if self.is_suspicious_section_name(&section.name) {
+            if section.name.len() >= self.config.min_string_length
+                && self.is_suspicious_section_name(&section.name)
+                && seen_suspicious_names.insert((section.name.as_str(), section.address))
+            {
                 findings.push(SecurityFinding {
                     category: FindingCategory::Obfuscation,
                     severity: Severity::Medium,
@@ -313,9 +366,14 @@ impl SecurityAnalyzer {
         _indicators: &mut SecurityIndicators,
         findings: &mut Vec<SecurityFinding>,
     ) {
+        let mut seen_symbols = HashSet::new();
+
         for symbol in symbols {
             // Check for suspicious symbol names
-            if self.is_suspicious_symbol_name(&symbol.name) {
+            if symbol.name.len() >= self.config.min_string_length
+                && self.is_suspicious_symbol_name(&symbol.name)
+                && seen_symbols.insert((symbol.name.as_str(), symbol.address))
+            {
                 findings.push(SecurityFinding {
                     category: FindingCategory::SuspiciousApi,
                     severity: Severity::Medium,
@@ -330,9 +388,14 @@ impl SecurityAnalyzer {
     /// Analyze security features
     fn analyze_security_features(
         &self,
+        format: BinaryFormat,
         features: &SecurityFeatures,
         findings: &mut Vec<SecurityFinding>,
     ) {
+        if !Self::has_native_hardening_metadata(format) {
+            return;
+        }
+
         if !features.nx_bit {
             findings.push(SecurityFinding {
                 category: FindingCategory::MissingSecurity,
@@ -377,6 +440,7 @@ impl SecurityAnalyzer {
     /// Calculate overall risk score
     fn calculate_risk_score(
         &self,
+        format: BinaryFormat,
         indicators: &SecurityIndicators,
         features: &SecurityFeatures,
         findings: &[SecurityFinding],
@@ -392,21 +456,25 @@ impl SecurityAnalyzer {
         score += indicators.filesystem_indicators.len() as f64 * 1.0;
         score += indicators.registry_indicators.len() as f64 * 1.0;
 
-        // Adjust for missing security features
-        if !features.nx_bit {
-            score += 10.0;
-        }
-        if !features.aslr {
-            score += 10.0;
-        }
-        if !features.stack_canary {
-            score += 5.0;
-        }
-        if !features.cfi {
-            score += 5.0;
-        }
-        if !features.pie {
-            score += 5.0;
+        // Only native executable formats expose the hardening metadata these
+        // booleans approximate. False values on Java, WebAssembly, and raw
+        // inputs mean unknown or inapplicable and must not be penalized.
+        if Self::has_native_hardening_metadata(format) {
+            if !features.nx_bit {
+                score += 10.0;
+            }
+            if !features.aslr {
+                score += 10.0;
+            }
+            if !features.stack_canary {
+                score += 5.0;
+            }
+            if !features.cfi {
+                score += 5.0;
+            }
+            if !features.pie {
+                score += 5.0;
+            }
         }
 
         // Add severity-based scoring from findings
@@ -422,6 +490,13 @@ impl SecurityAnalyzer {
 
         // Normalize to 0-100
         (score / 2.0).min(100.0)
+    }
+
+    fn has_native_hardening_metadata(format: BinaryFormat) -> bool {
+        matches!(
+            format,
+            BinaryFormat::Elf | BinaryFormat::Pe | BinaryFormat::MachO
+        )
     }
 
     /// Get list of suspicious APIs
@@ -648,6 +723,7 @@ mod tests {
                     address: 0x1000,
                     size: 0x500,
                     offset: 0x400,
+                    file_size: 0x500,
                     permissions: SectionPermissions {
                         read: true,
                         write: false,
@@ -661,6 +737,7 @@ mod tests {
                     address: 0x2000,
                     size: 0x300,
                     offset: 0x900,
+                    file_size: 0x300,
                     permissions: SectionPermissions {
                         read: true,
                         write: true,
@@ -745,10 +822,17 @@ mod tests {
         let features = binary.metadata().security_features.clone();
 
         // Analyze security features
-        analyzer.analyze_security_features(&features, &mut findings);
+        analyzer.analyze_security_features(binary.metadata().format, &features, &mut findings);
+
+        SecurityAnalyzer::canonicalize_indicators(&mut indicators);
 
         // Calculate risk score
-        let risk_score = analyzer.calculate_risk_score(&indicators, &features, &findings);
+        let risk_score = analyzer.calculate_risk_score(
+            binary.metadata().format,
+            &indicators,
+            &features,
+            &findings,
+        );
 
         SecurityAnalysisResult {
             indicators,
@@ -828,12 +912,16 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.suspicious_apis.len(), 2);
-        assert!(indicators
-            .suspicious_apis
-            .contains(&"VirtualAllocEx".to_string()));
-        assert!(indicators
-            .suspicious_apis
-            .contains(&"WriteProcessMemory".to_string()));
+        assert!(
+            indicators
+                .suspicious_apis
+                .contains(&"VirtualAllocEx".to_string())
+        );
+        assert!(
+            indicators
+                .suspicious_apis
+                .contains(&"WriteProcessMemory".to_string())
+        );
 
         let suspicious_findings: Vec<_> = findings
             .iter()
@@ -867,12 +955,16 @@ mod tests {
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
         assert_eq!(indicators.anti_debug.len(), 2);
-        assert!(indicators
-            .anti_debug
-            .contains(&"IsDebuggerPresent".to_string()));
-        assert!(indicators
-            .anti_debug
-            .contains(&"CheckRemoteDebuggerPresent".to_string()));
+        assert!(
+            indicators
+                .anti_debug
+                .contains(&"IsDebuggerPresent".to_string())
+        );
+        assert!(
+            indicators
+                .anti_debug
+                .contains(&"CheckRemoteDebuggerPresent".to_string())
+        );
 
         let anti_debug_findings: Vec<_> = findings
             .iter()
@@ -1055,6 +1147,7 @@ mod tests {
                 address: 0x1000,
                 size: 0x500,
                 offset: 0x400,
+                file_size: 0x500,
                 permissions: SectionPermissions {
                     read: true,
                     write: false,
@@ -1068,6 +1161,7 @@ mod tests {
                 address: 0x2000,
                 size: 0x300,
                 offset: 0x900,
+                file_size: 0x300,
                 permissions: SectionPermissions {
                     read: true,
                     write: true,
@@ -1101,6 +1195,7 @@ mod tests {
                 address: 0x1000,
                 size: 0x500,
                 offset: 0x400,
+                file_size: 0x500,
                 permissions: SectionPermissions {
                     read: true,
                     write: false,
@@ -1114,6 +1209,7 @@ mod tests {
                 address: 0x2000,
                 size: 0x300,
                 offset: 0x900,
+                file_size: 0x300,
                 permissions: SectionPermissions {
                     read: true,
                     write: false,
@@ -1201,7 +1297,7 @@ mod tests {
             signed: false,
         };
 
-        analyzer.analyze_security_features(&features, &mut findings);
+        analyzer.analyze_security_features(BinaryFormat::Pe, &features, &mut findings);
 
         let missing_security_findings: Vec<_> = findings
             .iter()
@@ -1214,12 +1310,16 @@ mod tests {
         // Check specific findings
         assert!(findings.iter().any(|f| f.description.contains("NX/DEP")));
         assert!(findings.iter().any(|f| f.description.contains("ASLR")));
-        assert!(findings
-            .iter()
-            .any(|f| f.description.contains("Stack canaries")));
-        assert!(findings
-            .iter()
-            .any(|f| f.description.contains("Control Flow Integrity")));
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.description.contains("Stack canaries"))
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.description.contains("Control Flow Integrity"))
+        );
     }
 
     #[test]
@@ -1238,7 +1338,7 @@ mod tests {
             signed: true,
         };
 
-        analyzer.analyze_security_features(&features, &mut findings);
+        analyzer.analyze_security_features(BinaryFormat::Pe, &features, &mut findings);
 
         let missing_security_findings: Vec<_> = findings
             .iter()
@@ -1290,7 +1390,8 @@ mod tests {
             },
         ];
 
-        let risk_score = analyzer.calculate_risk_score(&indicators, &features, &findings);
+        let risk_score =
+            analyzer.calculate_risk_score(BinaryFormat::Pe, &indicators, &features, &findings);
         assert!(risk_score < 10.0); // Should be low risk
     }
 
@@ -1346,7 +1447,8 @@ mod tests {
             },
         ];
 
-        let risk_score = analyzer.calculate_risk_score(&indicators, &features, &findings);
+        let risk_score =
+            analyzer.calculate_risk_score(BinaryFormat::Pe, &indicators, &features, &findings);
         assert!(risk_score > 50.0); // Should be high risk
     }
 
@@ -1542,6 +1644,67 @@ mod tests {
     }
 
     #[test]
+    fn repeated_import_names_do_not_duplicate_findings_or_score() {
+        let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
+        let import = Import {
+            name: "VirtualAllocEx".to_string(),
+            library: Some("kernel32.dll".to_string()),
+            address: Some(0x1000),
+            ordinal: None,
+        };
+        let imports = vec![import; 1_000];
+        let mut indicators = SecurityIndicators::default();
+        let mut findings = Vec::new();
+
+        analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
+        SecurityAnalyzer::canonicalize_indicators(&mut indicators);
+
+        assert_eq!(indicators.suspicious_apis, ["VirtualAllocEx"]);
+        assert_eq!(findings.len(), 1);
+
+        let features = SecurityFeatures {
+            nx_bit: true,
+            aslr: true,
+            stack_canary: true,
+            cfi: true,
+            fortify: true,
+            pie: true,
+            relro: true,
+            signed: true,
+        };
+        assert_eq!(
+            analyzer.calculate_risk_score(BinaryFormat::Pe, &indicators, &features, &findings,),
+            10.0
+        );
+    }
+
+    #[test]
+    fn non_native_formats_do_not_report_or_score_missing_native_hardening() {
+        let analyzer = SecurityAnalyzer::new(Architecture::Unknown);
+        let features = SecurityFeatures::default();
+        let indicators = SecurityIndicators::default();
+
+        for format in [BinaryFormat::Java, BinaryFormat::Wasm, BinaryFormat::Raw] {
+            let mut findings = Vec::new();
+            analyzer.analyze_security_features(format, &features, &mut findings);
+
+            assert!(findings.is_empty(), "unexpected findings for {format}");
+            assert_eq!(
+                analyzer.calculate_risk_score(format, &indicators, &features, &findings),
+                0.0,
+                "unexpected hardening penalty for {format}"
+            );
+        }
+
+        let raw = BinaryFile::parse(b"plain raw bytes").unwrap();
+        let result = SecurityAnalyzer::new(raw.architecture())
+            .analyze(&raw)
+            .unwrap();
+        assert!(result.findings.is_empty());
+        assert_eq!(result.risk_score, 0.0);
+    }
+
+    #[test]
     fn test_analyze_sections_empty() {
         let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
         let mut indicators = SecurityIndicators::default();
@@ -1549,6 +1712,44 @@ mod tests {
 
         analyzer.analyze_sections(&[], &mut indicators, &mut findings);
         assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn repeated_section_and_symbol_records_do_not_duplicate_findings() {
+        let analyzer = SecurityAnalyzer::new(Architecture::X86_64);
+        let fixture = create_test_binary_file();
+        let sections = vec![fixture.sections[1].clone(); 1_000];
+        let symbols = vec![fixture.symbols[1].clone(); 1_000];
+        let mut indicators = SecurityIndicators::default();
+        let mut findings = Vec::new();
+
+        analyzer.analyze_sections(&sections, &mut indicators, &mut findings);
+        analyzer.analyze_symbols(&symbols, &mut indicators, &mut findings);
+
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|finding| finding.category == FindingCategory::CodeInjection)
+                .count(),
+            1
+        );
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|finding| finding.category == FindingCategory::Obfuscation)
+                .count(),
+            1
+        );
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|finding| {
+                    finding.category == FindingCategory::SuspiciousApi
+                        && finding.description.starts_with("Suspicious symbol:")
+                })
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -1571,7 +1772,12 @@ mod tests {
 
         // Empty findings should give 0 or very low score
         let empty_findings = vec![];
-        let score = analyzer.calculate_risk_score(&indicators, &features, &empty_findings);
+        let score = analyzer.calculate_risk_score(
+            BinaryFormat::Pe,
+            &indicators,
+            &features,
+            &empty_findings,
+        );
         assert!((0.0..=100.0).contains(&score));
 
         // Maximum risk scenario
@@ -1607,6 +1813,7 @@ mod tests {
             .collect();
 
         let max_score = analyzer.calculate_risk_score(
+            BinaryFormat::Pe,
             &high_risk_indicators,
             &insecure_features,
             &critical_findings,
@@ -1634,10 +1841,8 @@ mod tests {
 
         analyzer.analyze_imports(&imports, &mut indicators, &mut findings);
 
-        // Note: analyze_imports doesn't check config flags - it analyzes all categories
-        // The config flags are checked in the main analyze() method
-        // So VirtualAllocEx will still be detected as suspicious, but other categories work
-        assert!(!indicators.suspicious_apis.is_empty());
+        assert!(indicators.suspicious_apis.is_empty());
+        assert!(findings.is_empty());
 
         // But we can test that the config affects the main analyze flow
         // by testing a scenario with different detection flags
@@ -1689,6 +1894,7 @@ mod tests {
                     address: 0x1000,
                     size: 0x500,
                     offset: 0x400,
+                    file_size: 0x500,
                     permissions: SectionPermissions {
                         read: true,
                         write: false,
@@ -1702,6 +1908,7 @@ mod tests {
                     address: 0x2000,
                     size: 0x300,
                     offset: 0x900,
+                    file_size: 0x300,
                     permissions: SectionPermissions {
                         read: true,
                         write: true,
@@ -1715,6 +1922,7 @@ mod tests {
                     address: 0x3000,
                     size: 0x200,
                     offset: 0xc00,
+                    file_size: 0x200,
                     permissions: SectionPermissions {
                         read: true,
                         write: false,
@@ -1782,20 +1990,26 @@ mod tests {
 
         // Verify high-risk indicators
         assert!(!result.indicators.suspicious_apis.is_empty());
-        assert!(result
-            .indicators
-            .suspicious_apis
-            .contains(&"VirtualAllocEx".to_string()));
-        assert!(result
-            .indicators
-            .suspicious_apis
-            .contains(&"WriteProcessMemory".to_string()));
+        assert!(
+            result
+                .indicators
+                .suspicious_apis
+                .contains(&"VirtualAllocEx".to_string())
+        );
+        assert!(
+            result
+                .indicators
+                .suspicious_apis
+                .contains(&"WriteProcessMemory".to_string())
+        );
 
         assert!(!result.indicators.anti_debug.is_empty());
-        assert!(result
-            .indicators
-            .anti_debug
-            .contains(&"IsDebuggerPresent".to_string()));
+        assert!(
+            result
+                .indicators
+                .anti_debug
+                .contains(&"IsDebuggerPresent".to_string())
+        );
 
         // Verify security features
         assert!(!result.features.nx_bit);
@@ -1883,6 +2097,7 @@ mod tests {
                     address: 0x1000,
                     size: 0x500,
                     offset: 0x400,
+                    file_size: 0x500,
                     permissions: SectionPermissions {
                         read: true,
                         write: false,
@@ -1896,6 +2111,7 @@ mod tests {
                     address: 0x2000,
                     size: 0x300,
                     offset: 0x900,
+                    file_size: 0x300,
                     permissions: SectionPermissions {
                         read: true,
                         write: true,
@@ -1909,6 +2125,7 @@ mod tests {
                     address: 0x3000,
                     size: 0x200,
                     offset: 0xc00,
+                    file_size: 0x200,
                     permissions: SectionPermissions {
                         read: true,
                         write: false,
@@ -2021,10 +2238,12 @@ mod tests {
         assert!(!result.findings.is_empty());
 
         // Verify that the function detected the suspicious API from our test data
-        assert!(result
-            .indicators
-            .suspicious_apis
-            .contains(&"VirtualAllocEx".to_string()));
+        assert!(
+            result
+                .indicators
+                .suspicious_apis
+                .contains(&"VirtualAllocEx".to_string())
+        );
     }
 
     #[test]

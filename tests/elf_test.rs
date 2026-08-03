@@ -2,8 +2,8 @@
 //! Tests for ELF format parser
 #![cfg(feature = "elf")]
 
-use threatflux_binary_analysis::types::*;
 use threatflux_binary_analysis::BinaryAnalyzer;
+use threatflux_binary_analysis::types::*;
 
 /// Test data generators for various ELF formats
 mod elf_test_data {
@@ -838,9 +838,9 @@ fn test_elf_parser_parse_arm64() {
 #[test]
 fn test_elf_parser_parse_various_architectures() {
     let test_cases = vec![
-        (elf_test_data::create_elf_mips(), Architecture::Mips),
+        (elf_test_data::create_elf_mips(), Architecture::Mips64),
         (elf_test_data::create_elf_powerpc(), Architecture::PowerPC64),
-        (elf_test_data::create_elf_riscv(), Architecture::RiscV),
+        (elf_test_data::create_elf_riscv(), Architecture::RiscV64),
     ];
 
     for (data, expected_arch) in test_cases {
@@ -864,7 +864,9 @@ fn test_elf_parser_parse_file_types() {
     let so_result = BinaryAnalyzer::new().analyze(&so_data);
     assert!(so_result.is_ok());
     let so_binary = so_result.unwrap();
-    assert!(so_binary.metadata.security_features.pie); // ET_DYN enables PIE
+    // ET_DYN also identifies shared libraries; without PT_INTERP or DF_1_PIE it
+    // must not be reported as a position-independent executable.
+    assert!(!so_binary.metadata.security_features.pie);
 
     // Test relocatable object
     let rel_data = elf_test_data::create_elf_relocatable();
@@ -976,8 +978,8 @@ fn test_elf_parser_security_features() {
     let security = &binary.metadata.security_features;
 
     assert!(security.nx_bit); // GNU_STACK without execute
-    assert!(security.pie); // ET_DYN
-    assert!(security.aslr); // PIE enables ASLR
+    assert!(!security.pie); // ET_DYN alone is ambiguous with a shared object
+    assert!(!security.aslr);
     assert!(security.relro); // GNU_RELRO
 }
 
@@ -1174,7 +1176,7 @@ fn test_elf_program_header_parsing() {
     // Verify security features detected from program headers
     assert!(security.nx_bit); // From GNU_STACK
     assert!(security.relro); // From GNU_RELRO
-    assert!(security.pie); // From ET_DYN
+    assert!(!security.pie); // ET_DYN alone does not establish PIE
 }
 
 #[test]
