@@ -108,7 +108,7 @@ jobs:
 
       - name: Release
         id: release
-        uses: ThreatFlux/github_actions/release@16d779cd569c34743eb6683ca4c0ce105e9ad234 # v0.4.2
+        uses: ThreatFlux/github_actions/release@e61e4dcdf74b3bda415f99604965fd82ac16f48a # v0.7.4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           bump: ${{ github.event.inputs.version_bump || 'auto' }}
