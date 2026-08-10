@@ -834,7 +834,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
- "wasmparser 0.236.1",
+ "wasmparser",
  "wat",
  "zip",
 ]
@@ -928,17 +928,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b524283fb5df62eec102ed0574838961bdd7ba5ac9c50d38e2756c51c971a42"
 dependencies = [
  "leb128fmt",
- "wasmparser 0.255.0",
-]
-
-[[package]]
-name = "wasmparser"
-version = "0.236.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9b1e81f3eb254cf7404a82cee6926a4a3ccc5aad80cc3d43608a070c67aa1d7"
-dependencies = [
- "bitflags",
- "indexmap",
+ "wasmparser",
 ]
 
 [[package]]
