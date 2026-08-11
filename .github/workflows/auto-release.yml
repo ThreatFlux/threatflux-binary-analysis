@@ -113,3 +113,12 @@ jobs:
           command: release
           token: ${{ secrets.GITHUB_TOKEN }}
           bump: ${{ github.event.inputs.version_bump || 'auto' }}
+
+      # GitHub does not start workflows for pushes authored by GITHUB_TOKEN, so
+      # the tag this job just created cannot trigger release.yml on its own.
+      - name: Dispatch the release workflow
+        if: steps.release.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"

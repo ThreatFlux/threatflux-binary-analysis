@@ -259,12 +259,12 @@ mod test_data {
     #[cfg(feature = "java")]
     pub fn create_java_jar() -> Vec<u8> {
         use std::io::Write;
-        use zip::{ZipWriter, write::FileOptions};
+        use zip::{ZipWriter, write::SimpleFileOptions};
 
         let class_data = create_java_class();
         let cursor = std::io::Cursor::new(Vec::new());
         let mut zip = ZipWriter::new(cursor);
-        zip.start_file("Test.class", FileOptions::default())
+        zip.start_file("Test.class", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(&class_data).unwrap();
         let cursor = zip.finish().unwrap();

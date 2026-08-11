@@ -594,19 +594,19 @@ fn create_java_class_with_complex_constant_pool() -> Vec<u8> {
 
 fn create_realistic_jar_file() -> Vec<u8> {
     use std::io::Write;
-    use zip::{ZipWriter, write::FileOptions};
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
         let mut zip = ZipWriter::new(&mut cursor);
 
         // Add a Java class
-        zip.start_file("com/example/Test.class", FileOptions::default())
+        zip.start_file("com/example/Test.class", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(&create_realistic_java_class()).unwrap();
 
         // Add META-INF/MANIFEST.MF
-        zip.start_file("META-INF/MANIFEST.MF", FileOptions::default())
+        zip.start_file("META-INF/MANIFEST.MF", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"Manifest-Version: 1.0\nMain-Class: com.example.Test\n")
             .unwrap();
@@ -618,21 +618,24 @@ fn create_realistic_jar_file() -> Vec<u8> {
 
 fn create_war_file() -> Vec<u8> {
     use std::io::Write;
-    use zip::{ZipWriter, write::FileOptions};
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
         let mut zip = ZipWriter::new(&mut cursor);
 
         // Add web.xml
-        zip.start_file("WEB-INF/web.xml", FileOptions::default())
+        zip.start_file("WEB-INF/web.xml", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"<?xml version=\"1.0\"?><web-app></web-app>")
             .unwrap();
 
         // Add a servlet class
-        zip.start_file("WEB-INF/classes/MyServlet.class", FileOptions::default())
-            .unwrap();
+        zip.start_file(
+            "WEB-INF/classes/MyServlet.class",
+            SimpleFileOptions::default(),
+        )
+        .unwrap();
         zip.write_all(&create_realistic_java_class()).unwrap();
 
         zip.finish().unwrap();
@@ -642,20 +645,20 @@ fn create_war_file() -> Vec<u8> {
 
 fn create_ear_file() -> Vec<u8> {
     use std::io::Write;
-    use zip::{ZipWriter, write::FileOptions};
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
         let mut zip = ZipWriter::new(&mut cursor);
 
         // Add application.xml
-        zip.start_file("META-INF/application.xml", FileOptions::default())
+        zip.start_file("META-INF/application.xml", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"<?xml version=\"1.0\"?><application></application>")
             .unwrap();
 
         // Add nested JAR
-        zip.start_file("lib/myapp.jar", FileOptions::default())
+        zip.start_file("lib/myapp.jar", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(&create_realistic_jar_file()).unwrap();
 
@@ -666,24 +669,24 @@ fn create_ear_file() -> Vec<u8> {
 
 fn create_android_apk() -> Vec<u8> {
     use std::io::Write;
-    use zip::{ZipWriter, write::FileOptions};
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
         let mut zip = ZipWriter::new(&mut cursor);
 
         // Add AndroidManifest.xml (binary format)
-        zip.start_file("AndroidManifest.xml", FileOptions::default())
+        zip.start_file("AndroidManifest.xml", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"\x03\x00\x08\x00\x01\x00\x00\x00").unwrap(); // Simplified binary XML
 
         // Add classes.dex
-        zip.start_file("classes.dex", FileOptions::default())
+        zip.start_file("classes.dex", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"dex\n035\x00").unwrap(); // DEX magic + version
 
         // Add resources.arsc
-        zip.start_file("resources.arsc", FileOptions::default())
+        zip.start_file("resources.arsc", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"\x02\x00\x0c\x00").unwrap(); // Resource table header
 
@@ -730,14 +733,14 @@ fn create_java_class_with_annotations() -> Vec<u8> {
 
 fn create_jar_with_manifest() -> Vec<u8> {
     use std::io::Write;
-    use zip::{ZipWriter, write::FileOptions};
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
         let mut zip = ZipWriter::new(&mut cursor);
 
         // Add comprehensive manifest
-        zip.start_file("META-INF/MANIFEST.MF", FileOptions::default())
+        zip.start_file("META-INF/MANIFEST.MF", SimpleFileOptions::default())
             .unwrap();
         let manifest = b"Manifest-Version: 1.0\n\
                         Main-Class: com.example.Main\n\
@@ -747,7 +750,7 @@ fn create_jar_with_manifest() -> Vec<u8> {
         zip.write_all(manifest).unwrap();
 
         // Add main class
-        zip.start_file("com/example/Main.class", FileOptions::default())
+        zip.start_file("com/example/Main.class", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(&create_realistic_java_class()).unwrap();
 
@@ -813,7 +816,7 @@ fn create_truncated_java_class() -> &'static [u8] {
 
 fn create_potential_zip_bomb_jar() -> Vec<u8> {
     use std::io::Write;
-    use zip::{ZipWriter, write::FileOptions};
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
@@ -822,7 +825,8 @@ fn create_potential_zip_bomb_jar() -> Vec<u8> {
         // Add many entries to test resource limits
         for i in 0..1000 {
             let filename = format!("file{}.class", i);
-            zip.start_file(&filename, FileOptions::default()).unwrap();
+            zip.start_file(&filename, SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(&create_realistic_java_class()).unwrap();
         }
 
@@ -833,7 +837,7 @@ fn create_potential_zip_bomb_jar() -> Vec<u8> {
 
 fn create_large_jar_file(target_size: usize) -> Vec<u8> {
     use std::io::Write;
-    use zip::{ZipWriter, write::FileOptions};
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
@@ -844,7 +848,8 @@ fn create_large_jar_file(target_size: usize) -> Vec<u8> {
 
         for i in 0..entries_needed {
             let filename = format!("com/example/Class{}.class", i);
-            zip.start_file(&filename, FileOptions::default()).unwrap();
+            zip.start_file(&filename, SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(&class_data).unwrap();
         }
 
@@ -855,29 +860,32 @@ fn create_large_jar_file(target_size: usize) -> Vec<u8> {
 
 fn create_jar_with_native_libraries() -> Vec<u8> {
     use std::io::Write;
-    use zip::{ZipWriter, write::FileOptions};
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     let mut cursor = std::io::Cursor::new(Vec::new());
     {
         let mut zip = ZipWriter::new(&mut cursor);
 
         // Add Java class
-        zip.start_file("com/example/Native.class", FileOptions::default())
+        zip.start_file("com/example/Native.class", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(&create_realistic_java_class()).unwrap();
 
         // Add native library for Linux
-        zip.start_file("lib/linux-x86_64/libnative.so", FileOptions::default())
-            .unwrap();
+        zip.start_file(
+            "lib/linux-x86_64/libnative.so",
+            SimpleFileOptions::default(),
+        )
+        .unwrap();
         zip.write_all(b"\x7fELF\x02\x01\x01\x00").unwrap(); // ELF header
 
         // Add native library for Windows
-        zip.start_file("lib/win32-x86_64/native.dll", FileOptions::default())
+        zip.start_file("lib/win32-x86_64/native.dll", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"MZ\x90\x00").unwrap(); // PE header
 
         // Add native library for macOS
-        zip.start_file("lib/darwin/libnative.dylib", FileOptions::default())
+        zip.start_file("lib/darwin/libnative.dylib", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"\xfe\xed\xfa\xcf").unwrap(); // Mach-O header
 

@@ -13,9 +13,7 @@ metadata, sections, symbols, imports, and exports. Optional Cargo features add
 disassembly, control-flow reconstruction, entropy measurements, symbol
 demangling, JSON support, and graph output.
 
-These repository docs target the upcoming 0.3.0 release. The current crates.io
-release remains 0.2.0 until the release workflow publishes 0.3.0; see the
-[migration guide](docs/MIGRATING_TO_0.3.md).
+Upgrading from 0.2.0? See the [migration guide](docs/MIGRATING_TO_0.3.md).
 
 This is a static-analysis building block, not a malware verdict engine or an
 execution sandbox. Its security findings, packing indicators, and control-flow
@@ -84,7 +82,7 @@ threatflux-binary-analysis = {
 | <code>macho</code>             |   yes   | Thin Mach-O parser                                          |
 | <code>java</code>              |   yes   | Java class and class-containing JAR parser                  |
 | <code>wasm</code>              |   no    | WebAssembly parser                                          |
-| <code>disasm-capstone</code>   |   no    | Capstone disassembly backend                                |
+| <code>disasm-capstone</code>   |   no    | Capstone backend for x86, x86-64, ARM, AArch64, MIPS, PowerPC |
 | <code>disasm-iced</code>       |   no    | iced-x86 backend for x86 and x86-64                         |
 | <code>control-flow</code>      |   no    | Control-flow and call-graph analysis; also enables Capstone |
 | <code>entropy-analysis</code>  |   no    | Shannon entropy and packing heuristics                      |

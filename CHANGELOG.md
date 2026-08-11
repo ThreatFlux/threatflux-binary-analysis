@@ -6,6 +6,28 @@ All notable changes are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- Upgraded the analysis backends to their latest stable releases: `zip` 0.6 to
+  8.6, `wasmparser` 0.236 to 0.256, `petgraph` 0.6 to 0.8, `gimli` 0.31 to
+  0.34, `addr2line` 0.24 to 0.27, and `capstone` 0.13 to 0.14. Every other
+  requirement moved to its latest patch.
+- `disasm-capstone` now names the architectures it builds: x86, x86-64, ARM,
+  AArch64, MIPS, and PowerPC. Capstone 0.14 gates each architecture behind its
+  own feature, and the previous `default-features = false` selection compiled
+  no architecture at all.
+- WebAssembly import parsing flattens the grouped import encoding that
+  `wasmparser` 0.256 introduced, so compact imports are still reported
+  individually.
+
+### Fixed
+
+- The README described 0.3.0 as unpublished; it has been on crates.io since
+  2026-08-03.
+- An automated tag now dispatches `release.yml`. GitHub does not start
+  workflows for pushes authored by `GITHUB_TOKEN`, so tag-triggered publishing
+  never ran.
+
 ## [0.3.0] - 2026-08-03
 
 ### Added

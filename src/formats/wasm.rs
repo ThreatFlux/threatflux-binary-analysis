@@ -99,7 +99,7 @@ impl WasmBinary {
                 Payload::StartSection { .. } => {}
                 Payload::ImportSection(s) => {
                     let range = s.range();
-                    for import in s {
+                    for import in s.into_imports() {
                         let import = import?;
                         output_budget.reserve_record(&mut imports, "WebAssembly imports")?;
                         imports.push(Import {

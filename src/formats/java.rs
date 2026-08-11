@@ -409,7 +409,7 @@ impl BinaryFormatTrait for JavaBinary {
 mod tests {
     use super::*;
     use std::io::{Cursor, Write};
-    use zip::{ZipWriter, write::FileOptions};
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     #[test]
     fn generic_zip_is_not_claimed_as_java() {
@@ -417,7 +417,7 @@ mod tests {
         {
             let mut archive = ZipWriter::new(&mut output);
             archive
-                .start_file("README.txt", FileOptions::default())
+                .start_file("README.txt", SimpleFileOptions::default())
                 .unwrap();
             archive.write_all(b"not a class").unwrap();
             archive.finish().unwrap();
@@ -464,7 +464,7 @@ mod tests {
         {
             let mut archive = ZipWriter::new(&mut output);
             archive
-                .start_file("Main.class", FileOptions::default())
+                .start_file("Main.class", SimpleFileOptions::default())
                 .unwrap();
             archive.write_all(b"\xca\xfe\xba\xbe").unwrap();
             archive.finish().unwrap();
@@ -486,12 +486,12 @@ mod tests {
         {
             let mut archive = ZipWriter::new(&mut output);
             archive
-                .start_file("Main.class", FileOptions::default())
+                .start_file("Main.class", SimpleFileOptions::default())
                 .unwrap();
             archive.write_all(b"\xca\xfe\xba\xbe").unwrap();
             let mut comment = b"prefixPK\x05\x06".to_vec();
             comment.extend_from_slice(&[0_u8; ZIP_EOCD_MIN_SIZE]);
-            archive.set_raw_comment(comment);
+            archive.set_raw_comment(comment.into_boxed_slice()).unwrap();
             archive.finish().unwrap();
         }
         let data = output.into_inner();
@@ -506,7 +506,7 @@ mod tests {
         {
             let mut archive = ZipWriter::new(&mut output);
             archive
-                .start_file("Main.class", FileOptions::default())
+                .start_file("Main.class", SimpleFileOptions::default())
                 .unwrap();
             archive.write_all(b"\xca\xfe\xba\xbe").unwrap();
 
@@ -515,7 +515,7 @@ mod tests {
             // one byte before the comment itself.
             let mut comment = vec![0_u8; 0x5003];
             comment[..3].copy_from_slice(b"K\x05\x06");
-            archive.set_raw_comment(comment);
+            archive.set_raw_comment(comment.into_boxed_slice()).unwrap();
             archive.finish().unwrap();
         }
         let data = output.into_inner();
