@@ -35,16 +35,18 @@ The release path depends on two settings outside this repository's source:
    <code>Cargo.toml</code>, pushes the version commit and the
    <code>v&lt;version&gt;</code> tag, creates the GitHub Release, and dispatches
    <code>release.yml</code> for that tag.
-3. <code>release.yml</code>:
-   1. checks that the tag points at the selected commit and that the manifest
-      version matches the release version;
+3. <code>release.yml</code> builds the commit the run was started for:
+   1. checks that the manifest version matches the release version, that the
+      commit is on <code>main</code>, and that an existing tag already points
+      at it;
    2. builds the library with every feature for Linux (gnu, musl, arm64),
       macOS (arm64, x86-64), and Windows, and runs the release-mode test suite
       on the native targets;
    3. checks formatting and Clippy, packages the crate, and generates a
       CycloneDX SBOM;
-   4. uploads the <code>.crate</code> file, its SHA-256 checksum, and the SBOM
-      to the GitHub Release;
+   4. only then creates the tag (if it does not exist yet) and the GitHub
+      Release, and uploads the <code>.crate</code> file, its SHA-256 checksum,
+      and the SBOM to it;
    5. enters the <code>crates-io</code> environment, exchanges the job's OIDC
       token for a short-lived crates.io token with
       <code>rust-lang/crates-io-auth-action</code>, and runs
@@ -84,8 +86,10 @@ To release without Auto Release, first merge a pull request that sets the
 gh workflow run release.yml --ref main -f version=X.Y.Z
 ```
 
-The workflow creates the <code>vX.Y.Z</code> tag on the selected commit. It
-refuses to run if that tag already exists on a different commit.
+The workflow creates the <code>vX.Y.Z</code> tag on that commit after every
+build passes. It refuses to run if the commit is not on <code>main</code> or
+if the tag already exists on a different commit. To rebuild an existing
+release, dispatch the workflow on its tag (<code>--ref vX.Y.Z</code>).
 
 ## Verify
 

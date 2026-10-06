@@ -45,8 +45,6 @@ jobs:
     name: Prepare Release
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: write # Creates the release tag and the GitHub Release.
     outputs:
       version: ${{ steps.version.outputs.version }}
       source_sha: ${{ steps.source_sha.outputs.source_sha }}
@@ -81,8 +79,10 @@ jobs:
           else
             VERSION=${GITHUB_REF#refs/tags/v}
           fi
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
-            echo "Invalid version format: $VERSION"
+          # MAJOR.MINOR.PATCH with an optional SemVer pre-release such as
+          # 1.0.0-alpha.1 (dot-separated alphanumeric/hyphen identifiers).
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "Invalid version format: $VERSION" >&2
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -109,25 +109,30 @@ jobs:
             fi
           fi
 
-      - name: Generate release notes
-        id: notes
+      # A real release publishes only reviewed code: the commit must be on the
+      # default branch, and an existing tag must already name it (a tag is
+      # never moved). A dry run may rehearse any branch, so it skips both.
+      - name: Check release source
+        if: env.DRY_RUN != 'true'
         env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           VERSION: ${{ steps.version.outputs.version }}
+          SOURCE_SHA: ${{ steps.source_sha.outputs.source_sha }}
         run: |
-          echo "## Release v$VERSION" > release_notes.md
-          echo "" >> release_notes.md
-          # The section runs from this version's "## [X.Y.Z]" heading to the
-          # next "## [" heading.
-          section=""
-          if [ -f CHANGELOG.md ]; then
-            section="$(awk -v heading="## [$VERSION]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found { print }' CHANGELOG.md)"
+          if ! git merge-base --is-ancestor "$SOURCE_SHA" "refs/remotes/origin/${DEFAULT_BRANCH}"; then
+            echo "${SOURCE_SHA} is not on ${DEFAULT_BRANCH}; only merged commits are released" >&2
+            exit 1
           fi
-          if [[ -n "${section//[[:space:]]/}" ]]; then
-            printf '%s\n' "$section" >> release_notes.md
-            echo "has_changelog=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "See CHANGELOG.md for details" >> release_notes.md
-            echo "has_changelog=false" >> "$GITHUB_OUTPUT"
+          TAG="v${VERSION}"
+          if git show-ref --verify --quiet "refs/tags/${TAG}"; then
+            if ! TAG_SHA="$(git rev-parse -q --verify "refs/tags/${TAG}^{commit}")"; then
+              echo "Tag ${TAG} does not point to a commit" >&2
+              exit 1
+            fi
+            if [[ "$TAG_SHA" != "$SOURCE_SHA" ]]; then
+              echo "Tag ${TAG} points to ${TAG_SHA}, not the selected source commit ${SOURCE_SHA}" >&2
+              exit 1
+            fi
           fi
 
       - name: Dry run summary
@@ -144,69 +149,7 @@ jobs:
             echo "Source commit: \`${SOURCE_SHA}\`. No tag, GitHub Release, release assets, or crates.io package is published."
             echo
             echo "Cargo.toml version packaged and verified: \`${MANIFEST_VERSION:-unknown}\`."
-            echo
-            cat release_notes.md
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Create or update GitHub Release
-        if: env.DRY_RUN != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-          SOURCE_SHA: ${{ steps.source_sha.outputs.source_sha }}
-          HAS_CHANGELOG: ${{ steps.notes.outputs.has_changelog }}
-          INPUT_PRERELEASE: ${{ inputs.prerelease && 'true' || 'false' }}
-        run: |
-          TAG="v${VERSION}"
-          TITLE="Release v${VERSION}"
-          IS_PRERELEASE="false"
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$INPUT_PRERELEASE" == "true" ]]; then
-            IS_PRERELEASE="true"
-          fi
-          if [[ "${VERSION}" == *-* ]]; then
-            IS_PRERELEASE="true"
-          fi
-
-          # An existing tag is never moved, so refuse to build or publish a
-          # different commit under it (checkout fetched all tags).
-          if git show-ref --verify --quiet "refs/tags/${TAG}"; then
-            if ! TAG_SHA="$(git rev-parse -q --verify "refs/tags/${TAG}^{commit}")"; then
-              echo "Tag ${TAG} does not point to a commit" >&2
-              exit 1
-            fi
-            if [[ "$TAG_SHA" != "$SOURCE_SHA" ]]; then
-              echo "Tag ${TAG} points to ${TAG_SHA}, not the selected source commit ${SOURCE_SHA}" >&2
-              exit 1
-            fi
-          else
-            # Create the tag before any release is published. Ref creation is
-            # atomic, so if a concurrent run or a manual push created it first,
-            # this fails and the check below compares against that tag.
-            gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${TAG}" -f sha="${SOURCE_SHA}" >/dev/null || true
-          fi
-
-          # The tag on GitHub, not the checkout snapshot, decides the release.
-          REMOTE_TAG_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/commits/refs/tags/${TAG}" --jq .sha)"
-          if [[ "$REMOTE_TAG_SHA" != "$SOURCE_SHA" ]]; then
-            echo "Tag ${TAG} points to ${REMOTE_TAG_SHA} on GitHub, not the selected source commit ${SOURCE_SHA}" >&2
-            exit 1
-          fi
-
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # Auto Release publishes the Release with notes generated from the
-            # conventional commits; only replace them with a changelog section.
-            if [[ "${HAS_CHANGELOG}" == "true" ]]; then
-              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file release_notes.md
-            else
-              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE"
-            fi
-          else
-            if [[ "${IS_PRERELEASE}" == "true" ]]; then
-              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "$TITLE" --notes-file release_notes.md --prerelease
-            else
-              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "$TITLE" --notes-file release_notes.md
-            fi
-          fi
 
   build:
     name: Build (${{ matrix.target }})
@@ -350,9 +293,101 @@ jobs:
           if-no-files-found: error
           retention-days: 5
 
+  # The tag and the GitHub Release are created only after every target
+  # builds and tests, the package verifies, and the SBOM is generated.
+  github-release:
+    name: Create GitHub Release
+    needs: [prepare, build, package, sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # Creates the release tag and the GitHub Release.
+    steps:
+      - name: Checkout
+        if: env.DRY_RUN != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Generate release notes
+        id: notes
+        if: env.DRY_RUN != 'true'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          echo "## Release v$VERSION" > release_notes.md
+          echo "" >> release_notes.md
+          # The section runs from this version's "## [X.Y.Z]" heading to the
+          # next "## [" heading.
+          section=""
+          if [ -f CHANGELOG.md ]; then
+            section="$(awk -v heading="## [$VERSION]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found { print }' CHANGELOG.md)"
+          fi
+          if [[ -n "${section//[[:space:]]/}" ]]; then
+            printf '%s\n' "$section" >> release_notes.md
+            echo "has_changelog=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "See CHANGELOG.md for details" >> release_notes.md
+            echo "has_changelog=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update GitHub Release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          HAS_CHANGELOG: ${{ steps.notes.outputs.has_changelog }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease && 'true' || 'false' }}
+        run: |
+          TAG="v${VERSION}"
+          TITLE="Release v${VERSION}"
+          IS_PRERELEASE="false"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$INPUT_PRERELEASE" == "true" ]]; then
+            IS_PRERELEASE="true"
+          fi
+          if [[ "${VERSION}" == *-* ]]; then
+            IS_PRERELEASE="true"
+          fi
+
+          # Ref creation is atomic, so if a concurrent run or a manual push
+          # created the tag first, this fails and the check below compares
+          # against that tag. An existing tag is never moved.
+          if ! git show-ref --verify --quiet "refs/tags/${TAG}"; then
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${TAG}" -f sha="${SOURCE_SHA}" >/dev/null || true
+          fi
+
+          # The tag on GitHub, not the checkout snapshot, decides the release.
+          REMOTE_TAG_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/commits/refs/tags/${TAG}" --jq .sha)"
+          if [[ "$REMOTE_TAG_SHA" != "$SOURCE_SHA" ]]; then
+            echo "Tag ${TAG} points to ${REMOTE_TAG_SHA} on GitHub, not the selected source commit ${SOURCE_SHA}" >&2
+            exit 1
+          fi
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Auto Release publishes the Release with notes generated from the
+            # conventional commits; only replace them with a changelog section.
+            if [[ "${HAS_CHANGELOG}" == "true" ]]; then
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file release_notes.md
+            else
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE"
+            fi
+          else
+            if [[ "${IS_PRERELEASE}" == "true" ]]; then
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "$TITLE" --notes-file release_notes.md --prerelease
+            else
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "$TITLE" --notes-file release_notes.md
+            fi
+          fi
+
+      - name: Dry run
+        if: env.DRY_RUN == 'true'
+        run: echo "Dry run - no tag or GitHub Release is created"
+
   upload-assets:
     name: Upload Release Assets
-    needs: [prepare, build, package, sbom]
+    needs: [prepare, github-release]
     if: github.event_name != 'workflow_dispatch' || !inputs.dry_run
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -380,7 +415,7 @@ jobs:
 
   publish:
     name: Publish to crates.io
-    needs: [prepare, build, package]
+    needs: [prepare, github-release]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Real publishes skip pre-releases (a version suffix such as 1.2.3-rc1, or
