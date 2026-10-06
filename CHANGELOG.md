@@ -6,6 +6,8 @@ All notable changes are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-06
+
 ### Changed
 
 - Upgraded the analysis backends to their latest stable releases: `zip` 0.6 to
@@ -175,7 +177,8 @@ All notable changes are documented here. This project follows
 
 - Example and Clippy compatibility issues in the initial release series.
 
-[Unreleased]: https://github.com/ThreatFlux/threatflux-binary-analysis/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ThreatFlux/threatflux-binary-analysis/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/ThreatFlux/threatflux-binary-analysis/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ThreatFlux/threatflux-binary-analysis/compare/0.2.0...v0.3.0
 [0.2.0]: https://github.com/ThreatFlux/threatflux-binary-analysis/compare/0.1.9...0.2.0
 [0.1.9]: https://github.com/ThreatFlux/threatflux-binary-analysis/compare/0.1.8...0.1.9
