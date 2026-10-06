@@ -1,8 +1,10 @@
 CARGO ?= cargo
+SBOM_NAME ?= threatflux-binary-analysis
+SBOM_MANIFEST_PATH ?= Cargo.toml
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ci check fmt fmt-check lint test feature-check docs security package coverage tools clean
+.PHONY: help ci check fmt fmt-check lint test feature-check docs security package sbom coverage tools clean
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*##"; printf "%-18s %s\n", "Target", "Purpose"} /^[a-zA-Z_-]+:.*##/ {printf "%-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -38,6 +40,12 @@ security: ## Enforce RustSec and dependency policy
 package: ## Verify the crates.io source package
 	$(CARGO) package --locked
 
+sbom: ## Generate a CycloneDX SBOM in sbom/ (needs cargo-cyclonedx)
+	mkdir -p sbom
+	rm -f sbom/*.json
+	$(CARGO) cyclonedx --manifest-path $(SBOM_MANIFEST_PATH) --all-features --format json --spec-version 1.5 --override-filename $(SBOM_NAME)-sbom
+	find . -maxdepth 4 \( -path ./target -o -path ./sbom -o -path ./.git \) -prune -o -name '$(SBOM_NAME)-sbom.json' -exec mv {} sbom/ \;
+
 coverage: ## Generate HTML coverage with cargo-llvm-cov
 	$(CARGO) llvm-cov --workspace --all-features --locked --html
 
@@ -47,6 +55,7 @@ tools: ## Install the pinned Cargo tools used by CI
 	$(CARGO) install --locked cargo-hack@0.6.45
 	$(CARGO) install --locked cargo-llvm-cov@0.8.7
 	$(CARGO) install --locked cargo-semver-checks@0.49.0
+	$(CARGO) install --locked cargo-cyclonedx@0.5.9
 
 clean: ## Remove Cargo build output
 	$(CARGO) clean

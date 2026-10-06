@@ -1,7 +1,7 @@
 # ThreatFlux Binary Analysis API Guide
 
-This guide describes the public API on the upcoming 0.3.0 development line. The
-current crates.io release remains 0.2.0 until 0.3.0 is published. See
+This guide describes the public API of the 0.3 line, published on crates.io
+since 0.3.0 (2026-08-03). See
 [Migrating to 0.3](docs/MIGRATING_TO_0.3.md) for intentional API changes.
 Generated Rust documentation remains the item-by-item reference:
 

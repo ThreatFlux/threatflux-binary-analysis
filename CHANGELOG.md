@@ -19,11 +19,17 @@ All notable changes are documented here. This project follows
 - WebAssembly import parsing flattens the grouped import encoding that
   `wasmparser` 0.256 introduced, so compact imports are still reported
   individually.
+- Releases publish to crates.io through trusted publishing: the release
+  workflow exchanges a short-lived OIDC token in the `crates-io` environment,
+  so no long-lived registry secret is stored. Auto Release now uses the
+  ThreatFlux reusable workflow, and both release workflows accept a `dry_run`
+  input. A release builds the library for Linux (gnu, musl, arm64), macOS, and
+  Windows and attaches the `.crate` file, its checksum, and a CycloneDX SBOM.
 
 ### Fixed
 
-- The README described 0.3.0 as unpublished; it has been on crates.io since
-  2026-08-03.
+- The README, API guide, migration guide, and security policy described 0.3.0
+  as unpublished; it has been on crates.io since 2026-08-03.
 - An automated tag now dispatches `release.yml`. GitHub does not start
   workflows for pushes authored by `GITHUB_TOKEN`, so tag-triggered publishing
   never ran.

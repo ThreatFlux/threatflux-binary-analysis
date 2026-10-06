@@ -28,3 +28,6 @@ perf.data*
 # Operating-system metadata
 .DS_Store
 Thumbs.db
+
+# Generated SBOMs
+/sbom/
