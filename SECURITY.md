@@ -6,15 +6,14 @@ disassembly, or unsafe invariants are in scope for private reporting.
 
 ## Supported versions
 
-| Line            | Status                                       |
-| --------------- | -------------------------------------------- |
-| 0.3.x           | Upcoming development line; not yet published |
-| 0.2.x           | Current published line                       |
-| 0.1.x and older | No longer supported                          |
+| Line            | Status                                    |
+| --------------- | ----------------------------------------- |
+| 0.3.x           | Current published line (crates.io)        |
+| 0.2.x           | Previous line; fixes only where practical |
+| 0.1.x and older | No longer supported                       |
 
-Security fixes normally target the active development line and, where
-practical, the current published line. An advisory will identify the exact
-affected and fixed versions.
+Security fixes target the current published line and, where practical, the
+previous line. An advisory will identify the exact affected and fixed versions.
 
 ## Report a vulnerability privately
 

@@ -1,15 +1,14 @@
 # Migrating from 0.2 to 0.3
 
-Version 0.3.0 is the upcoming development release. Version 0.2.0 remains the
-current crates.io release until the tag-driven release workflow publishes
-0.3.0.
+Version 0.3.0 has been published on crates.io since 2026-08-03 and replaces
+0.2.0 as the current release line.
 
 The 0.3 line tightens untrusted-input behavior and removes placeholder APIs.
 Review the changes below before updating a dependency requirement.
 
 ## Dependency version
 
-After 0.3.0 is published:
+Update the requirement to the 0.3 line:
 
 ```toml
 [dependencies]
@@ -258,7 +257,7 @@ without the <code>serde-support</code> feature returns
 
 ## Upgrade checklist
 
-- Update the Cargo requirement when 0.3.0 is published.
+- Update the Cargo requirement to <code>0.3</code>.
 - Add runtime opt-ins for every optional analysis you intend to run.
 - Handle <code>FeatureNotAvailable</code> and <code>InputTooLarge</code>.
 - Set <code>max_disassembly_instructions</code> and add it to exhaustive config

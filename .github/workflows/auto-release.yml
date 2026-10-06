@@ -1,12 +1,16 @@
 name: Auto Release
 
 concurrency:
-  group: auto-release-${{ github.event.workflow_run.head_branch || github.ref_name || 'main' }}
+  # Dry runs use their own group so they never cancel a real release.
+  group: auto-release-${{ github.event.workflow_run.head_branch || github.ref_name || 'main' }}${{ inputs.dry_run && '-dry-run' || '' }}
   cancel-in-progress: true
 
 on:
-  workflow_run:
-    workflows: ["CI", "Security"]
+  # workflow_run is required to release only after CI and Security pass on main.
+  # The reusable workflow gates on a successful run from this repository (never
+  # a fork) and executes no code from the triggering checkout.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [CI, Security]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -21,104 +25,32 @@ on:
           - patch
           - minor
           - major
+      dry_run:
+        description: Report the next release without creating a commit, tag, or release
+        required: false
+        default: false
+        type: boolean
 
+# Read-only by default; the release job below grants the reusable workflow
+# only the write scopes it needs.
 permissions:
-  contents: read
+  actions: read # The reusable workflow reads CI and Security run results.
+  contents: read # Check out the target commit.
+  pull-requests: read # Read the release pull request in release-PR mode.
 
 jobs:
-  check:
-    name: Check for Release
-    runs-on: ubuntu-latest
-    if: >-
-      (github.event_name == 'workflow_run' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository) ||
-      github.event_name == 'workflow_dispatch'
-    permissions:
-      actions: read
-      contents: read
-    outputs:
-      should_release: ${{ steps.decide.outputs.should_release }}
-      target_sha: ${{ steps.target.outputs.sha }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref_name }}
-
-      - name: Determine target SHA
-        id: target
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          if [[ "${EVENT_NAME}" == "workflow_run" ]]; then
-            if [[ ! "${WORKFLOW_RUN_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
-              echo "Invalid workflow-run head SHA" >&2
-              exit 1
-            fi
-            echo "sha=${WORKFLOW_RUN_HEAD_SHA}" >> "$GITHUB_OUTPUT"
-          else
-            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check CI status
-        id: ci_status
-        run: |
-          TARGET_SHA="${{ steps.target.outputs.sha }}"
-          CI_STATUS=$(gh run list --workflow=ci.yml --branch=main --commit="$TARGET_SHA" --event=push --limit=1 --json conclusion --jq '.[0].conclusion // ""')
-          SECURITY_STATUS=$(gh run list --workflow=security.yml --branch=main --commit="$TARGET_SHA" --event=push --limit=1 --json conclusion --jq '.[0].conclusion // ""')
-          if [[ "$CI_STATUS" == "success" ]] && [[ "$SECURITY_STATUS" == "success" ]]; then
-            echo "all_passed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "all_passed=false" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Decide whether to attempt a release
-        id: decide
-        env:
-          ALL_PASSED: ${{ steps.ci_status.outputs.all_passed }}
-        run: |
-          # The release action itself no-ops when no conventional commit
-          # warrants a release, so this gate only enforces green required runs.
-          if [[ "${ALL_PASSED}" == "true" ]]; then
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          fi
-
   release:
-    name: Create Release
-    needs: check
-    if: needs.check.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
     permissions:
-      contents: write
-      actions: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ needs.check.outputs.target_sha }}
-
-      - name: Release
-        id: release
-        uses: ThreatFlux/github_actions@7a5f08885a77520db023882c8de17d9e6580b7ae # v0.7.5
-        with:
-          command: release
-          token: ${{ secrets.GITHUB_TOKEN }}
-          bump: ${{ github.event.inputs.version_bump || 'auto' }}
-
-      # GitHub does not start workflows for pushes authored by GITHUB_TOKEN, so
-      # the tag this job just created cannot trigger release.yml on its own.
-      - name: Dispatch the release workflow
-        if: steps.release.outputs.released == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.release.outputs.tag }}
-        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+      actions: write # Dispatches release.yml for the new tag.
+      contents: write # Pushes the version commit and tag, and creates the GitHub Release.
+      pull-requests: write # Required by the reusable workflow's release-PR mode.
+    uses: ThreatFlux/github_actions/.github/workflows/reusable-auto-release.yml@8633e03be96acd076b36bfdf7bec2345e6614c5c # v0.7.6
+    with:
+      bump: ${{ github.event.inputs.version_bump || 'auto' }}
+      # Only a manual dispatch can request a dry run; workflow_run always releases.
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+      required-workflows: CI,Security
+      # GitHub does not start workflows for a tag pushed with GITHUB_TOKEN, so
+      # the reusable workflow dispatches release.yml with the new version.
+      dispatch-workflows: release.yml
+      dispatch-version-workflow: release.yml

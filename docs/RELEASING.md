@@ -1,105 +1,113 @@
 # Release Guide
 
-Releases are tag-driven and publish to crates.io with the protected
-organization-level `CARGO_REGISTRY_TOKEN` Actions secret.
+Releases are automated from conventional commits on <code>main</code> and
+publish to crates.io through
+[trusted publishing](https://crates.io/docs/trusted-publishing). No long-lived
+crates.io token is stored in GitHub.
 
-Only maintainers with release authority should perform these steps.
+Only maintainers with release authority should change the release workflows or
+dispatch a real release.
 
-## One-time repository configuration
+## One-time configuration
 
-The release path depends on two protected settings:
+The release path depends on two settings outside this repository's source:
 
-1. A GitHub Actions environment named <code>crates-io</code>. Configure the
+1. crates.io trusted publishing for <code>threatflux-binary-analysis</code>,
+   trusting the <code>ThreatFlux</code> owner, this repository, the
+   <code>release.yml</code> workflow, and the <code>crates-io</code>
+   environment. The workflow file name and environment name must stay exactly
+   as written or the OIDC token exchange is rejected.
+2. A GitHub Actions environment named <code>crates-io</code>. Configure the
    required reviewers and deployment protections appropriate for the
    repository.
-2. The organization-level <code>CARGO_REGISTRY_TOKEN</code> Actions secret must
-   be visible to this repository and belong to an appropriately scoped
-   crates.io automation identity. The workflow exposes it only to the
-   <code>cargo publish</code> step; never print, persist, or pass it to
-   third-party actions.
 
-## Prepare the release in a pull request
+## How a release happens
 
-Version and release notes land before the tag:
+1. Merge pull requests to <code>main</code> with conventional commit subjects.
+   <code>fix:</code> produces a patch release, <code>feat:</code> a minor
+   release, and a breaking change (<code>!</code> or
+   <code>BREAKING CHANGE:</code>) a major release. <code>ci:</code>,
+   <code>build:</code>, <code>chore:</code>, <code>docs:</code>, and
+   <code>test:</code> do not release on their own.
+2. When the <code>CI</code> and <code>Security</code> workflows both pass on
+   the new <code>main</code> commit, <code>Auto Release</code> calls the
+   ThreatFlux reusable auto-release workflow. It bumps
+   <code>Cargo.toml</code>, pushes the version commit and the
+   <code>v&lt;version&gt;</code> tag, creates the GitHub Release, and dispatches
+   <code>release.yml</code> for that tag.
+3. <code>release.yml</code>:
+   1. checks that the tag points at the selected commit and that the manifest
+      version matches the release version;
+   2. builds the library with every feature for Linux (gnu, musl, arm64),
+      macOS (arm64, x86-64), and Windows, and runs the release-mode test suite
+      on the native targets;
+   3. checks formatting and Clippy, packages the crate, and generates a
+      CycloneDX SBOM;
+   4. uploads the <code>.crate</code> file, its SHA-256 checksum, and the SBOM
+      to the GitHub Release;
+   5. enters the <code>crates-io</code> environment, exchanges the job's OIDC
+      token for a short-lived crates.io token with
+      <code>rust-lang/crates-io-auth-action</code>, and runs
+      <code>cargo publish</code>. A version that is already on crates.io is
+      skipped, so a re-run never fails on an immutable version.
 
-1. Update the package version.
-2. Move the intended entries into a dated version section in
-   <code>CHANGELOG.md</code>.
-3. Update versioned documentation and examples.
-4. Run the complete local contract:
+Watch both workflows through completion. A GitHub Release without a successful
+crates.io publication is not a complete release; a failed publish fails the
+run.
 
-   ```console
-   make ci
-   cargo package --locked --allow-dirty
-   ```
+## Rehearse a release
 
-   <code>--allow-dirty</code> is appropriate only while validating the release
-   commit before it is merged; inspect the package file list carefully.
-
-5. Open and merge the release-preparation pull request.
-6. Confirm the merge commit is on <code>main</code> and required CI checks pass.
-
-Do not tag a version that exists only on an unmerged branch.
-
-## Tag the release
-
-Start from an up-to-date, clean <code>main</code> worktree. Replace
-<code>0.3.0</code> below with the version already present in the manifest and
-changelog:
+Both workflows accept a <code>dry_run</code> input that never creates a
+commit, tag, GitHub Release, or crates.io version:
 
 ```console
-git switch main
-git pull --ff-only origin main
-git status --short
-git tag -a v0.3.0 -m "Release v0.3.0"
-git show --stat v0.3.0
-git push origin v0.3.0
+# Report the version Auto Release would cut next.
+gh workflow run auto-release.yml --ref main -f version_bump=auto -f dry_run=true
+
+# Build every target, package the crate, generate the SBOM, and run
+# `cargo publish --dry-run` for the commit on main.
+gh workflow run release.yml --ref main -f version=0.3.1 -f dry_run=true
 ```
 
-The tag must:
+A dry run of <code>release.yml</code> warns, rather than fails, when the
+requested version differs from the manifest; it always packages and verifies
+the manifest version.
 
-- use the exact <code>v&lt;version&gt;</code> form;
-- be an annotated tag, not a lightweight tag;
-- point to <code>main</code>;
-- match the package version exactly.
+## Manual release
 
-Tag protection should limit who can create or update <code>v\*</code> tags.
+To release without Auto Release, first merge a pull request that sets the
+<code>Cargo.toml</code> version and moves the matching entries into a dated
+<code>CHANGELOG.md</code> section, then dispatch the release workflow on
+<code>main</code> with that exact version:
 
-## Automated release sequence
+```console
+gh workflow run release.yml --ref main -f version=X.Y.Z
+```
 
-The <code>Release</code> workflow triggered by the tag:
-
-1. verifies that tag and manifest versions match;
-2. formats, lints, tests, builds, and checks the package;
-3. packages the crate and verifies the packaged contents;
-4. enters the protected <code>crates-io</code> environment;
-5. publishes the crate with the protected organization registry credential;
-6. creates the GitHub release only after publication succeeds.
-
-Watch the workflow through completion. A GitHub release without a successful
-crate publication should not be treated as a complete release.
+The workflow creates the <code>vX.Y.Z</code> tag on the selected commit. It
+refuses to run if that tag already exists on a different commit.
 
 ## Verify
 
-After the workflow succeeds:
+After the workflows succeed:
 
 - confirm the exact version appears on crates.io;
 - inspect the crates.io dependency/features/readme rendering;
-- confirm the GitHub release points at the annotated tag and contains the
-  intended notes/artifacts;
-- verify generated documentation for the new version;
-- install or build the published crate in a clean temporary project.
+- confirm the GitHub Release points at the tag and contains the intended
+  notes, the <code>.crate</code> file, its checksum, and the SBOM;
+- verify generated documentation for the new version on docs.rs;
+- build the published crate in a clean temporary project.
 
 ## Failure handling
 
-- Before pushing a tag, correct the release commit and repeat local validation.
-- After pushing a tag but before publication, investigate the failed workflow.
-  Do not move or recreate a published tag silently.
+- Investigate a failed <code>release.yml</code> run and re-run it. A
+  version that is already on crates.io is skipped, so a re-run completes the
+  remaining steps. Do not move or recreate a published tag.
 - crates.io versions are immutable. If a bad version is published, coordinate a
   yank when appropriate, prepare a new patch version, and publish a fixed
   release.
-- Never work around the protected environment or organization credential by
-  introducing a personal crates.io token.
+- Never work around trusted publishing by introducing a personal or
+  organization crates.io token.
 
 Record any release incident and the corrective action in the next release's
 notes.
