@@ -15,10 +15,6 @@ on:
         description: Version to release (e.g. 1.0.0)
         required: true
         type: string
-      source_ref:
-        description: Git ref to build from
-        required: false
-        type: string
       prerelease:
         description: Is this a pre-release?
         required: false
@@ -55,34 +51,25 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       source_sha: ${{ steps.source_sha.outputs.source_sha }}
     steps:
-      - name: Determine source ref
-        id: source_ref
-        env:
-          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && -n "$INPUT_SOURCE_REF" ]]; then
-            SOURCE_REF="$INPUT_SOURCE_REF"
-          else
-            SOURCE_REF="${GITHUB_REF}"
-          fi
-          if [[ "$SOURCE_REF" == *$'\n'* || "$SOURCE_REF" == *$'\r'* ]]; then
-            echo "Source ref must be one line" >&2
-            exit 1
-          fi
-          echo "source_ref=${SOURCE_REF}" >> "$GITHUB_OUTPUT"
-
+      # Every job builds the commit this run was started for (the pushed tag,
+      # or the ref a dispatch names), never a ref taken from an input, so no
+      # job runs code outside the workflow's own revision. To release another
+      # ref, dispatch the workflow on that ref.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ steps.source_ref.outputs.source_ref }}
 
-      # Resolve the ref once; the tag and every downstream job use this exact
-      # commit, so a moving branch cannot make assets differ from the tag.
       - name: Resolve source commit
         id: source_sha
-        run: echo "source_sha=$(git rev-parse --verify HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          SOURCE_SHA="$(git rev-parse --verify HEAD)"
+          if [[ "$SOURCE_SHA" != "$GITHUB_SHA" ]]; then
+            echo "Checked out ${SOURCE_SHA}, expected ${GITHUB_SHA}" >&2
+            exit 1
+          fi
+          echo "source_sha=${SOURCE_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Determine version
         id: version
@@ -255,7 +242,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
@@ -294,7 +280,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
@@ -338,7 +323,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
@@ -419,7 +403,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
