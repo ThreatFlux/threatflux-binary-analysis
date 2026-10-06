@@ -41,16 +41,23 @@ permissions:
 jobs:
   release:
     permissions:
-      actions: write # Dispatches release.yml for the new tag.
+      actions: write # Dispatches release.yml if a release falls back to GITHUB_TOKEN.
       contents: write # Pushes the version commit and tag, and creates the GitHub Release.
       pull-requests: write # Required by the reusable workflow's release-PR mode.
-    uses: ThreatFlux/github_actions/.github/workflows/reusable-auto-release.yml@8633e03be96acd076b36bfdf7bec2345e6614c5c # v0.7.6
+    uses: ThreatFlux/github_actions/.github/workflows/reusable-auto-release.yml@eb9f3cf78c3899be0c4c9323d5cc86de5e1fdee8 # v0.7.7
     with:
       bump: ${{ github.event.inputs.version_bump || 'auto' }}
       # Only a manual dispatch can request a dry run; workflow_run always releases.
       dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
       required-workflows: CI,Security
-      # GitHub does not start workflows for a tag pushed with GITHUB_TOKEN, so
-      # the reusable workflow dispatches release.yml with the new version.
+      # The ThreatFlux automation GitHub App pushes the release tag, which
+      # starts release.yml through its `push: tags` trigger, so the reusable
+      # workflow dispatches nothing on that path (dispatch-on-app-token stays
+      # false, so release.yml never runs twice). release.yml is dispatched with
+      # the version input only if a release falls back to GITHUB_TOKEN, whose
+      # tag pushes start no workflows.
       dispatch-workflows: release.yml
       dispatch-version-workflow: release.yml
+      github-app-id: ${{ vars.TF_AUTOMATION_APP_ID }}
+    secrets:
+      github-app-private-key: ${{ secrets.TF_AUTOMATION_APP_PRIVATE_KEY }}

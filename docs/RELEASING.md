@@ -10,7 +10,7 @@ dispatch a real release.
 
 ## One-time configuration
 
-The release path depends on two settings outside this repository's source:
+The release path depends on three settings outside this repository's source:
 
 1. crates.io trusted publishing for <code>threatflux-binary-analysis</code>,
    trusting the <code>ThreatFlux</code> owner, this repository, the
@@ -20,6 +20,11 @@ The release path depends on two settings outside this repository's source:
 2. A GitHub Actions environment named <code>crates-io</code>. Configure the
    required reviewers and deployment protections appropriate for the
    repository.
+3. The ThreatFlux automation GitHub App, installed on this repository, with
+   its ID in the organization variable <code>TF_AUTOMATION_APP_ID</code> and
+   its private key in the organization secret
+   <code>TF_AUTOMATION_APP_PRIVATE_KEY</code>. Auto Release mints a
+   short-lived installation token from them, scoped to this repository.
 
 ## How a release happens
 
@@ -31,10 +36,14 @@ The release path depends on two settings outside this repository's source:
    <code>test:</code> do not release on their own.
 2. When the <code>CI</code> and <code>Security</code> workflows both pass on
    the new <code>main</code> commit, <code>Auto Release</code> calls the
-   ThreatFlux reusable auto-release workflow. It bumps
+   ThreatFlux reusable auto-release workflow. As the GitHub App, it bumps
    <code>Cargo.toml</code>, pushes the version commit and the
-   <code>v&lt;version&gt;</code> tag, creates the GitHub Release, and dispatches
-   <code>release.yml</code> for that tag.
+   <code>v&lt;version&gt;</code> tag, and creates the GitHub Release. The
+   App-pushed tag starts <code>release.yml</code> through its
+   <code>push: tags</code> trigger, so nothing is dispatched and the release
+   workflow runs exactly once. Only if a release falls back to
+   <code>GITHUB_TOKEN</code>, whose tag pushes start no workflows, does Auto
+   Release dispatch <code>release.yml</code> for the tag instead.
 3. <code>release.yml</code> builds the commit the run was started for:
    1. checks that the manifest version matches the release version, that the
       commit is on <code>main</code>, and that an existing tag already points
@@ -63,7 +72,8 @@ Both workflows accept a <code>dry_run</code> input that never creates a
 commit, tag, GitHub Release, or crates.io version:
 
 ```console
-# Report the version Auto Release would cut next.
+# Report the version Auto Release would cut next. The run still mints the
+# GitHub App token, so it also checks the App configuration.
 gh workflow run auto-release.yml --ref main -f version_bump=auto -f dry_run=true
 
 # Build every target, package the crate, generate the SBOM, and run
