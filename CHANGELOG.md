@@ -30,9 +30,11 @@ All notable changes are documented here. This project follows
 
 - The README, API guide, migration guide, and security policy described 0.3.0
   as unpublished; it has been on crates.io since 2026-08-03.
-- An automated tag now dispatches `release.yml`. GitHub does not start
+- An automated release now starts `release.yml`. GitHub does not start
   workflows for pushes authored by `GITHUB_TOKEN`, so tag-triggered publishing
-  never ran.
+  never ran. Auto Release now cuts releases as the ThreatFlux automation GitHub
+  App, whose tag push starts `release.yml` exactly once; it dispatches
+  `release.yml` only if it falls back to `GITHUB_TOKEN`.
 
 ## [0.3.0] - 2026-08-03
 
