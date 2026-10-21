@@ -1,7 +1,7 @@
 //! WebAssembly (Wasm) format parser
 
 use crate::{
-    BinaryFormatParser, BinaryFormatTrait, Result,
+    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
         SectionPermissions, SectionType, SecurityFeatures, Symbol,
@@ -61,7 +61,21 @@ fn preflight_wasm_structure(data: &[u8]) -> Result<()> {
                 usize::try_from(section.count()).unwrap_or(usize::MAX)
             }
             Payload::DataSection(section) => usize::try_from(section.count()).unwrap_or(usize::MAX),
-            Payload::DataCountSection { count, .. } | Payload::CodeSectionStart { count, .. } => {
+            Payload::CodeSectionStart {
+                count,
+                unchecked_range: range,
+                ..
+            } => {
+                // Streaming code-section ranges are unchecked by wasmparser.
+                // Reject them before validation or publishing section metadata.
+                if range.start > range.end || range.end > data.len() as u64 {
+                    return Err(BinaryError::invalid_data(
+                        "WebAssembly code section range exceeds input",
+                    ));
+                }
+                usize::try_from(*count).unwrap_or(usize::MAX)
+            }
+            Payload::DataCountSection { count, .. } => {
                 usize::try_from(*count).unwrap_or(usize::MAX)
             }
             Payload::StartSection { .. }
@@ -117,9 +131,9 @@ impl WasmBinary {
                     sections.push(Section {
                         name: output_budget.copy_name("import", "WebAssembly section name")?,
                         address: 0,
-                        size: (range.end - range.start) as u64,
-                        offset: range.start as u64,
-                        file_size: (range.end - range.start) as u64,
+                        size: range.end - range.start,
+                        offset: range.start,
+                        file_size: range.end - range.start,
                         permissions: SectionPermissions {
                             read: true,
                             write: false,
@@ -148,9 +162,9 @@ impl WasmBinary {
                     sections.push(Section {
                         name: output_budget.copy_name("export", "WebAssembly section name")?,
                         address: 0,
-                        size: (range.end - range.start) as u64,
-                        offset: range.start as u64,
-                        file_size: (range.end - range.start) as u64,
+                        size: range.end - range.start,
+                        offset: range.start,
+                        file_size: range.end - range.start,
                         permissions: SectionPermissions {
                             read: true,
                             write: false,
@@ -162,14 +176,17 @@ impl WasmBinary {
                         data: None,
                     });
                 }
-                Payload::CodeSectionStart { range, .. } => {
+                Payload::CodeSectionStart {
+                    unchecked_range: range,
+                    ..
+                } => {
                     output_budget.reserve_record(&mut sections, "WebAssembly sections")?;
                     sections.push(Section {
                         name: output_budget.copy_name("code", "WebAssembly section name")?,
                         address: 0,
-                        size: (range.end - range.start) as u64,
-                        offset: range.start as u64,
-                        file_size: (range.end - range.start) as u64,
+                        size: range.end - range.start,
+                        offset: range.start,
+                        file_size: range.end - range.start,
                         permissions: SectionPermissions {
                             read: true,
                             write: false,
@@ -189,9 +206,9 @@ impl WasmBinary {
                     sections.push(Section {
                         name: output_budget.copy_name("data", "WebAssembly section name")?,
                         address: 0,
-                        size: (range.end - range.start) as u64,
-                        offset: range.start as u64,
-                        file_size: (range.end - range.start) as u64,
+                        size: range.end - range.start,
+                        offset: range.start,
+                        file_size: range.end - range.start,
                         permissions: SectionPermissions {
                             read: true,
                             write: true,
@@ -211,7 +228,7 @@ impl WasmBinary {
                         name,
                         address: 0,
                         size: section.data().len() as u64,
-                        offset: section.data_offset() as u64,
+                        offset: section.data_offset(),
                         file_size: section.data().len() as u64,
                         permissions: SectionPermissions {
                             read: true,
@@ -297,6 +314,75 @@ mod tests {
                 break;
             }
         }
+    }
+
+    #[test]
+    fn code_section_range_matches_input_and_rejects_truncation() {
+        let module =
+            b"\0asm\x01\0\0\0\x01\x04\x01\x60\x00\x00\x03\x02\x01\x00\x0a\x04\x01\x02\x00\x0b";
+        let parsed = WasmParser::parse(module).unwrap();
+        let code = parsed.sections().iter().find(|s| s.name == "code").unwrap();
+        assert_eq!(code.offset, 20);
+        assert_eq!(code.file_size, 4);
+        assert_eq!(code.size, 4);
+        let error = WasmParser::parse(&module[..module.len() - 1])
+            .err()
+            .expect("truncated code section must fail preflight");
+        assert!(
+            error
+                .to_string()
+                .contains("code section range exceeds input")
+        );
+    }
+
+    #[test]
+    fn imported_function_and_export_preserve_names_and_section_offsets() {
+        let module =
+            wat::parse_str(r#"(module (import "env" "log" (func)) (export "log" (func 0)))"#)
+                .unwrap();
+        let parsed = WasmParser::parse(&module).unwrap();
+        assert_eq!(parsed.imports().len(), 1);
+        assert_eq!(parsed.imports()[0].name, "log");
+        assert_eq!(parsed.imports()[0].library.as_deref(), Some("env"));
+        assert_eq!(parsed.exports().len(), 1);
+        assert_eq!(parsed.exports()[0].name, "log");
+        let sections = parsed.sections();
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections[0].name, "import");
+        assert_eq!(
+            (sections[0].offset, sections[0].size, sections[0].file_size),
+            (16, 11, 11)
+        );
+        assert_eq!(sections[1].name, "export");
+        assert_eq!(
+            (sections[1].offset, sections[1].size, sections[1].file_size),
+            (29, 7, 7)
+        );
+    }
+
+    #[test]
+    fn data_and_custom_section_offsets_identify_original_bytes() {
+        // One memory, an active data segment containing "abc", and a custom
+        // section named "note" containing "xyz". Explicit bytes keep expected
+        // offsets independent of wasmparser and the WAT encoder.
+        let module = b"\0asm\x01\0\0\0\x05\x03\x01\x00\x01\x0b\x09\x01\x00\x41\x00\x0b\x03abc\x00\x08\x04notexyz";
+        let parsed = WasmParser::parse(module).unwrap();
+        assert_eq!(parsed.sections().len(), 2);
+        let data = &parsed.sections()[0];
+        assert_eq!(data.name, "data");
+        assert_eq!((data.offset, data.size, data.file_size), (15, 9, 9));
+        assert_eq!(
+            &module[data.offset as usize..24],
+            b"\x01\x00\x41\x00\x0b\x03abc"
+        );
+        assert!(data.permissions.write);
+        assert!(!data.permissions.execute);
+        let custom = &parsed.sections()[1];
+        assert_eq!(custom.name, "note");
+        assert_eq!((custom.offset, custom.size, custom.file_size), (31, 3, 3));
+        assert_eq!(&module[custom.offset as usize..], b"xyz");
+        assert!(!custom.permissions.write);
+        assert!(!custom.permissions.execute);
     }
 
     #[test]

@@ -5,7 +5,7 @@ submission and review expectations, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Prerequisites
 
-- Rust 1.95.0 or newer; the repository toolchain file pins 1.97.1 with rustfmt
+- Rust 1.95.0 or newer; the repository toolchain file pins 1.99.1 with rustfmt
   and Clippy for reproducible local/CI checks
 - Git
 - A C build environment when compiling the Capstone backend
