@@ -161,11 +161,14 @@ impl JavaParser {
             let file = archive
                 .by_index(i)
                 .map_err(|e| BinaryError::parse(format!("Zip entry error: {e}")))?;
-            if file.is_file() && file.name().ends_with(".class") {
+            let name = file
+                .name()
+                .map_err(|e| BinaryError::parse(format!("Zip entry name error: {e}")))?;
+            if file.is_file() && name.ends_with(".class") {
                 contains_class = true;
                 output_budget.reserve_record(&mut symbols, "JAR class entries")?;
                 symbols.push(Symbol {
-                    name: output_budget.copy_name(file.name(), "JAR class entry name")?,
+                    name: output_budget.copy_name(&name, "JAR class entry name")?,
                     demangled_name: None,
                     address: 0,
                     size: file.size(),
@@ -259,9 +262,9 @@ fn jar_contains_class(data: &[u8]) -> bool {
     }
 
     (0..archive.len()).any(|index| {
-        archive
-            .by_index(index)
-            .is_ok_and(|file| file.is_file() && file.name().ends_with(".class"))
+        archive.by_index(index).is_ok_and(|file| {
+            file.is_file() && file.name().is_ok_and(|name| name.ends_with(".class"))
+        })
     })
 }
 
@@ -410,6 +413,29 @@ mod tests {
     use super::*;
     use std::io::{Cursor, Write};
     use zip::{ZipWriter, write::SimpleFileOptions};
+
+    #[test]
+    fn cp437_entry_name_is_decoded() {
+        let mut output = Cursor::new(Vec::new());
+        {
+            let mut archive = ZipWriter::new(&mut output);
+            archive
+                .start_file("Main.class", SimpleFileOptions::default())
+                .unwrap();
+            archive.write_all(b"\xca\xfe\xba\xbe").unwrap();
+            archive.finish().unwrap();
+        }
+        let mut data = output.into_inner();
+        let central = data.windows(4).position(|w| w == b"PK\x01\x02").unwrap();
+        // Replace both names with a CP437 byte without changing archive
+        // offsets or lengths. zip returns an owned decoded name here.
+        data[30] = 0xff;
+        data[central + 46] = 0xff;
+
+        assert!(JavaParser::can_parse(&data));
+        let parsed = JavaParser::parse(&data).unwrap();
+        assert_eq!(parsed.symbols()[0].name, "\u{a0}ain.class");
+    }
 
     #[test]
     fn generic_zip_is_not_claimed_as_java() {

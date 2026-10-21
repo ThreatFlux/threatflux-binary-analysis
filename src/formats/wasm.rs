@@ -1,7 +1,7 @@
 //! WebAssembly (Wasm) format parser
 
 use crate::{
-    BinaryFormatParser, BinaryFormatTrait, Result,
+    BinaryError, BinaryFormatParser, BinaryFormatTrait, Result,
     types::{
         Architecture, BinaryFormat as Format, BinaryMetadata, Endianness, Export, Import, Section,
         SectionPermissions, SectionType, SecurityFeatures, Symbol,
@@ -117,9 +117,9 @@ impl WasmBinary {
                     sections.push(Section {
                         name: output_budget.copy_name("import", "WebAssembly section name")?,
                         address: 0,
-                        size: (range.end - range.start) as u64,
-                        offset: range.start as u64,
-                        file_size: (range.end - range.start) as u64,
+                        size: range.end - range.start,
+                        offset: range.start,
+                        file_size: range.end - range.start,
                         permissions: SectionPermissions {
                             read: true,
                             write: false,
@@ -148,9 +148,9 @@ impl WasmBinary {
                     sections.push(Section {
                         name: output_budget.copy_name("export", "WebAssembly section name")?,
                         address: 0,
-                        size: (range.end - range.start) as u64,
-                        offset: range.start as u64,
-                        file_size: (range.end - range.start) as u64,
+                        size: range.end - range.start,
+                        offset: range.start,
+                        file_size: range.end - range.start,
                         permissions: SectionPermissions {
                             read: true,
                             write: false,
@@ -162,14 +162,24 @@ impl WasmBinary {
                         data: None,
                     });
                 }
-                Payload::CodeSectionStart { range, .. } => {
+                Payload::CodeSectionStart {
+                    unchecked_range: range,
+                    ..
+                } => {
+                    // wasmparser does not validate this streaming range, even
+                    // when the complete module has passed Validator.
+                    if range.start > range.end || range.end > data.len() as u64 {
+                        return Err(BinaryError::invalid_data(
+                            "WebAssembly code section range exceeds input",
+                        ));
+                    }
                     output_budget.reserve_record(&mut sections, "WebAssembly sections")?;
                     sections.push(Section {
                         name: output_budget.copy_name("code", "WebAssembly section name")?,
                         address: 0,
-                        size: (range.end - range.start) as u64,
-                        offset: range.start as u64,
-                        file_size: (range.end - range.start) as u64,
+                        size: range.end - range.start,
+                        offset: range.start,
+                        file_size: range.end - range.start,
                         permissions: SectionPermissions {
                             read: true,
                             write: false,
@@ -189,9 +199,9 @@ impl WasmBinary {
                     sections.push(Section {
                         name: output_budget.copy_name("data", "WebAssembly section name")?,
                         address: 0,
-                        size: (range.end - range.start) as u64,
-                        offset: range.start as u64,
-                        file_size: (range.end - range.start) as u64,
+                        size: range.end - range.start,
+                        offset: range.start,
+                        file_size: range.end - range.start,
                         permissions: SectionPermissions {
                             read: true,
                             write: true,
@@ -211,7 +221,7 @@ impl WasmBinary {
                         name,
                         address: 0,
                         size: section.data().len() as u64,
-                        offset: section.data_offset() as u64,
+                        offset: section.data_offset(),
                         file_size: section.data().len() as u64,
                         permissions: SectionPermissions {
                             read: true,
@@ -297,6 +307,18 @@ mod tests {
                 break;
             }
         }
+    }
+
+    #[test]
+    fn code_section_range_matches_input_and_rejects_truncation() {
+        let module =
+            b"\0asm\x01\0\0\0\x01\x04\x01\x60\x00\x00\x03\x02\x01\x00\x0a\x04\x01\x02\x00\x0b";
+        let parsed = WasmParser::parse(module).unwrap();
+        let code = parsed.sections().iter().find(|s| s.name == "code").unwrap();
+        assert_eq!(code.offset, 20);
+        assert_eq!(code.file_size, 4);
+        assert_eq!(code.size, 4);
+        assert!(WasmParser::parse(&module[..module.len() - 1]).is_err());
     }
 
     #[test]

@@ -53,8 +53,8 @@ tools: ## Install the pinned Cargo tools used by CI
 	$(CARGO) install --locked cargo-audit@0.22.2
 	$(CARGO) install --locked cargo-deny@0.20.2
 	$(CARGO) install --locked cargo-hack@0.6.45
-	$(CARGO) install --locked cargo-llvm-cov@0.8.7
-	$(CARGO) install --locked cargo-semver-checks@0.49.0
+	$(CARGO) install --locked cargo-llvm-cov@0.9.1
+	$(CARGO) install --locked cargo-semver-checks@0.51.0
 	$(CARGO) install --locked cargo-cyclonedx@0.5.9
 
 clean: ## Remove Cargo build output

@@ -6,6 +6,17 @@ All notable changes are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- Consolidated dependency updates onto the latest stable crate releases,
+  including `zip` 9.0.5, `wasmparser` 0.262.0, `wat` 1.262.0, and `rstest`
+  0.28.0, and refreshed the transitive lockfile.
+- Updated the pinned Rust toolchain to 1.99.1, Cargo CI tools, and GitHub
+  Actions pins while retaining the Rust 1.95.0 minimum supported version.
+- Adapted JAR entry-name decoding to zip 9's fallible API and checked the
+  unchecked code-section ranges exposed by wasmparser 0.262 before reporting
+  section metadata.
+
 ## [0.3.1] - 2026-10-06
 
 ### Changed

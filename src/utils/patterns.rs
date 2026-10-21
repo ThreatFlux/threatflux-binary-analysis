@@ -530,7 +530,7 @@ fn compile_hex_wildcard(pattern: &str) -> crate::types::HexPatternResult {
     }
 
     let mut compiled = Vec::with_capacity(clean_pattern.len() / 2);
-    for pair in clean_pattern.as_bytes().chunks_exact(2) {
+    for pair in clean_pattern.as_bytes().as_chunks::<2>().0 {
         if pair == b"??" {
             compiled.push(None); // Wildcard
         } else {
