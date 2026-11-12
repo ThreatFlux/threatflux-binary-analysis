@@ -39,6 +39,7 @@ highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
 skip = [
+    { name = "syn", version = "2.0.119", reason = "latest zeroize_derive 1.5 requires syn 2 while serde/thiserror require syn 3; remove when stable upstream graphs converge" },
     { name = "hashbrown", version = "0.15.5", reason = "petgraph 0.8.3 (the latest release) still requires hashbrown 0.15 while gimli 0.34 and indexmap 2 use 0.17" },
 ]
 skip-tree = []
