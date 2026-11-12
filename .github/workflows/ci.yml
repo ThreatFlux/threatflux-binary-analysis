@@ -100,7 +100,9 @@ jobs:
           toolchain: ${{ env.RUST_MSRV }}
 
       - name: Check all targets and features
-        run: cargo check --all-targets --all-features --locked
+        run: |
+          rustc +"$RUST_MSRV" --version --verbose
+          cargo +"$RUST_MSRV" check --all-targets --all-features --locked
 
   test:
     name: Tests (${{ matrix.os }})
