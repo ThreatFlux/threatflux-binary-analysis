@@ -21,7 +21,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_STABLE: 1.99.1
+  RUST_STABLE: 1.100.0
 
 jobs:
   build:

@@ -17,7 +17,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  RUST_STABLE: 1.99.1
+  RUST_STABLE: 1.100.0
   RUST_MSRV: 1.95.0
 
 jobs:
@@ -158,9 +158,9 @@ jobs:
           toolchain: ${{ env.RUST_STABLE }}
 
       - name: Install cargo-hack
-        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
-          tool: cargo-hack@0.6.45
+          tool: cargo-hack@0.6.46
 
       - name: Check feature combinations
         run: cargo hack check --feature-powerset --depth 2 --locked
@@ -185,7 +185,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-llvm-cov@0.9.1
 
@@ -198,4 +198,4 @@ jobs:
           fail_ci_if_error: true
           files: lcov.info
           use_oidc: true
-          version: v11.3.1
+          version: v11.3.2

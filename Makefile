@@ -50,12 +50,12 @@ coverage: ## Generate HTML coverage with cargo-llvm-cov
 	$(CARGO) llvm-cov --workspace --all-features --locked --html
 
 tools: ## Install the pinned Cargo tools used by CI
-	$(CARGO) install --locked cargo-audit@0.22.2
+	$(CARGO) install --locked cargo-audit@0.23.0
 	$(CARGO) install --locked cargo-deny@0.20.2
-	$(CARGO) install --locked cargo-hack@0.6.45
+	$(CARGO) install --locked cargo-hack@0.6.46
 	$(CARGO) install --locked cargo-llvm-cov@0.9.1
 	$(CARGO) install --locked cargo-semver-checks@0.51.0
-	$(CARGO) install --locked cargo-cyclonedx@0.5.9
+	$(CARGO) install --locked cargo-cyclonedx@0.5.10
 
 clean: ## Remove Cargo build output
 	$(CARGO) clean

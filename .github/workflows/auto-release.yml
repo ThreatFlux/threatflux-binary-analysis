@@ -3,7 +3,8 @@ name: Auto Release
 concurrency:
   # Dry runs use their own group so they never cancel a real release.
   group: auto-release-${{ github.event.workflow_run.head_branch || github.ref_name || 'main' }}${{ inputs.dry_run && '-dry-run' || '' }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+  queue: max
 
 on:
   # workflow_run is required to release only after CI and Security pass on main.
@@ -44,7 +45,7 @@ jobs:
       actions: write # Dispatches release.yml if a release falls back to GITHUB_TOKEN.
       contents: write # Pushes the version commit and tag, and creates the GitHub Release.
       pull-requests: write # Required by the reusable workflow's release-PR mode.
-    uses: ThreatFlux/github_actions/.github/workflows/reusable-auto-release.yml@e0e9e823a404f6d0ae22797e8b19514c63c4ceaf # v0.7.9
+    uses: ThreatFlux/github_actions/.github/workflows/reusable-auto-release.yml@083cc6129d299d47baae1fd648afc8845b6122ce  # v0.7.10
     with:
       bump: ${{ github.event.inputs.version_bump || 'auto' }}
       # Only a manual dispatch can request a dry run; workflow_run always releases.
