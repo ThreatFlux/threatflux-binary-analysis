@@ -35,7 +35,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  RUST_STABLE: 1.99.1
+  RUST_STABLE: 1.100.0
   CRATE_NAME: threatflux-binary-analysis
   # Only workflow_dispatch can set this; tag pushes always perform a real release.
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
@@ -273,9 +273,7 @@ jobs:
           toolchain: ${{ env.RUST_STABLE }}
 
       - name: Install cargo-cyclonedx
-        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
-        with:
-          tool: cargo-cyclonedx@0.5.9
+        run: cargo install --locked --version 0.5.10 cargo-cyclonedx
 
       - name: Generate SBOM file
         env:
