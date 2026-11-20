@@ -684,12 +684,6 @@ fn append_imphash_descriptor(
     let lookup = descriptor.import_lookup_table.as_ref().ok_or_else(|| {
         FieldFailure::Invalid("ordinary import descriptor has no lookup table".to_string())
     })?;
-    if lookup.len() != descriptor.import_address_table.len() {
-        return Err(FieldFailure::Invalid(
-            "ordinary import lookup and address tables enumerate different entry counts"
-                .to_string(),
-        ));
-    }
     let bounded_library = output_budget
         .copy_name(descriptor.name, "PE imphash import library")
         .map_err(FieldFailure::from_budget)?;
@@ -698,6 +692,12 @@ fn append_imphash_descriptor(
     if library.is_empty() {
         return Err(FieldFailure::Invalid(
             "ordinary import descriptor has an empty library name".to_string(),
+        ));
+    }
+    if lookup.len() != descriptor.import_address_table.len() {
+        return Err(FieldFailure::Invalid(
+            "ordinary import lookup and address tables enumerate different entry counts"
+                .to_string(),
         ));
     }
     for entry in lookup {
