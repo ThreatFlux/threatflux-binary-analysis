@@ -2376,7 +2376,9 @@ mod enrichment_tests {
         put_u32(&mut data, 0x58, ((4_u32 << 16) | 5) ^ key);
         put_u32(&mut data, 0x5c, 6 ^ key);
         put_u32(&mut data, 0x64, key);
-        put_u32(&mut data, 0x400 + 12, 0x60);
+        let text_section = PE_OFFSET + 24 + 0xf0;
+        put_u32(&mut data, text_section + 20, 0x40);
+        put_u32(&mut data, 0x400 + 12, 0x1020);
 
         let legacy = crate::BinaryFile::parse(&data).unwrap();
         let enriched = EnrichedBinaryFile::parse(&data).unwrap();
