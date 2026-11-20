@@ -40,11 +40,14 @@ impl PeParser {
         data: &[u8],
     ) -> Result<(Box<dyn BinaryFormatTrait>, FieldOutcome<PeStaticMetadata>)> {
         let mut output_budget = super::ParseOutputBudget::default();
-        let sanitized = without_rich_marker(data);
+        let sanitized = goblin::pe::header::RichHeader::parse(data)
+            .is_err()
+            .then(|| without_rich_marker(data));
+        let parse_data = sanitized.as_deref().unwrap_or(data);
         let mut options = goblin::pe::options::ParseOptions::default();
         options.parse_attribute_certificates = false;
         options.parse_resources = false;
-        let pe = PE::parse_with_opts(&sanitized, &options)?;
+        let pe = PE::parse_with_opts(parse_data, &options)?;
         let certificate_present = certificate_table_is_file_backed(&pe, data);
         let binary = PeBinary::new_with_budget(&pe, data, &mut output_budget, certificate_present)?;
         let metadata = PeStaticMetadata {
@@ -790,9 +793,10 @@ fn extract_rich_header(
         }
     };
 
+    let mut working_budget = *output_budget;
     let mut entries = Vec::new();
     for metadata in header.metadatas() {
-        if let Err(error) = output_budget.reserve_record(&mut entries, "PE Rich records") {
+        if let Err(error) = working_budget.reserve_record(&mut entries, "PE Rich records") {
             return budget_outcome(error);
         }
         let metadata = match metadata {
@@ -809,6 +813,7 @@ fn extract_rich_header(
             use_count: metadata.use_count,
         });
     }
+    *output_budget = working_budget;
 
     FieldOutcome::Present {
         value: RichHeader {
@@ -1042,12 +1047,14 @@ fn authenticode_certificate_range(
     if !certificate_directory_is_present(directory)? {
         return Ok(None);
     }
-    Ok(Some(checked_certificate_range(
-        directory.virtual_address,
-        directory.size,
-        data,
-        image_tail,
-    )?))
+    let range =
+        checked_certificate_range(directory.virtual_address, directory.size, data, image_tail)?;
+    if range.end != data.len() {
+        return Err(FieldFailure::Unsupported(
+            "Certificate Table is not terminal in the file".to_string(),
+        ));
+    }
+    Ok(Some(range))
 }
 
 fn certificate_directory_is_present(
@@ -1703,15 +1710,45 @@ impl FieldFailure {
 }
 
 fn certificate_table_is_file_backed(pe: &PE<'_>, data: &[u8]) -> bool {
+    let Some(image_tail) = file_backed_image_tail(pe, data.len()) else {
+        return false;
+    };
     pe.header
         .optional_header
         .as_ref()
         .and_then(|header| header.data_directories.get_certificate_table())
         .is_some_and(|directory| {
             certificate_directory_is_present(directory).is_ok_and(|present| present)
-                && checked_certificate_range(directory.virtual_address, directory.size, data, 0)
-                    .is_ok()
+                && checked_certificate_range(
+                    directory.virtual_address,
+                    directory.size,
+                    data,
+                    image_tail,
+                )
+                .is_ok()
         })
+}
+
+fn file_backed_image_tail(pe: &PE<'_>, data_len: usize) -> Option<usize> {
+    let optional = pe.header.optional_header.as_ref()?;
+    let mut image_tail = usize::try_from(optional.windows_fields.size_of_headers).ok()?;
+    if image_tail > data_len {
+        return None;
+    }
+    for section in pe
+        .sections
+        .iter()
+        .filter(|section| section.size_of_raw_data != 0)
+    {
+        let start = usize::try_from(section.pointer_to_raw_data).ok()?;
+        let size = usize::try_from(section.size_of_raw_data).ok()?;
+        let end = start.checked_add(size)?;
+        if end > data_len {
+            return None;
+        }
+        image_tail = image_tail.max(end);
+    }
+    Some(image_tail)
 }
 
 fn analyze_security_features(pe: &PE, certificate_present: bool) -> SecurityFeatures {
@@ -2312,6 +2349,63 @@ mod enrichment_tests {
     }
 
     #[test]
+    fn rich_header_failure_rolls_back_the_shared_output_budget() {
+        let data = build_fixture(PeWidth::Pe64, false, false, false);
+        let mut budget = super::super::ParseOutputBudget {
+            records: super::super::MAX_PARSED_RECORDS - 1,
+            name_bytes: 23,
+        };
+        assert!(matches!(
+            extract_rich_header(&data, &mut budget),
+            FieldOutcome::LimitExceeded { .. }
+        ));
+        assert_eq!(budget.records, super::super::MAX_PARSED_RECORDS - 1);
+        assert_eq!(budget.name_bytes, 23);
+    }
+
+    #[test]
+    fn enriched_parser_preserves_legacy_imports_that_reference_rich_bytes() {
+        let mut data = build_fixture(PeWidth::Pe64, false, false, false);
+        let key = 0x4141_4141;
+        put_u32(&mut data, 0x40, 0x536e_6144 ^ key);
+        for offset in [0x44, 0x48, 0x4c] {
+            put_u32(&mut data, offset, key);
+        }
+        put_u32(&mut data, 0x50, ((1_u32 << 16) | 2) ^ key);
+        put_u32(&mut data, 0x54, 3 ^ key);
+        put_u32(&mut data, 0x58, ((4_u32 << 16) | 5) ^ key);
+        put_u32(&mut data, 0x5c, 6 ^ key);
+        put_u32(&mut data, 0x64, key);
+        put_u32(&mut data, 0x400 + 12, 0x60);
+
+        let legacy = crate::BinaryFile::parse(&data).unwrap();
+        let enriched = EnrichedBinaryFile::parse(&data).unwrap();
+        let projection = |imports: &[Import]| {
+            imports
+                .iter()
+                .map(|import| {
+                    (
+                        import.name.clone(),
+                        import.library.clone(),
+                        import.address,
+                        import.ordinal,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            legacy
+                .imports()
+                .iter()
+                .any(|import| import.library.as_deref() == Some("RichAAAA"))
+        );
+        assert_eq!(
+            projection(legacy.imports()),
+            projection(enriched.binary().imports())
+        );
+    }
+
+    #[test]
     fn unmapped_import_directory_is_a_top_level_structural_error() {
         let mut data = build_fixture(PeWidth::Pe64, false, false, false);
         let directories = PE_OFFSET + 24 + 112;
@@ -2533,6 +2627,39 @@ mod enrichment_tests {
         let mut short_entry = signed;
         put_u32(&mut short_entry, 0x800, 4);
         assert_malformed_certificate_rejected(&short_entry);
+    }
+
+    #[test]
+    fn authentihash_rejects_a_nonterminal_certificate_table() {
+        let mut data = build_fixture(PeWidth::Pe64, true, false, false);
+        data.extend_from_slice(b"SUFFIX");
+
+        let enriched = BinaryAnalyzer::new().analyze_enriched(&data).unwrap();
+        assert!(enriched.analysis.metadata.security_features.signed);
+        let FieldOutcome::Present { value: pe } = enriched.static_metadata.pe else {
+            panic!("expected PE static metadata");
+        };
+        assert!(matches!(pe.authentihash, FieldOutcome::Unsupported { .. }));
+    }
+
+    #[test]
+    fn certificate_presence_rejects_a_table_inside_the_mapped_image() {
+        let mut data = build_fixture(PeWidth::Pe64, false, false, false);
+        let directories = PE_OFFSET + 24 + 112;
+        put_u32(&mut data, directories + 32, 0x600);
+        put_u32(&mut data, directories + 36, 16);
+        data[0x600..0x610].fill(0);
+        put_u32(&mut data, 0x600, 16);
+        put_u16(&mut data, 0x604, 0x0200);
+        put_u16(&mut data, 0x606, 0x0002);
+        data[0x608..0x610].copy_from_slice(b"FAKECERT");
+
+        let enriched = BinaryAnalyzer::new().analyze_enriched(&data).unwrap();
+        assert!(!enriched.analysis.metadata.security_features.signed);
+        let FieldOutcome::Present { value: pe } = enriched.static_metadata.pe else {
+            panic!("expected PE static metadata");
+        };
+        assert!(matches!(pe.authentihash, FieldOutcome::Invalid { .. }));
     }
 
     fn assert_malformed_certificate_rejected(data: &[u8]) {
