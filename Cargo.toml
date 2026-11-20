@@ -20,6 +20,7 @@ include = [
     "examples/**/*.rs",
     "tests/**/*.rs",
     "tests/**/*.md",
+    "tests/**/*.json",
     "Cargo.toml",
     "README.md",
     "API.md",
@@ -37,7 +38,7 @@ include = [
 [features]
 default = ["elf", "pe", "macho", "java"]
 elf = ["dep:goblin", "goblin/elf32", "goblin/elf64", "goblin/std", "goblin/endian_fd"]
-pe = ["dep:goblin", "goblin/pe32", "goblin/pe64", "goblin/std", "goblin/endian_fd"]
+pe = ["dep:goblin", "dep:md-5", "goblin/pe32", "goblin/pe64", "goblin/std", "goblin/endian_fd"]
 macho = ["dep:goblin", "goblin/mach32", "goblin/mach64", "goblin/std", "goblin/endian_fd"]
 java = ["dep:zip"]
 wasm = ["dep:wasmparser"]
@@ -56,6 +57,8 @@ serde-support = ["dep:serde", "dep:serde_json"]
 [dependencies]
 # Core dependencies
 thiserror = "2.0.21"
+md-5 = { version = "0.10.6", optional = true }
+sha2 = "0.10.9"
 
 # Binary parsing
 goblin = { version = "0.10.7", default-features = false, features = ["alloc"], optional = true }

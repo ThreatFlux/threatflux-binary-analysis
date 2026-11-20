@@ -25,7 +25,7 @@ incomplete output.
 | Input                 | Cargo feature                | Current parser output and limits                                                                                                                                                         |
 | --------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ELF                   | <code>elf</code> (default)   | Header metadata, sections, symbols, imports, exports, and selected hardening metadata                                                                                                    |
-| PE                    | <code>pe</code> (default)    | Header metadata, sections, COFF symbols when present, imports, exports, and selected hardening metadata; Authenticode is not verified                                                    |
+| PE                    | <code>pe</code> (default)    | Header metadata, sections, COFF symbols when present, imports, exports, selected hardening metadata, and opt-in versioned static metadata; Authenticode trust is not verified            |
 | Thin Mach-O           | <code>macho</code> (default) | Header metadata, sections, nlist symbols when present, imports, exports, entry point when reported by the image, and selected hardening metadata; fat/universal binaries are unsupported |
 | Java class            | <code>java</code> (default)  | Fixed-header checks and a synthetic whole-file section; the version is validated for detection but not exposed, and the constant pool, fields, methods, and attributes are not decoded   |
 | JAR                   | <code>java</code> (default)  | Identifies ZIP archives containing class entries and exposes class-entry names as symbols; class bodies are not decoded                                                                  |
@@ -145,6 +145,40 @@ fn inspect(bytes: &[u8]) -> Result<()> {
 The API is synchronous and byte-slice based. <code>BinaryAnalyzer</code>
 enforces its configured input limit, but bounding a file before reading it,
 scheduling work, and applying wall-time limits remain caller responsibilities.
+
+### Versioned PE static metadata
+
+Use the additive enriched entry point when a caller needs a producer-owned,
+persistable PE metadata contract without changing legacy `AnalysisResult`:
+
+```rust
+use threatflux_binary_analysis::{BinaryAnalyzer, EnrichedResult, FieldOutcome};
+
+fn inspect_pe(bytes: &[u8]) -> EnrichedResult<()> {
+    let enriched = BinaryAnalyzer::new().analyze_enriched(bytes)?;
+    if let FieldOutcome::Present { value: pe } = &enriched.static_metadata.pe {
+        println!("imphash outcome: {:?}", pe.imphash);
+        println!("authentihash outcome: {:?}", pe.authentihash);
+    }
+    Ok(())
+}
+```
+
+`EnrichedBinaryFile::parse` plus `analyze_enriched_binary` reuses the same
+enriched parse. `StaticMetadataReport` carries schema and algorithm revisions,
+producer/profile identity, the whole-input SHA-256, and tagged field outcomes.
+With `serde-support`, the report is serializable; `EnrichedAnalysisResult` is
+deserialize-only so legacy section previews, disassembly, and instruction bytes
+cannot be persisted as part of the static report. Archived 0.3.x analysis JSON
+can be read with `EnrichedAnalysisResult::from_compatible_json`; its ordinary
+fields are retained while missing enrichment becomes `not_evaluated` with
+unknown provenance.
+
+The import hash follows the pinned pefile ordinary-import convention. The
+Authenticode value is an image hash, not a signature or trust decision. It is
+emitted only for checked, contiguous file-backed section layouts; the checksum,
+Certificate Table entry, and exact Certificate Table range are excluded.
+Resources expose type/name/language and data metadata only, never payloads.
 
 ## Examples
 

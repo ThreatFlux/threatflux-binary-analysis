@@ -1,0 +1,57 @@
+{
+  "format": "Pe",
+  "architecture": "X86_64",
+  "entry_point": 4198400,
+  "metadata": {
+    "size": 321,
+    "format": "Pe",
+    "architecture": "X86_64",
+    "entry_point": 4198400,
+    "base_address": 4194304,
+    "timestamp": 1700000000,
+    "compiler_info": null,
+    "endian": "Little",
+    "security_features": {
+      "nx_bit": true,
+      "aslr": true,
+      "stack_canary": false,
+      "cfi": false,
+      "fortify": false,
+      "pie": true,
+      "relro": false,
+      "signed": false
+    }
+  },
+  "sections": [
+    {
+      "name": ".text",
+      "address": 4198400,
+      "size": 3,
+      "offset": 512,
+      "file_size": 3,
+      "permissions": {
+        "read": true,
+        "write": false,
+        "execute": true
+      },
+      "section_type": "Code",
+      "data": [144, 144, 195]
+    }
+  ],
+  "symbols": [],
+  "imports": [
+    {
+      "name": "ExitProcess",
+      "library": "KERNEL32.dll",
+      "address": 4202496,
+      "ordinal": null
+    }
+  ],
+  "exports": [],
+  "disassembly": null,
+  "control_flow": null,
+  "entropy": null,
+  "security": null,
+  "call_graph": null,
+  "enhanced_control_flow": null
+}

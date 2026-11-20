@@ -33,6 +33,7 @@
 pub mod analysis;
 pub mod error;
 pub mod formats;
+pub mod static_metadata;
 pub mod types;
 
 #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
@@ -44,6 +45,12 @@ pub mod utils;
 #[cfg(any(feature = "disasm-capstone", feature = "disasm-iced"))]
 pub use disasm::DisassemblyEngine;
 pub use error::{BinaryError, Result};
+pub use static_metadata::{
+    AuthenticodeHash, EnrichedAnalysisError, EnrichedAnalysisResult, EnrichedResult, FieldOutcome,
+    PeStaticMetadata, ReportProvenance, ResourceIdentifier, ResourceLeaf, RichHeader,
+    RichHeaderEntry, STATIC_METADATA_ALGORITHM_REVISION, STATIC_METADATA_SCHEMA_REVISION,
+    StaticMetadataReport,
+};
 pub use types::{
     AnalysisResult, Architecture, BasicBlock, BinaryFormat, BinaryFormatParser, BinaryFormatTrait,
     BinaryMetadata, CallGraph, CallGraphConfig, CallGraphEdge, CallGraphNode, CallGraphStatistics,
@@ -175,6 +182,20 @@ impl BinaryAnalyzer {
         self.analyze_binary(&binary_file)
     }
 
+    /// Analyze bytes and return legacy output plus versioned static metadata.
+    ///
+    /// The enriched parse path retains PE-only structures while Goblin's
+    /// borrowed view is live. Legacy [`Self::analyze`] behavior is unchanged.
+    pub fn analyze_enriched(&self, data: &[u8]) -> EnrichedResult<EnrichedAnalysisResult> {
+        let provenance = ReportProvenance::for_data(data);
+        self.config
+            .validate()
+            .and_then(|()| self.validate_input_size(data.len()))
+            .map_err(|source| EnrichedAnalysisError::new(provenance.clone(), source))?;
+        let binary = EnrichedBinaryFile::parse_with_provenance(data, provenance)?;
+        self.analyze_enriched_binary(&binary)
+    }
+
     /// Analyze a parsed binary file
     pub fn analyze_binary(&self, binary: &BinaryFile) -> Result<AnalysisResult> {
         self.config.validate()?;
@@ -245,6 +266,21 @@ impl BinaryAnalyzer {
         }
 
         Ok(result)
+    }
+
+    /// Analyze an already enriched parse without reparsing its input.
+    pub fn analyze_enriched_binary(
+        &self,
+        binary: &EnrichedBinaryFile,
+    ) -> EnrichedResult<EnrichedAnalysisResult> {
+        let provenance = binary.static_metadata.provenance.clone();
+        let analysis = self
+            .analyze_binary(&binary.binary)
+            .map_err(|source| EnrichedAnalysisError::new(provenance, source))?;
+        Ok(EnrichedAnalysisResult {
+            analysis,
+            static_metadata: binary.static_metadata.clone(),
+        })
     }
 
     fn validate_input_size(&self, actual: usize) -> Result<()> {
@@ -391,6 +427,70 @@ impl Default for BinaryAnalyzer {
 pub struct BinaryFile {
     data: Vec<u8>,
     parsed: Box<dyn BinaryFormatTrait>,
+}
+
+/// Parsed binary plus the versioned static metadata projection.
+///
+/// Use this type when both parsed-file reuse and PE enrichment are required.
+/// Constructing it does not alter [`BinaryFile::parse`] or legacy format
+/// detection.
+pub struct EnrichedBinaryFile {
+    binary: BinaryFile,
+    static_metadata: StaticMetadataReport,
+}
+
+impl EnrichedBinaryFile {
+    /// Parse bytes once and retain PE enrichment alongside the legacy view.
+    pub fn parse(data: &[u8]) -> EnrichedResult<Self> {
+        Self::parse_with_provenance(data, ReportProvenance::for_data(data))
+    }
+
+    fn parse_with_provenance(data: &[u8], provenance: ReportProvenance) -> EnrichedResult<Self> {
+        let format = formats::detect_format(data)
+            .map_err(|source| EnrichedAnalysisError::new(provenance.clone(), source))?;
+
+        #[cfg(feature = "pe")]
+        let (parsed, pe) = if format == BinaryFormat::Pe {
+            formats::pe::PeParser::parse_enriched(data)
+                .map_err(|source| EnrichedAnalysisError::new(provenance.clone(), source))?
+        } else {
+            let parsed = formats::parse_binary(data, format)
+                .map_err(|source| EnrichedAnalysisError::new(provenance.clone(), source))?;
+            (parsed, FieldOutcome::NotApplicable)
+        };
+
+        #[cfg(not(feature = "pe"))]
+        let (parsed, pe) = {
+            let parsed = formats::parse_binary(data, format)
+                .map_err(|source| EnrichedAnalysisError::new(provenance.clone(), source))?;
+            let pe = if formats::has_bounded_pe_signature(data) {
+                FieldOutcome::Unsupported {
+                    reason: "PE parser feature is disabled".to_string(),
+                }
+            } else {
+                FieldOutcome::NotApplicable
+            };
+            (parsed, pe)
+        };
+
+        Ok(Self {
+            binary: BinaryFile {
+                data: data.to_vec(),
+                parsed,
+            },
+            static_metadata: StaticMetadataReport::new(provenance, pe),
+        })
+    }
+
+    /// Borrow the unchanged legacy parsed representation.
+    pub fn binary(&self) -> &BinaryFile {
+        &self.binary
+    }
+
+    /// Borrow the versioned metadata report.
+    pub fn static_metadata(&self) -> &StaticMetadataReport {
+        &self.static_metadata
+    }
 }
 
 impl BinaryFile {
@@ -575,6 +675,23 @@ mod tests {
                 limit: 3
             }
         ));
+    }
+
+    #[test]
+    fn enriched_entry_points_preserve_errors_and_accessors() {
+        let raw = EnrichedBinaryFile::parse(b"raw").unwrap();
+        assert_eq!(raw.binary().format(), BinaryFormat::Raw);
+        assert_eq!(raw.static_metadata().pe, FieldOutcome::NotApplicable);
+        assert!(EnrichedBinaryFile::parse(&[]).is_err());
+
+        let analyzer = BinaryAnalyzer::with_config(AnalysisConfig {
+            max_analysis_size: 3,
+            ..AnalysisConfig::default()
+        });
+        assert!(analyzer.analyze_enriched(b"four").is_err());
+
+        let parsed = EnrichedBinaryFile::parse(b"four").unwrap();
+        assert!(analyzer.analyze_enriched_binary(&parsed).is_err());
     }
 
     #[test]
