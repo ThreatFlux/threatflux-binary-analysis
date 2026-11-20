@@ -59,8 +59,16 @@ Rich records and resource paths are file claims, not compiler attribution or
 trusted localization. Resource traversal returns metadata only. It rejects
 invalid UTF-16, excess depth, cycles, ambiguous overlapping RVA mappings,
 non-file-backed payload spans, and shared parser-budget exhaustion. It never
-returns resource payloads. Imphash is a correlation attribute following the
-pinned pefile convention, not a unique or collision-resistant file identity.
+returns resource payloads. Each RVA lookup charges an explicit mapping-work
+budget, so overlapping section tables cannot force an unbounded section scan.
+Imphash is a correlation attribute following the pinned pefile convention, not
+a unique or collision-resistant file identity. The enriched parser validates
+the raw selected import-thunk table before hashing and returns an `invalid`
+field outcome rather than a partial hash when a thunk or hint/name record is
+not mapped to bounded input bytes under Goblin's RVA rules. An ordinary
+import-directory RVA that Goblin rejects prevents the structural PE parse
+itself and therefore remains a top-level parse error; sibling enriched fields
+are not emitted for that input.
 
 Before Goblin parses thin-image load commands, the parser bounds load-command
 and section counts, validates that section records fit their segment commands,

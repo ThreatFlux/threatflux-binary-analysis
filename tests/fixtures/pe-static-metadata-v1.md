@@ -35,3 +35,8 @@ All import-bearing fixtures have pefile-compatible imphash
 overlap, non-file-backed section, malformed Rich Header, resource cycle,
 ambiguous resource RVA, empty directory, missing directory, and exhausted
 record-budget controls from these bytes.
+
+`analysis-result-0.3.3.json` is a fixed, hand-inspected representation of the
+released v0.3.3 `AnalysisResult` wire schema. It retains section preview bytes
+and `file_size` so the compatibility reader is tested against archived JSON,
+not a value serialized from the current Rust model.
