@@ -925,12 +925,16 @@ fn walk_resource_directory(
                 "resource payload RVA {data_rva:#x} size {size_bytes} is not file-backed"
             )));
         }
+        let resource_type =
+            clone_resource_identifier(&path[0], output_budget, "PE resource leaf type name")?;
+        let resource_name =
+            clone_resource_identifier(&path[1], output_budget, "PE resource leaf resource name")?;
         resources.try_reserve(1).map_err(|error| {
             FieldFailure::Invalid(format!("unable to reserve PE resource output: {error}"))
         })?;
         resources.push(ResourceLeaf {
-            r#type: path[0].clone(),
-            name: path[1].clone(),
+            r#type: resource_type,
+            name: resource_name,
             language: identifier,
             data_rva,
             size_bytes,
@@ -940,6 +944,20 @@ fn walk_resource_directory(
 
     ancestors.remove(&directory_offset);
     Ok(())
+}
+
+fn clone_resource_identifier(
+    identifier: &ResourceIdentifier,
+    output_budget: &mut super::ParseOutputBudget,
+    context: &str,
+) -> std::result::Result<ResourceIdentifier, FieldFailure> {
+    match identifier {
+        ResourceIdentifier::Id { id } => Ok(ResourceIdentifier::Id { id: *id }),
+        ResourceIdentifier::Name { name } => output_budget
+            .copy_name(name, context)
+            .map(|name| ResourceIdentifier::Name { name })
+            .map_err(FieldFailure::from_budget),
+    }
 }
 
 fn read_resource_identifier(
@@ -1654,6 +1672,22 @@ mod enrichment_tests {
             FieldOutcome::LimitExceeded { .. }
         ));
 
+        let named = ResourceIdentifier::Name {
+            name: "named".to_string(),
+        };
+        let mut clone_budget = super::super::ParseOutputBudget {
+            records: 0,
+            name_bytes: super::super::MAX_OWNED_NAME_BYTES - 5,
+        };
+        assert_eq!(
+            clone_resource_identifier(&named, &mut clone_budget, "test resource clone").ok(),
+            Some(named.clone())
+        );
+        assert!(matches!(
+            clone_resource_identifier(&named, &mut clone_budget, "test resource clone"),
+            Err(FieldFailure::Limit(_))
+        ));
+
         let mut ambiguous = build_fixture(PeWidth::Pe64, false, false, false);
         let idata_section = PE_OFFSET + 24 + 0xf0 + 40;
         put_u32(&mut ambiguous, idata_section + 12, 0x3000);
@@ -1731,7 +1765,8 @@ mod enrichment_tests {
         ));
 
         let mut outside = build_fixture(PeWidth::Pe64, false, false, false);
-        put_u32(&mut outside, second_section + 20, 0xffff_f000);
+        let third_section = second_section + 40;
+        put_u32(&mut outside, third_section + 20, 0xffff_f000);
         let outside_pe = parse_for_authentihash(&outside);
         assert!(matches!(
             extract_authentihash(&outside_pe, &outside),
