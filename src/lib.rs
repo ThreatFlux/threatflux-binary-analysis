@@ -678,6 +678,23 @@ mod tests {
     }
 
     #[test]
+    fn enriched_entry_points_preserve_errors_and_accessors() {
+        let raw = EnrichedBinaryFile::parse(b"raw").unwrap();
+        assert_eq!(raw.binary().format(), BinaryFormat::Raw);
+        assert_eq!(raw.static_metadata().pe, FieldOutcome::NotApplicable);
+        assert!(EnrichedBinaryFile::parse(&[]).is_err());
+
+        let analyzer = BinaryAnalyzer::with_config(AnalysisConfig {
+            max_analysis_size: 3,
+            ..AnalysisConfig::default()
+        });
+        assert!(analyzer.analyze_enriched(b"four").is_err());
+
+        let parsed = EnrichedBinaryFile::parse(b"four").unwrap();
+        assert!(analyzer.analyze_enriched_binary(&parsed).is_err());
+    }
+
+    #[test]
     fn input_at_size_limit_is_accepted() {
         let analyzer = BinaryAnalyzer::with_config(AnalysisConfig {
             max_analysis_size: 4,

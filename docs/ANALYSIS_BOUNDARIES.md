@@ -53,7 +53,10 @@ separate SHA-256 image digest and never falls back to that whole-input value.
 The current qualified profile requires contiguous, non-overlapping,
 file-backed raw sections after `SizeOfHeaders`; it hashes checked overlay bytes
 and excludes the checksum, Certificate Table directory entry, and exact
-Certificate Table range. Other layouts return `unsupported` or `invalid`.
+Certificate Table range. Certificate presence additionally requires an
+8-byte-aligned, file-backed table with bounded `WIN_CERTIFICATE` framing; it
+still does not establish signature validity or trust. Other layouts return
+`unsupported` or `invalid`.
 
 Rich records and resource paths are file claims, not compiler attribution or
 trusted localization. Resource traversal returns metadata only. It rejects

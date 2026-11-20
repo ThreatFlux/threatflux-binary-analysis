@@ -406,6 +406,10 @@ mod tests {
             ReportProvenance::default()
         );
         assert_eq!(enriched.static_metadata.pe, FieldOutcome::NotEvaluated);
+
+        let report = StaticMetadataReport::from_compatible_json(&json).unwrap();
+        assert_eq!(report.algorithm_revision, 0);
+        assert_eq!(report.pe, FieldOutcome::NotEvaluated);
     }
 
     #[cfg(feature = "serde-support")]
@@ -484,6 +488,7 @@ mod tests {
             FieldOutcome::NotApplicable,
         );
         let json = serde_json::to_string(&report).unwrap();
+        let compatible = StaticMetadataReport::from_compatible_json(&json).unwrap();
         assert!(!json.contains("section"));
         assert!(!json.contains("disassembly"));
         assert!(!json.contains("instruction_bytes"));
@@ -491,6 +496,7 @@ mod tests {
             report.algorithm_revision,
             STATIC_METADATA_ALGORITHM_REVISION
         );
+        assert_eq!(compatible, report);
     }
 
     #[cfg(not(feature = "pe"))]

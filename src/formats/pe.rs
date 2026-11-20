@@ -460,6 +460,19 @@ fn extract_imphash(
     data: &[u8],
     output_budget: &mut super::ParseOutputBudget,
 ) -> FieldOutcome<String> {
+    let mut field_budget = *output_budget;
+    let outcome = extract_imphash_with_budget(pe, data, &mut field_budget);
+    if matches!(outcome, FieldOutcome::Present { .. } | FieldOutcome::Absent) {
+        *output_budget = field_budget;
+    }
+    outcome
+}
+
+fn extract_imphash_with_budget(
+    pe: &PE<'_>,
+    data: &[u8],
+    output_budget: &mut super::ParseOutputBudget,
+) -> FieldOutcome<String> {
     let Some(import_data) = pe.import_data.as_ref() else {
         return FieldOutcome::Absent;
     };
@@ -849,7 +862,7 @@ fn checked_authentihash(pe: &PE<'_>, data: &[u8]) -> std::result::Result<String,
     let layout = authenticode_header_layout(pe, data.len())?;
     let (section_ranges, image_tail) =
         authenticode_section_ranges(pe, data.len(), layout.header_end)?;
-    let certificate_range = authenticode_certificate_range(pe, data.len(), image_tail)?;
+    let certificate_range = authenticode_certificate_range(pe, data, image_tail)?;
     Ok(hash_authenticode_ranges(
         data,
         &layout,
@@ -1017,7 +1030,7 @@ fn authenticode_section_ranges(
 
 fn authenticode_certificate_range(
     pe: &PE<'_>,
-    data_len: usize,
+    data: &[u8],
     image_tail: usize,
 ) -> std::result::Result<Option<Range<usize>>, FieldFailure> {
     let optional = pe.header.optional_header.as_ref().ok_or_else(|| {
@@ -1032,7 +1045,7 @@ fn authenticode_certificate_range(
     Ok(Some(checked_certificate_range(
         directory.virtual_address,
         directory.size,
-        data_len,
+        data,
         image_tail,
     )?))
 }
@@ -1052,7 +1065,7 @@ fn certificate_directory_is_present(
 fn checked_certificate_range(
     file_offset: u32,
     size: u32,
-    data_len: usize,
+    data: &[u8],
     image_tail: usize,
 ) -> std::result::Result<Range<usize>, FieldFailure> {
     let start = usize::try_from(file_offset).map_err(|_| {
@@ -1063,12 +1076,53 @@ fn checked_certificate_range(
     let end = start.checked_add(size).ok_or_else(|| {
         FieldFailure::Invalid("Certificate Table file range overflows usize".to_string())
     })?;
-    if start < image_tail || end > data_len || start % 8 != 0 {
+    if start < image_tail || end > data.len() || start % 8 != 0 {
         return Err(FieldFailure::Invalid(
             "Certificate Table is not an aligned, file-backed trailing range".to_string(),
         ));
     }
+    validate_win_certificate_table(&data[start..end])?;
     Ok(start..end)
+}
+
+fn validate_win_certificate_table(table: &[u8]) -> std::result::Result<(), FieldFailure> {
+    let mut offset = 0_usize;
+    while offset < table.len() {
+        let header_end = checked_offset(offset, 8, "WIN_CERTIFICATE header")?;
+        let header = table.get(offset..header_end).ok_or_else(|| {
+            FieldFailure::Invalid(
+                "Certificate Table has a truncated WIN_CERTIFICATE header".to_string(),
+            )
+        })?;
+        let length =
+            usize::try_from(u32::from_le_bytes(header[..4].try_into().unwrap())).map_err(|_| {
+                FieldFailure::Invalid("WIN_CERTIFICATE length exceeds usize".to_string())
+            })?;
+        if length < 8 {
+            return Err(FieldFailure::Invalid(
+                "WIN_CERTIFICATE length is smaller than its header".to_string(),
+            ));
+        }
+        let certificate_end = checked_offset(offset, length, "WIN_CERTIFICATE range")?;
+        if certificate_end > table.len() {
+            return Err(FieldFailure::Invalid(
+                "WIN_CERTIFICATE exceeds the Certificate Table".to_string(),
+            ));
+        }
+        let padded_length = length
+            .checked_add(7)
+            .map(|value| value & !7)
+            .ok_or_else(|| {
+                FieldFailure::Invalid("WIN_CERTIFICATE padding overflows usize".to_string())
+            })?;
+        offset = checked_offset(offset, padded_length, "WIN_CERTIFICATE padded range")?;
+        if offset > table.len() {
+            return Err(FieldFailure::Invalid(
+                "WIN_CERTIFICATE padding exceeds the Certificate Table".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn hash_authenticode_ranges(
@@ -1653,14 +1707,10 @@ fn certificate_table_is_file_backed(pe: &PE<'_>, data: &[u8]) -> bool {
         .optional_header
         .as_ref()
         .and_then(|header| header.data_directories.get_certificate_table())
-        .filter(|directory| directory.virtual_address != 0 && directory.size != 0)
         .is_some_and(|directory| {
-            super::checked_file_range(
-                data,
-                u64::from(directory.virtual_address),
-                u64::from(directory.size),
-            )
-            .is_some()
+            certificate_directory_is_present(directory).is_ok_and(|present| present)
+                && checked_certificate_range(directory.virtual_address, directory.size, data, 0)
+                    .is_ok()
         })
 }
 
@@ -1989,6 +2039,15 @@ mod enrichment_tests {
         put_resource_name(data, resource_raw + 0x190, "1");
     }
 
+    fn move_first_resource_payload_after_directory(data: &mut Vec<u8>) {
+        data.resize(0x900, 0);
+        let resource_section = PE_OFFSET + 24 + 0xf0 + 80;
+        put_u32(data, resource_section + 8, 0x300);
+        put_u32(data, resource_section + 16, 0x300);
+        put_u32(data, 0x600 + 0xa0, 0x3200);
+        data[0x800..0x804].copy_from_slice(b"NUM1");
+    }
+
     fn write_fixture_tail(data: &mut [u8], signed: bool, overlay: bool, layout: &FixtureLayout) {
         if overlay {
             data[layout.image_end..layout.image_end + 7].copy_from_slice(b"OVERLAY");
@@ -2235,6 +2294,24 @@ mod enrichment_tests {
     }
 
     #[test]
+    fn imphash_failure_rolls_back_the_shared_output_budget() {
+        let mut data = build_fixture(PeWidth::Pe64, false, false, false);
+        put_u64(&mut data, 0x4c0, 0x7fff_fff0);
+        let options = goblin::pe::options::ParseOptions::default().with_parse_resources(false);
+        let pe = PE::parse_with_opts(&data, &options).unwrap();
+        let mut budget = super::super::ParseOutputBudget {
+            records: 17,
+            name_bytes: 23,
+        };
+        assert!(matches!(
+            extract_imphash(&pe, &data, &mut budget),
+            FieldOutcome::Invalid { .. }
+        ));
+        assert_eq!(budget.records, 17);
+        assert_eq!(budget.name_bytes, 23);
+    }
+
+    #[test]
     fn unmapped_import_directory_is_a_top_level_structural_error() {
         let mut data = build_fixture(PeWidth::Pe64, false, false, false);
         let directories = PE_OFFSET + 24 + 112;
@@ -2364,7 +2441,8 @@ mod enrichment_tests {
         ));
 
         let mut partial = build_fixture(PeWidth::Pe64, false, false, false);
-        put_u32(&mut partial, idata_section + 12, 0x30d2);
+        move_first_resource_payload_after_directory(&mut partial);
+        put_u32(&mut partial, idata_section + 12, 0x3202);
         let pe = PE::parse_with_opts(&partial, &options).unwrap();
         let mut budget = super::super::ParseOutputBudget::default();
         assert!(matches!(
@@ -2373,7 +2451,8 @@ mod enrichment_tests {
         ));
 
         let mut truncated = build_fixture(PeWidth::Pe64, false, false, false);
-        put_u32(&mut truncated, idata_section + 12, 0x30d2);
+        move_first_resource_payload_after_directory(&mut truncated);
+        put_u32(&mut truncated, idata_section + 12, 0x3202);
         put_u32(&mut truncated, idata_section + 16, 0x1000);
         let pe = PE::parse_with_opts(&truncated, &options).unwrap();
         let mut budget = super::super::ParseOutputBudget::default();
@@ -2442,9 +2521,22 @@ mod enrichment_tests {
         let legacy = crate::BinaryFile::parse(&signed).unwrap();
         assert!(legacy.metadata().security_features.signed);
 
-        let mut truncated = signed;
+        let mut truncated = signed.clone();
         truncated.truncate(0x800);
-        let enriched = BinaryAnalyzer::new().analyze_enriched(&truncated).unwrap();
+        assert_malformed_certificate_rejected(&truncated);
+
+        let directories = PE_OFFSET + 24 + 112;
+        let mut short_table = signed.clone();
+        put_u32(&mut short_table, directories + 36, 1);
+        assert_malformed_certificate_rejected(&short_table);
+
+        let mut short_entry = signed;
+        put_u32(&mut short_entry, 0x800, 4);
+        assert_malformed_certificate_rejected(&short_entry);
+    }
+
+    fn assert_malformed_certificate_rejected(data: &[u8]) {
+        let enriched = BinaryAnalyzer::new().analyze_enriched(data).unwrap();
         assert!(!enriched.analysis.metadata.security_features.signed);
         let FieldOutcome::Present { value: pe } = enriched.static_metadata.pe else {
             panic!("expected PE static metadata");

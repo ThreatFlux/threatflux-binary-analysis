@@ -85,7 +85,7 @@ pub(crate) fn has_bounded_pe_signature(data: &[u8]) -> bool {
     feature = "pe",
     feature = "wasm"
 ))]
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub(super) struct ParseOutputBudget {
     records: usize,
     name_bytes: usize,
