@@ -58,6 +58,25 @@ fn is_bounded_universal_macho(data: &[u8]) -> bool {
         .is_some_and(|end| end <= data.len())
 }
 
+/// Return whether `data` contains a checked MZ/e_lfanew/PE signature.
+///
+/// This bounded recognition is intentionally feature-independent so enriched
+/// callers can distinguish an unsupported PE from ordinary raw input.
+pub(crate) fn has_bounded_pe_signature(data: &[u8]) -> bool {
+    if !data.starts_with(b"MZ") {
+        return false;
+    }
+    let Some(pointer) = data.get(0x3c..0x40) else {
+        return false;
+    };
+    let offset = u32::from_le_bytes([pointer[0], pointer[1], pointer[2], pointer[3]]);
+    usize::try_from(offset)
+        .ok()
+        .and_then(|start| start.checked_add(4).map(|end| (start, end)))
+        .and_then(|(start, end)| data.get(start..end))
+        .is_some_and(|signature| signature == b"PE\0\0")
+}
+
 /// Shared allocation budget for parser-owned records and names.
 #[cfg(any(
     feature = "elf",
@@ -168,6 +187,8 @@ pub mod java;
 pub mod macho;
 #[cfg(feature = "pe")]
 pub mod pe;
+#[cfg(feature = "pe")]
+mod pe_ordinals;
 #[cfg(feature = "wasm")]
 pub mod wasm;
 
@@ -188,7 +209,7 @@ pub fn detect_format(data: &[u8]) -> Result<Format> {
     // MZ alone identifies a DOS executable, not necessarily a PE image. Require
     // the checked e_lfanew offset and PE signature before claiming PE support.
     #[cfg(feature = "pe")]
-    if pe::PeParser::can_parse(data) {
+    if has_bounded_pe_signature(data) {
         return Ok(Format::Pe);
     }
 

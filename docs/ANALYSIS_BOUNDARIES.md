@@ -47,6 +47,21 @@ Current format boundaries include:
   reconstruction is out of scope;
 - signatures are not cryptographically verified.
 
+The additive PE static report is metadata, not a verifier or loader. Its
+whole-input SHA-256 identifies the caller-supplied bytes. Authentihash is a
+separate SHA-256 image digest and never falls back to that whole-input value.
+The current qualified profile requires contiguous, non-overlapping,
+file-backed raw sections after `SizeOfHeaders`; it hashes checked overlay bytes
+and excludes the checksum, Certificate Table directory entry, and exact
+Certificate Table range. Other layouts return `unsupported` or `invalid`.
+
+Rich records and resource paths are file claims, not compiler attribution or
+trusted localization. Resource traversal returns metadata only. It rejects
+invalid UTF-16, excess depth, cycles, ambiguous overlapping RVA mappings,
+non-file-backed payload spans, and shared parser-budget exhaustion. It never
+returns resource payloads. Imphash is a correlation attribute following the
+pinned pefile convention, not a unique or collision-resistant file identity.
+
 Before Goblin parses thin-image load commands, the parser bounds load-command
 and section counts, validates that section records fit their segment commands,
 checks that dylib and rpath strings are contained and NUL-terminated in their
@@ -177,6 +192,11 @@ public hard limits per parse:
 - <code>MAX_PARSED_RECORDS</code>: 100,000 structural/output records;
 - <code>MAX_NAME_BYTES</code>: 4 KiB for one copied name;
 - <code>MAX_OWNED_NAME_BYTES</code>: 32 MiB across copied names.
+
+PE imphash traversal, Rich records, resource directory entries, and decoded
+resource names share these record/name budgets with the ordinary PE projection
+within an enriched parse. A post-parse enrichment limit is reported on that
+field without discarding successfully extracted sibling outcomes.
 
 JAR central-directory preflight has an additional 50,000-entry ceiling and
 rejects ZIP64 and multi-disk archives. Exceeding any hard parser ceiling returns

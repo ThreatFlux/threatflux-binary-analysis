@@ -6,6 +6,19 @@ All notable changes are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- Added the additive schema-v1 PE static-metadata report and one-parse enriched
+  byte/parsed entry points. Reports bind the producer name/version, effective
+  Cargo feature profile, whole-input SHA-256, schema revision, and frozen
+  algorithm revision to typed outcomes for pefile-compatible imphash,
+  SHA-256 Authenticode image hash, ordered Rich records, and bounded ordered
+  resource leaves.
+- Added deterministic benign PE32/PE32+ fixtures with pinned pefile and LIEF
+  goldens, malformed/budget controls, PE-disabled behavior, and a
+  deserialize-only compatibility reader that retains archived 0.3.x analysis
+  while marking enrichment and provenance unknown.
+
 ### Changed
 
 - Consolidated dependency updates onto the latest stable crate releases,
@@ -16,6 +29,11 @@ All notable changes are documented here. This project follows
 - Adapted JAR entry-name decoding to zip 9's fallible API and checked the
   unchecked code-section ranges exposed by wasmparser 0.262 before reporting
   section metadata.
+- Kept legacy `BinaryFile`, `BinaryAnalyzer`, `AnalysisResult`, public parser
+  traits, and their serialized shapes unchanged. Only `StaticMetadataReport`
+  is a persistable enriched projection; the convenience result deliberately
+  does not implement `Serialize`, preventing section previews or instruction
+  bytes from entering that report.
 
 ## [0.3.1] - 2026-10-06
 

@@ -21,6 +21,7 @@ scheduling belong to the caller.
 | Detect a format without parsing it                    | <code>formats::detect_format</code>                                     | Relevant format parser                                   |
 | Parse as an explicitly selected format                | <code>formats::parse_binary</code>                                      | Relevant format parser                                   |
 | Collect parser output plus compiled optional analyses | <code>BinaryAnalyzer</code>                                             | Depends on requested analyses                            |
+| Collect versioned PE static metadata                  | <code>BinaryAnalyzer::analyze_enriched</code> / <code>EnrichedBinaryFile</code> | <code>pe</code> for PE extraction                        |
 | Disassemble caller-selected bytes                     | <code>disasm::Disassembler</code>                                       | <code>disasm-capstone</code> or <code>disasm-iced</code> |
 | Reconstruct control flow or a call graph              | <code>analysis::control_flow</code> / <code>analysis::call_graph</code> | <code>control-flow</code>                                |
 | Generate heuristic security findings                  | <code>analysis::security::SecurityAnalyzer</code>                       | Always available                                         |
@@ -85,6 +86,53 @@ Inputs above a ceiling return <code>InvalidData</code>. JAR preflight separately
 limits the central directory to 50,000 entries before <code>zip</code> builds its
 file table.
 
+### EnrichedBinaryFile and StaticMetadataReport
+
+`EnrichedBinaryFile::parse` is an additive parse path. It retains the unchanged
+legacy `BinaryFile` view and a schema-v1 `StaticMetadataReport`; use
+`binary()` and `static_metadata()` to borrow them. `BinaryAnalyzer` supplies
+matching `analyze_enriched` and `analyze_enriched_binary` entry points. The byte
+entry point delegates to the enriched parsed representation, so the two paths
+produce the same report without reparsing.
+
+Every report carries `schema_revision`, `algorithm_revision`, and provenance:
+the SDK package name/version, the sorted effective Cargo feature profile, and
+the SHA-256 of the complete input. Algorithm revision 1 freezes these rules:
+
+- imphash preserves ordinary import descriptor/thunk order and duplicates,
+  lowercases names, strips a terminal DLL/SYS/OCX extension, resolves ordinals
+  with the pinned pefile tables (or `ord<decimal>`), excludes delay imports,
+  and MD5-hashes the comma-joined entries;
+- authentihash is SHA-256 over qualified Microsoft/LIEF PE image ranges. It
+  excludes the checksum, Certificate Table directory entry, and exact
+  Certificate Table, but includes checked overlay bytes. Non-contiguous,
+  overlapping, or non-file-backed section layouts do not receive a substitute
+  full-file digest;
+- Rich output carries the XOR key and decoded records in physical order; and
+- resources enumerate type/name/language leaves in file-directory order with
+  distinct `{id: u32}` and `{name: string}` identifiers, data RVA, declared
+  size, and code page. Directory/name/payload spans, depth, cycles, ambiguous
+  RVA mappings, and shared record/name budgets are validated. Payload bytes are
+  never returned.
+
+Blocks and fields use tagged outcomes: `present`, `absent`, `not_applicable`,
+`unsupported`, `not_evaluated`, `invalid`, and `limit_exceeded`. Missing fields
+in older report JSON default to `not_evaluated`; missing provenance and an
+algorithm revision of zero mean unknown historical data. Unknown future
+outcome tags remain unavailable rather than becoming values.
+
+`StaticMetadataReport` implements Serde with `serde-support`.
+`EnrichedAnalysisResult` intentionally implements only deserialization: it also
+contains legacy `AnalysisResult`, whose section previews and optional analysis
+bytes are not a persistence-safe allowlist. Use
+`EnrichedAnalysisResult::from_compatible_json` to read either the new envelope
+or archived 0.3.x `AnalysisResult` JSON losslessly; legacy enrichment is
+`not_evaluated` with unknown provenance.
+
+When `pe` is disabled, legacy detection remains unchanged (a checked PE can
+still become raw), while the enriched path recognizes the bounded
+MZ/e_lfanew/PE signature and reports the PE block as `unsupported`.
+
 ### Format detection
 
 <code>formats::detect_format</code> uses leading magic values, a checked PE
@@ -108,7 +156,7 @@ is a valid parse result, not a rejection.
 | Format      | Parsed today                                                                                              | Important omissions                                                                                                           |
 | ----------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | ELF         | Sections, static symbols, dynamic imports/exports, entry point, selected hardening/compiler metadata      | Not a full loader, linker, debug-info reader, or signature verifier                                                           |
-| PE          | Sections, COFF symbols when present, imports, exports, entry point, selected hardening/compiler metadata  | Authenticode is not verified; stripped images may expose no symbols                                                           |
+| PE          | Sections, COFF symbols when present, imports, exports, entry point, selected hardening/compiler metadata; enriched path adds versioned hashes/Rich/resource metadata | Authenticode trust is not verified; enriched image hashes require a qualified on-disk layout; stripped images may expose no symbols |
 | Mach-O      | Thin-image sections, nlist symbols when present, imports, exports, entry point when supplied by the image | Fat/universal images unsupported; malformed or unsupported dyld streams fail closed; code-signature presence is not verified  |
 | Java class  | Fixed-header validation and a synthetic whole-file section                                                | The validated version is not exposed; no constant-pool, field, method, attribute, or bytecode decoding                        |
 | JAR         | Class-entry names and sizes                                                                               | No class extraction/decoding, manifest semantics, or signature verification                                                   |
