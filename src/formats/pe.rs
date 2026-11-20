@@ -550,27 +550,9 @@ fn validate_raw_import_thunks(
     let lookup = descriptor.import_lookup_table.as_ref().ok_or_else(|| {
         FieldFailure::Invalid("ordinary import descriptor has no lookup table".to_string())
     })?;
-    let raw = &descriptor.import_directory_entry;
-    let table_rva = if raw.import_lookup_table_rva != 0 {
-        raw.import_lookup_table_rva
-    } else {
-        raw.import_address_table_rva
-    };
-    let slot_count = lookup.len().checked_add(1).ok_or_else(|| {
-        FieldFailure::Invalid("ordinary import thunk count overflows usize".to_string())
-    })?;
-    let byte_size = slot_count.checked_mul(width.size()).ok_or_else(|| {
-        FieldFailure::Invalid("ordinary import thunk table size overflows usize".to_string())
-    })?;
-    let table_start = goblin_rva_offset(pe, table_rva, "ordinary import thunk table")?;
-    let table_end = checked_offset(table_start, byte_size, "ordinary import thunk table")?;
-    if table_end > data.len() {
-        return Err(FieldFailure::Invalid(
-            "ordinary import thunk table exceeds the input".to_string(),
-        ));
-    }
+    let table = raw_import_table_range(pe, data.len(), width, descriptor, lookup.len())?;
     for (index, parsed) in lookup.iter().enumerate() {
-        let offset = checked_offset(table_start, index * width.size(), "import thunk index")?;
+        let offset = checked_offset(table.start, index * width.size(), "import thunk index")?;
         let value = width.read(data, offset)?;
         if value == 0 {
             return Err(FieldFailure::Invalid(
@@ -580,7 +562,7 @@ fn validate_raw_import_thunks(
         validate_raw_import_thunk(pe, data, width, value, parsed)?;
     }
     let terminator = checked_offset(
-        table_start,
+        table.start,
         lookup.len() * width.size(),
         "import thunk terminator",
     )?;
@@ -590,6 +572,35 @@ fn validate_raw_import_thunks(
         ));
     }
     Ok(())
+}
+
+fn raw_import_table_range(
+    pe: &PE<'_>,
+    data_len: usize,
+    width: ImportThunkWidth,
+    descriptor: &goblin::pe::import::SyntheticImportDirectoryEntry<'_>,
+    lookup_len: usize,
+) -> std::result::Result<Range<usize>, FieldFailure> {
+    let raw = &descriptor.import_directory_entry;
+    let table_rva = if raw.import_lookup_table_rva != 0 {
+        raw.import_lookup_table_rva
+    } else {
+        raw.import_address_table_rva
+    };
+    let slot_count = lookup_len.checked_add(1).ok_or_else(|| {
+        FieldFailure::Invalid("ordinary import thunk count overflows usize".to_string())
+    })?;
+    let byte_size = slot_count.checked_mul(width.size()).ok_or_else(|| {
+        FieldFailure::Invalid("ordinary import thunk table size overflows usize".to_string())
+    })?;
+    let table_start = goblin_rva_offset(pe, table_rva, "ordinary import thunk table")?;
+    let table_end = checked_offset(table_start, byte_size, "ordinary import thunk table")?;
+    if table_end > data_len {
+        return Err(FieldFailure::Invalid(
+            "ordinary import thunk table exceeds the input".to_string(),
+        ));
+    }
+    Ok(table_start..table_end)
 }
 
 fn validate_raw_import_thunk(
@@ -888,12 +899,14 @@ fn authenticode_header_layout(
         "PE section-header table range",
     )?;
 
-    if !(checksum.start < checksum.end
-        && checksum.end <= certificate_entry.start
-        && certificate_entry.end <= optional_end
-        && section_table_end <= header_end
-        && header_end <= data_len)
-    {
+    if !authenticode_header_ranges_are_valid(
+        &checksum,
+        &certificate_entry,
+        optional_end,
+        section_table_end,
+        header_end,
+        data_len,
+    ) {
         return Err(FieldFailure::Invalid(
             "PE header hashing ranges are out of bounds or overlap".to_string(),
         ));
@@ -903,6 +916,21 @@ fn authenticode_header_layout(
         certificate_entry,
         header_end,
     })
+}
+
+fn authenticode_header_ranges_are_valid(
+    checksum: &Range<usize>,
+    certificate_entry: &Range<usize>,
+    optional_end: usize,
+    section_table_end: usize,
+    header_end: usize,
+    data_len: usize,
+) -> bool {
+    checksum.start < checksum.end
+        && checksum.end <= certificate_entry.start
+        && certificate_entry.end <= optional_end
+        && section_table_end <= header_end
+        && header_end <= data_len
 }
 
 fn optional_header_file_range(pe: &PE<'_>) -> std::result::Result<(usize, usize), FieldFailure> {
@@ -995,33 +1023,52 @@ fn authenticode_certificate_range(
     let optional = pe.header.optional_header.as_ref().ok_or_else(|| {
         FieldFailure::Unsupported("COFF objects do not have a PE optional header".to_string())
     })?;
-    let certificate = optional.data_directories.get_certificate_table().copied();
-    match certificate {
-        Some(directory) if directory.virtual_address == 0 && directory.size == 0 => Ok(None),
-        Some(directory) if directory.virtual_address == 0 || directory.size == 0 => {
-            Err(FieldFailure::Invalid(
-                "Certificate Table offset and size must both be zero or non-zero".to_string(),
-            ))
-        }
-        Some(directory) => {
-            let start = usize::try_from(directory.virtual_address).map_err(|_| {
-                FieldFailure::Invalid("Certificate Table file offset exceeds usize".to_string())
-            })?;
-            let size = usize::try_from(directory.size).map_err(|_| {
-                FieldFailure::Invalid("Certificate Table size exceeds usize".to_string())
-            })?;
-            let end = start.checked_add(size).ok_or_else(|| {
-                FieldFailure::Invalid("Certificate Table file range overflows usize".to_string())
-            })?;
-            if start < image_tail || end > data_len || start % 8 != 0 {
-                return Err(FieldFailure::Invalid(
-                    "Certificate Table is not an aligned, file-backed trailing range".to_string(),
-                ));
-            }
-            Ok(Some(start..end))
-        }
-        None => Ok(None),
+    let Some(directory) = optional.data_directories.get_certificate_table() else {
+        return Ok(None);
+    };
+    if !certificate_directory_is_present(directory)? {
+        return Ok(None);
     }
+    Ok(Some(checked_certificate_range(
+        directory.virtual_address,
+        directory.size,
+        data_len,
+        image_tail,
+    )?))
+}
+
+fn certificate_directory_is_present(
+    directory: &goblin::pe::data_directories::DataDirectory,
+) -> std::result::Result<bool, FieldFailure> {
+    match (directory.virtual_address == 0, directory.size == 0) {
+        (true, true) => Ok(false),
+        (false, false) => Ok(true),
+        _ => Err(FieldFailure::Invalid(
+            "Certificate Table offset and size must both be zero or non-zero".to_string(),
+        )),
+    }
+}
+
+fn checked_certificate_range(
+    file_offset: u32,
+    size: u32,
+    data_len: usize,
+    image_tail: usize,
+) -> std::result::Result<Range<usize>, FieldFailure> {
+    let start = usize::try_from(file_offset).map_err(|_| {
+        FieldFailure::Invalid("Certificate Table file offset exceeds usize".to_string())
+    })?;
+    let size = usize::try_from(size)
+        .map_err(|_| FieldFailure::Invalid("Certificate Table size exceeds usize".to_string()))?;
+    let end = start.checked_add(size).ok_or_else(|| {
+        FieldFailure::Invalid("Certificate Table file range overflows usize".to_string())
+    })?;
+    if start < image_tail || end > data_len || start % 8 != 0 {
+        return Err(FieldFailure::Invalid(
+            "Certificate Table is not an aligned, file-backed trailing range".to_string(),
+        ));
+    }
+    Ok(start..end)
 }
 
 fn hash_authenticode_ranges(
