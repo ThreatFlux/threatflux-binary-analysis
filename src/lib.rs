@@ -688,10 +688,33 @@ mod tests {
             max_analysis_size: 3,
             ..AnalysisConfig::default()
         });
-        assert!(analyzer.analyze_enriched(b"four").is_err());
+        let expected_sha256 = "04efaf080f5a3e74e1c29d1ca6a48569382cbbcd324e8d59d2b83ef21c039f00";
+        let error = analyzer.analyze_enriched(b"four").unwrap_err();
+        assert!(matches!(
+            &error.source,
+            BinaryError::InputTooLarge {
+                actual: 4,
+                limit: 3
+            }
+        ));
+        assert_eq!(
+            error.provenance.input_sha256.as_deref(),
+            Some(expected_sha256)
+        );
 
         let parsed = EnrichedBinaryFile::parse(b"four").unwrap();
-        assert!(analyzer.analyze_enriched_binary(&parsed).is_err());
+        let error = analyzer.analyze_enriched_binary(&parsed).unwrap_err();
+        assert!(matches!(
+            &error.source,
+            BinaryError::InputTooLarge {
+                actual: 4,
+                limit: 3
+            }
+        ));
+        assert_eq!(
+            error.provenance.input_sha256.as_deref(),
+            Some(expected_sha256)
+        );
     }
 
     #[test]
