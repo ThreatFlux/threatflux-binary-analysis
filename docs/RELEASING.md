@@ -23,8 +23,11 @@ The release path depends on three settings outside this repository's source:
 3. The ThreatFlux automation GitHub App, installed on this repository, with
    its ID in the organization variable <code>TF_AUTOMATION_APP_ID</code> and
    its private key in the organization secret
-   <code>TF_AUTOMATION_APP_PRIVATE_KEY</code>. Auto Release mints a
-   short-lived installation token from them, scoped to this repository.
+   <code>TF_AUTOMATION_APP_PRIVATE_KEY</code>. The App installation must grant
+   <strong>Contents: Read and write</strong> and
+   <strong>Pull requests: Read and write</strong>. Auto Release mints a
+   short-lived token with those installation permissions, scoped to this
+   repository. The workflow job's permissions apply to <code>GITHUB_TOKEN</code>.
 
 ## How a release happens
 
