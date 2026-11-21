@@ -58,7 +58,7 @@ serde-support = ["dep:serde", "dep:serde_json"]
 # Core dependencies
 thiserror = "2.0.21"
 md-5 = { version = "0.10.6", optional = true }
-sha2 = "0.10.9"
+sha2 = "0.11.1"
 
 # Binary parsing
 goblin = { version = "0.10.7", default-features = false, features = ["alloc"], optional = true }
