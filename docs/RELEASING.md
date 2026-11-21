@@ -23,8 +23,11 @@ The release path depends on three settings outside this repository's source:
 3. The ThreatFlux automation GitHub App, installed on this repository, with
    its ID in the organization variable <code>TF_AUTOMATION_APP_ID</code> and
    its private key in the organization secret
-   <code>TF_AUTOMATION_APP_PRIVATE_KEY</code>. Auto Release mints a
-   short-lived installation token from them, scoped to this repository.
+   <code>TF_AUTOMATION_APP_PRIVATE_KEY</code>. The App installation must grant
+   <strong>Contents: Read and write</strong> and
+   <strong>Pull requests: Read and write</strong>. Auto Release mints a
+   short-lived token with those installation permissions, scoped to this
+   repository. The workflow job's permissions apply to <code>GITHUB_TOKEN</code>.
 
 ## How a release happens
 
@@ -36,15 +39,18 @@ The release path depends on three settings outside this repository's source:
    <code>test:</code> do not release on their own.
 2. When the <code>CI</code> and <code>Security</code> workflows both pass on
    the new <code>main</code> commit, <code>Auto Release</code> calls the
-   ThreatFlux reusable auto-release workflow. As the GitHub App, it bumps
-   <code>Cargo.toml</code>, pushes the version commit and the
-   <code>v&lt;version&gt;</code> tag, and creates the GitHub Release. The
-   App-pushed tag starts <code>release.yml</code> through its
+   ThreatFlux reusable auto-release workflow. The GitHub App opens or refreshes
+   a release pull request from <code>automation/release</code> with the version
+   bump. The proposal goes through the required owner review and normal merge.
+3. After <code>CI</code> and <code>Security</code> pass on the merged
+   <code>main</code> commit, <code>Auto Release</code> tags that commit with
+   <code>v&lt;version&gt;</code> and creates the GitHub Release. The App-pushed
+   tag starts <code>release.yml</code> through its
    <code>push: tags</code> trigger, so nothing is dispatched and the release
    workflow runs exactly once. Only if a release falls back to
    <code>GITHUB_TOKEN</code>, whose tag pushes start no workflows, does Auto
    Release dispatch <code>release.yml</code> for the tag instead.
-3. <code>release.yml</code> builds the commit the run was started for:
+4. <code>release.yml</code> builds the commit the run was started for:
    1. checks that the manifest version matches the release version, that the
       commit is on <code>main</code>, and that an existing tag already points
       at it;
