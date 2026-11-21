@@ -437,7 +437,7 @@ fn test_performance_adversarial_inputs() {
 #[test]
 fn test_analysis_configuration_performance() {
     let test_data = create_analysis_elf_64();
-    let configs = vec![
+    let configs = [
         (
             "Minimal",
             AnalysisConfig {
@@ -451,8 +451,13 @@ fn test_analysis_configuration_performance() {
                 architecture_hint: None,
                 ..Default::default()
             },
+            Duration::from_millis(50),
         ),
-        ("Standard", AnalysisConfig::default()),
+        (
+            "Standard",
+            AnalysisConfig::default(),
+            Duration::from_millis(500),
+        ),
         (
             "Full",
             AnalysisConfig {
@@ -469,41 +474,28 @@ fn test_analysis_configuration_performance() {
                 architecture_hint: Some(Architecture::X86_64),
                 ..Default::default()
             },
+            Duration::from_secs(5),
         ),
     ];
 
-    for (config_name, config) in configs {
+    for (config_name, config, time_limit) in configs {
         let analyzer = BinaryAnalyzer::with_config(config);
+        // A single interruption on a shared runner should not fail the timing check.
+        let mut samples: [Duration; 3] = std::array::from_fn(|_| {
+            let start = Instant::now();
+            analyzer
+                .analyze(&test_data)
+                .unwrap_or_else(|error| panic!("{config_name} analysis failed: {error}"));
+            start.elapsed()
+        });
+        samples.sort_unstable();
 
-        let start = Instant::now();
-        analyzer
-            .analyze(&test_data)
-            .unwrap_or_else(|error| panic!("{config_name} analysis failed: {error}"));
-        let analysis_time = start.elapsed();
-
-        println!("{} analysis: {:?}", config_name, analysis_time);
-
-        match config_name {
-            "Minimal" => {
-                assert!(
-                    analysis_time < Duration::from_millis(50),
-                    "Minimal analysis should be very fast"
-                );
-            }
-            "Standard" => {
-                assert!(
-                    analysis_time < Duration::from_millis(500),
-                    "Standard analysis should be fast"
-                );
-            }
-            "Full" => {
-                assert!(
-                    analysis_time < Duration::from_secs(5),
-                    "Full analysis should be reasonable"
-                );
-            }
-            _ => {}
-        }
+        println!("{config_name} analysis samples: {samples:?}");
+        assert!(
+            samples[1] < time_limit,
+            "{config_name} median analysis time {:?} exceeded {time_limit:?}",
+            samples[1]
+        );
     }
 }
 
