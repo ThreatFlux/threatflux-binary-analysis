@@ -4,9 +4,8 @@ updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
-      interval: weekly
-      day: monday
-      time: "09:00"
+      interval: cron
+      cronjob: "0 9 * * *"
       timezone: Etc/UTC
     cooldown:
       default-days: 7
@@ -27,9 +26,8 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
-      time: "09:00"
+      interval: cron
+      cronjob: "0 9 * * *"
       timezone: Etc/UTC
     cooldown:
       default-days: 7
