@@ -43,7 +43,10 @@ The release path depends on three settings outside this repository's source:
    a release pull request from <code>automation/release</code> with the version
    bump. The proposal goes through the required owner review and normal merge.
 3. After <code>CI</code> and <code>Security</code> pass on the merged
-   <code>main</code> commit, <code>Auto Release</code> tags that commit with
+   <code>main</code> commit, <code>Auto Release</code> checks that its manifest
+   version covers the strongest conventional-commit bump since the last stable
+   tag. If more changes require a higher version, merge a reviewed version
+   correction before retrying. Auto Release then tags the tested commit with
    <code>v&lt;version&gt;</code> and creates the GitHub Release. The App-pushed
    tag starts <code>release.yml</code> through its
    <code>push: tags</code> trigger, so nothing is dispatched and the release
@@ -92,6 +95,8 @@ requested version differs from the manifest; it always packages and verifies
 the manifest version.
 
 ## Manual release
+
+Use this path for prereleases or to establish an initial stable release tag.
 
 To release without Auto Release, first merge a pull request that sets the
 <code>Cargo.toml</code> version and moves the matching entries into a dated
