@@ -62,7 +62,18 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-        run: python3 scripts/check_release_version.py "$TARGET_SHA"
+        shell: bash
+        run: |
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid candidate SHA' >&2; exit 1; }
+          tag="$(git tag --list 'v*' --sort=-version:refname | awk '
+            /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/ && !found { print; found = 1 }
+          ')"
+          [[ -n "$tag" ]] || { echo 'No existing stable release tag' >&2; exit 1; }
+          git merge-base --is-ancestor "$tag" "$TARGET_SHA"
+          git show "${TARGET_SHA}:Cargo.toml" > "$RUNNER_TEMP/release-manifest.toml"
+          git log --no-merges -z --format=%B "${tag}..${TARGET_SHA}" -- > "$RUNNER_TEMP/release-commits"
+          python3 scripts/check_release_version.py "$tag" \
+            "$RUNNER_TEMP/release-manifest.toml" "$RUNNER_TEMP/release-commits"
 
   release:
     needs: version-floor

@@ -1,9 +1,9 @@
 """Check that a pending stable version covers all unreleased conventional commits."""
 
 import re
-import subprocess
 import sys
 import tomllib
+from pathlib import Path
 
 
 STABLE = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
@@ -20,9 +20,7 @@ def required_version(released, messages):
     major, minor, patch = released
     required = released
     for message in messages:
-        if not message.strip():
-            continue
-        subject = SUBJECT.fullmatch(message.splitlines()[0].strip())
+        subject = SUBJECT.fullmatch(message.partition("\n")[0].strip())
         if BREAKING.search(message) or (subject and subject[2]):
             return major + 1, 0, 0
         if subject and subject[1] == "feat":
@@ -32,46 +30,30 @@ def required_version(released, messages):
     return required
 
 
-def git(*args):
-    return subprocess.check_output(["git", *args], encoding="utf-8")
-
-
-def check_release(target):
-    if not re.fullmatch(r"[0-9a-f]{40}", target):
-        raise ValueError("Expected an exact 40-character Git commit SHA")
-    manifest = tomllib.loads(git("show", f"{target}:Cargo.toml"))
-    version = manifest["package"]["version"]
+def check_release(tag, version, messages):
+    released = stable_version(tag.removeprefix("v"))
     current = stable_version(version)
-    if current is None:
-        raise ValueError(f"Automatic release requires a stable manifest version, got {version}")
-
-    stable_tags = [
-        (parsed, tag)
-        for tag in git("tag", "--list", "v*").splitlines()
-        if (parsed := stable_version(tag[1:])) is not None
-    ]
-    if not stable_tags:
-        raise ValueError("Automatic release requires an existing stable release tag")
-    released, tag = max(stable_tags)
+    if released is None or current is None:
+        raise ValueError(f"Automatic release requires stable versions, got {tag} and {version}")
     if current < released:
         raise ValueError(f"Manifest version {version} is behind stable release {tag}")
     if current == released:
         return  # The reusable workflow may propose a bump, but cannot tag this version again.
 
-    # Refuse a divergent baseline, and use the same non-merge commit history as auto-release.
-    git("merge-base", "--is-ancestor", tag, target)
-    messages = git("log", "--no-merges", "-z", "--format=%B", f"{tag}..{target}").split("\0")
     floor = required_version(released, messages)
     if current < floor:
         needed = ".".join(map(str, floor))
         raise ValueError(
-            f"Manifest version {version} at {target} is below required version {needed} "
+            f"Manifest version {version} is below required version {needed} "
             f"for changes since {tag}. Merge a reviewed version correction before releasing."
         )
 
 
 if __name__ == "__main__":
     try:
-        check_release(sys.argv[1])
-    except (IndexError, KeyError, ValueError, subprocess.CalledProcessError) as error:
+        tag, manifest_path, commits_path = sys.argv[1:]
+        manifest = tomllib.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        commits = Path(commits_path).read_text(encoding="utf-8").split("\0")
+        check_release(tag, manifest["package"]["version"], commits)
+    except (KeyError, OSError, ValueError) as error:
         sys.exit(str(error))
