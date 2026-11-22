@@ -81,7 +81,7 @@ jobs:
       actions: write # Dispatches release.yml if a release falls back to GITHUB_TOKEN.
       contents: write # Pushes the release proposal branch and tag, and creates the GitHub Release.
       pull-requests: write # Required by the reusable workflow's release-PR mode.
-    uses: ThreatFlux/github_actions/.github/workflows/reusable-auto-release.yml@f4d48290988681cfbf3e03f47e312a79b322ccc8  # v0.7.12
+    uses: ThreatFlux/github_actions/.github/workflows/reusable-auto-release.yml@240529daaf569ee1f5b5e22f683b113ec4e1d62d  # v0.7.13
     with:
       bump: ${{ github.event.inputs.version_bump || 'auto' }}
       # Only a manual dispatch can request a dry run; workflow_run always releases.
