@@ -1,41 +1,28 @@
 version: 2
 
+multi-ecosystem-groups:
+  nightly-dependencies:
+    schedule:
+      interval: cron
+      cronjob: "0 9 * * *"
+      timezone: Etc/UTC
+    commit-message:
+      prefix: deps
+      include: scope
+
 updates:
   - package-ecosystem: cargo
     directory: /
-    schedule:
-      interval: cron
-      cronjob: "0 9 * * *"
-      timezone: Etc/UTC
+    patterns: ["*"]
+    multi-ecosystem-group: nightly-dependencies
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 8
     rebase-strategy: auto
-    commit-message:
-      prefix: deps
-      prefix-development: deps(dev)
-      include: scope
-    groups:
-      compatible-runtime-updates:
-        dependency-type: production
-        update-types: [minor, patch]
-      compatible-development-updates:
-        dependency-type: development
-        update-types: [minor, patch]
 
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: cron
-      cronjob: "0 9 * * *"
-      timezone: Etc/UTC
+    patterns: ["*"]
+    multi-ecosystem-group: nightly-dependencies
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 5
     rebase-strategy: auto
-    commit-message:
-      prefix: ci
-      include: scope
-    groups:
-      actions:
-        patterns: ["*"]
